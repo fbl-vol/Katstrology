@@ -37,6 +37,8 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
   const [journalState, setJournalState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const watchRead = useRef(0);
   const journalRead = useRef(0);
+  const watchPage = useRef<{ read: number; next: number | null } | null>(null);
+  const journalPage = useRef<{ read: number; next: number | null } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -53,12 +55,19 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
   const watchAttempt = useRef<{ key: string; id: string } | null>(null);
   useEffect(() => { if (clock.today) setDay(value => value || clock.today!); }, [clock.today]);
   useEffect(() => { if (watchOpen) void loadWatch(); }, [watchVersion, watchOpen, personId]);
-  useEffect(() => () => { watchRead.current++; journalRead.current++; }, [workspace, personId]);
+  useEffect(() => () => {
+    watchRead.current++; journalRead.current++;
+    watchPage.current = null; journalPage.current = null;
+  }, [workspace, personId]);
   useEffect(() => {
     if (journalOpen) { void loadJournal(); void loadWatch(); }
   }, [journalOpen, personId]);
 
   async function loadWatch(offset = 0) {
+    // A continuation belongs only to the last accepted page, never a pending
+    // replacement or a mutation's pre-write cursor (including a stale click).
+    if (offset && (watchPage.current?.read !== watchRead.current || watchPage.current.next !== offset)) return;
+    watchPage.current = null; setWatchNext(null);
     const read = ++watchRead.current;
     setWatchState('loading');
     try {
@@ -66,10 +75,13 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
       if (read !== watchRead.current) return;
       setWatch(old => offset ? [...old, ...(page.items || [])] : (page.items || []));
       setWatchNext(page.next_offset);
+      watchPage.current = { read, next: page.next_offset };
       setWatchState('ready');
     } catch { if (read === watchRead.current) setWatchState('error'); }
   }
   async function loadJournal(offset = 0) {
+    if (offset && (journalPage.current?.read !== journalRead.current || journalPage.current.next !== offset)) return;
+    journalPage.current = null; setJournalNext(null);
     const read = ++journalRead.current;
     setJournalState('loading');
     try {
@@ -77,6 +89,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
       if (read !== journalRead.current) return;
       setJournal(old => offset ? [...old, ...(page.entries || [])] : (page.entries || []));
       setJournalNext(page.next_offset);
+      journalPage.current = { read, next: page.next_offset };
       setJournalState('ready');
     } catch { if (read === journalRead.current) setJournalState('error'); }
   }
@@ -89,7 +102,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
     } : null;
     const key = JSON.stringify({ item: watchDraft.id, note: watchDraft.note, reminder });
     if (watchAttempt.current?.key !== key) watchAttempt.current = { key, id: `watch-edit-${crypto.randomUUID()}` };
-    watchRead.current++; setWatchState('loading');
+    watchRead.current++; watchPage.current = null; setWatchNext(null); setWatchState('loading');
     setBusy(true); setError('');
     try {
       await api(`people/${personId}/watchlist/${watchDraft.id}`, workspace.csrf, 'PATCH', {
@@ -107,8 +120,11 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
 
   async function deleteRecord(kind: 'watchlist' | 'journal', id: string) {
     if (!window.confirm(kind === 'journal' ? 'Permanently remove this private reflection?' : 'Remove this saved item and its reminder?')) return;
-    if (kind === 'journal') { journalRead.current++; setJournalState('loading'); }
-    else { watchRead.current++; setWatchState('loading'); }
+    if (kind === 'journal') {
+      journalRead.current++; journalPage.current = null; setJournalNext(null); setJournalState('loading');
+    } else {
+      watchRead.current++; watchPage.current = null; setWatchNext(null); setWatchState('loading');
+    }
     setBusy(true); setError('');
     try {
       await api(`people/${personId}/${kind}/${id}`, workspace.csrf, 'DELETE');
@@ -127,7 +143,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
       linked_result_id: linked || null, text: note };
     const key = JSON.stringify(payload);
     if (journalAttempt.current?.key !== key) journalAttempt.current = { key, id: `journal-${crypto.randomUUID()}` };
-    journalRead.current++; setJournalState('loading');
+    journalRead.current++; journalPage.current = null; setJournalNext(null); setJournalState('loading');
     setBusy(true); setError('');
     try {
       await api(`people/${personId}/journal`, workspace.csrf, 'POST', { id: journalAttempt.current.id, ...payload });
@@ -145,7 +161,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
     if (!journalDraft) return;
     const key = JSON.stringify({ entry: journalDraft.id, text: journalDraft.text });
     if (editAttempt.current?.key !== key) editAttempt.current = { key, id: `journal-edit-${crypto.randomUUID()}` };
-    journalRead.current++; setJournalState('loading');
+    journalRead.current++; journalPage.current = null; setJournalNext(null); setJournalState('loading');
     setBusy(true); setError('');
     try {
       await api(`people/${personId}/journal/${journalDraft.id}`, workspace.csrf, 'PATCH', {
@@ -204,7 +220,8 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
               <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save item'}</button></div>
           </form>}
         </li>)}</ul> : watchState === 'ready' && <p>No saved items yet. Choose Save for later from a dated result.</p>}
-        {watchNext !== null && <button type="button" onClick={() => void loadWatch(watchNext)}>Load more saved items</button>}
+        {watchNext !== null && <button type="button" disabled={busy || watchState !== 'ready'}
+          onClick={() => void loadWatch(watchNext)}>Load more saved items</button>}
       </>}
     </details>
     <details className="detail-section profile-secondary" onToggle={event => setJournalOpen(event.currentTarget.open)}>
@@ -240,7 +257,8 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
               <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save edit'}</button></div>
           </form>}
         </li>)}</ul> : journalState === 'ready' && <p>No private reflections saved.</p>}
-        {journalNext !== null && <button type="button" onClick={() => void loadJournal(journalNext)}>Load more reflections</button>}
+        {journalNext !== null && <button type="button" disabled={busy || journalState !== 'ready'}
+          onClick={() => void loadJournal(journalNext)}>Load more reflections</button>}
       </>}
     </details>
     {error && <p role="alert" className="error">{error}</p>}

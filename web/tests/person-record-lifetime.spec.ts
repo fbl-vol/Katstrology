@@ -222,3 +222,159 @@ test('watchlist read failure is not an empty list and retried read restores actu
   await page.getByText('Saved for later · in-app reminders').click();
   await expect(records.getByText('A persisted synthetic item')).toBeVisible();
 });
+
+test('post-mutation watchlist paging cannot replace a committed first-page refresh', async ({ page }) => {
+  test.setTimeout(90_000);
+  await profile(page, 'reader-review-pagination');
+  const session = await (await page.request.get('/api/session')).json();
+  const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
+  const resultId = `review-paged-${crypto.randomUUID()}`;
+  expect((await page.request.post('/api/advanced-results', { headers,
+    data: { id: resultId, person_id: 'transit-person', technique: 'solar_return',
+      parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } },
+  })).status()).toBe(201);
+  for (let i = 0; i < 21; i++) {
+    expect((await page.request.post('/api/people/transit-person/watchlist', { headers,
+      data: { id: `after-item-${i}-${resultId}`, result_id: resultId, event_index: 0,
+        note: `Original saved note ${i}`, reminder: null },
+    })).status()).toBe(201);
+  }
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Saved for later · in-app reminders').click();
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeVisible();
+
+  let arrive!: () => void;
+  let release!: () => void;
+  let delivered!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  const basePath = '**/api/people/transit-person/watchlist?offset=0';
+  await page.route(basePath, async route => {
+    const response = await route.fetch(); arrive(); await held;
+    await route.fulfill({ response }); delivered();
+  });
+  await records.getByRole('button', { name: 'Edit note or reminder' }).first().click();
+  const form = records.getByRole('form', { name: 'Edit saved item' });
+  await form.getByLabel('Private note (optional)').fill('Committed saved note');
+  await form.getByRole('button', { name: 'Save item' }).click();
+  await arrived;
+  await expect(records.getByText('Opening saved items…')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 560 });
+  await records.getByText('Opening saved items…').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'post-watch-pending-short.png') });
+  await form.getByRole('button', { name: 'Saving…' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'post-watch-disabled-short.png') });
+  const stalePage = records.getByRole('button', { name: 'Load more saved items' });
+  if (await stalePage.count()) {
+    await stalePage.evaluate(button => (button as HTMLButtonElement).click());
+    if (await stalePage.isEnabled()) await expect(records.locator('ul > li')).toHaveCount(21);
+  }
+  release(); await done;
+  await page.unroute(basePath);
+  await expect(records.getByText('Committed saved note')).toBeVisible();
+  await expect(form).toHaveCount(0);
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  expect((await (await page.request.get('/api/people/transit-person/watchlist?offset=0')).json())
+    .items.some((item: { note: string }) => item.note === 'Committed saved note')).toBe(true);
+  for (const size of [
+    { name: 'desktop', width: 1440, height: 1024 }, { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 }, { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(size);
+    await records.getByText('Committed saved note').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: resolve(renders, `post-watch-${size.name}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width + 1);
+  }
+  await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeEnabled();
+  await records.getByRole('button', { name: 'Load more saved items' }).focus();
+  await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(records.locator('ul > li')).toHaveCount(21);
+});
+
+test('post-mutation journal paging cannot replace a committed first-page refresh', async ({ page }) => {
+  test.setTimeout(90_000);
+  await profile(page, 'reader-review-journal');
+  const session = await (await page.request.get('/api/session')).json();
+  const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
+  for (let i = 0; i < 21; i++) {
+    expect((await page.request.post('/api/people/transit-person/journal', { headers,
+      data: { id: `after-journal-${i}-${crypto.randomUUID()}`, kind: 'date', local_date: '2026-11-01',
+        wall_time: null, zone: null, fold: null, linked_result_id: null, text: `Original reflection ${i}` },
+    })).status()).toBe(201);
+  }
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  await expect(records.getByRole('button', { name: 'Load more reflections' })).toBeVisible();
+
+  let arrive!: () => void;
+  let release!: () => void;
+  let delivered!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  const basePath = '**/api/people/transit-person/journal?offset=0';
+  await page.route(basePath, async route => {
+    const response = await route.fetch(); arrive(); await held;
+    await route.fulfill({ response }); delivered();
+  });
+  await records.getByRole('button', { name: 'Edit text' }).first().click();
+  const form = records.getByRole('form', { name: 'Edit private reflection' });
+  await form.getByLabel('Your reflection').fill('Committed private reflection');
+  await form.getByRole('button', { name: 'Save edit' }).click();
+  await arrived;
+  await expect(records.getByText('Opening private reflections…')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 560 });
+  await records.getByText('Opening private reflections…').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'post-journal-pending-short.png') });
+  await form.getByRole('button', { name: 'Saving…' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'post-journal-disabled-short.png') });
+  const stalePage = records.getByRole('button', { name: 'Load more reflections' });
+  if (await stalePage.count()) {
+    await stalePage.evaluate(button => (button as HTMLButtonElement).click());
+    if (await stalePage.isEnabled()) await expect(records.locator('ul > li')).toHaveCount(21);
+  }
+  release(); await done;
+  await page.unroute(basePath);
+  await expect(records.getByText('Committed private reflection')).toBeVisible();
+  await expect(form).toHaveCount(0);
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  expect((await (await page.request.get('/api/people/transit-person/journal?offset=0')).json())
+    .entries.some((item: { text: string }) => item.text === 'Committed private reflection')).toBe(true);
+  for (const size of [
+    { name: 'desktop', width: 1440, height: 1024 }, { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 }, { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(size);
+    await records.getByText('Committed private reflection').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: resolve(renders, `post-journal-${size.name}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width + 1);
+  }
+  let failed = false;
+  await page.route(basePath, async route => {
+    if (!failed) { failed = true; await route.fulfill({ status: 503, body: '{}', contentType: 'application/json' }); }
+    else await route.continue();
+  });
+  await records.getByRole('button', { name: 'Edit text' }).first().click();
+  await records.getByRole('form', { name: 'Edit private reflection' }).getByLabel('Your reflection').fill('Committed after failed refresh');
+  await records.getByRole('form', { name: 'Edit private reflection' }).getByRole('button', { name: 'Save edit' }).click();
+  await expect(records.getByText('Private reflections could not be refreshed.', { exact: false })).toBeVisible();
+  await expect(records.getByRole('button', { name: 'Load more reflections' })).toHaveCount(0);
+  await expect(records.getByText('Committed private reflection')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 560 });
+  await records.getByText('Private reflections could not be refreshed.', { exact: false }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'post-journal-failed-refresh-short.png') });
+  await page.getByText('Private event journal', { exact: true }).click();
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(records.getByText('Committed after failed refresh')).toBeVisible();
+  await expect(records.getByRole('button', { name: 'Load more reflections' })).toBeEnabled();
+  await records.getByRole('button', { name: 'Load more reflections' }).focus();
+  await expect(records.getByRole('button', { name: 'Load more reflections' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(records.locator('ul > li')).toHaveCount(21);
+});
