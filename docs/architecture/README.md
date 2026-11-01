@@ -1,0 +1,113 @@
+# Katstrology architecture
+
+![Katstrology local architecture](katstrology.png)
+
+- [PNG diagram](katstrology.png)
+- [Scalable SVG](katstrology.svg)
+- [Editable Mermaid source](katstrology.mmd)
+
+## Reading the diagram
+
+The diagram uses a compact three-column, four-row layout. Everything except the
+orange dashed OpenAI box runs on the local computer. Arrows show the principal
+logical paths, not every internal call; the unarrowed database/files connection
+represents related private storage and recovery, not a database calling the
+filesystem. The model-connection box includes its optional sign-in adapter.
+
+The browser loads React/TypeScript assets from the same loopback Python server
+that handles the API. PostgreSQL runs in an owned Docker container; the UI/backend
+are not currently packaged as a Docker Compose application.
+
+The backend owns workspace authentication, authorization, conversation execution,
+context selection and persistence. One serialized Store worker preserves the
+current single-process database/transaction boundary. HTTP requests do not each
+create a separate independent Store. CLI and MCP are alternative entry points
+into shared code, not simultaneously safe writers to the browser's live archive.
+
+The archive retains original messages and ordered events. The conversation path
+commits user input before inference and output before browser delivery. The
+browser receives committed events and reconnects using a cursor. Selected people
+and chart versions belong to each turn; changing today's selection does not
+rewrite historical context.
+
+Context assembly uses bounded selected ancestry and an applicable summary rather
+than loading the complete archive. Reference/history search and local embeddings
+are separate bounded capabilities. Corrections, branch lineage, deletion and
+restore validity affect which records are eligible to reappear.
+
+## Models, tools and important limits
+
+- Local chat uses a small Qwen test model. It is a plumbing fixture, not a
+  product-quality astrology model.
+- The optional OpenAI path uses official account authorization and a direct
+  Responses adapter. It does not require a Codex process or separate Codex
+  app-server in this implementation. Dashed provider paths/dependencies are
+  optional, not proof of a successful live connection.
+- Account authorization and model inference are separate: identity sign-in alone
+  does not establish permission to use plan allowance. The user reports successful
+  live conversations. Agent-run provider tests use synthetic fixtures; this is not
+  independent verification of live eligibility, inference or chart-reading quality.
+- Selected context is sent to OpenAI in plan mode. Local archive ownership and
+  `store: false` must not be described as a guarantee of local-only processing or
+  provider zero retention. No provider chat history is imported.
+- Current tools are gateway-directed: selected chart loading and explicit
+  commands trigger calculations/reference retrieval. There is no autonomous
+  model-driven function-call loop in the current Responses adapter. The MCP
+  adapter's existence does not change that.
+- Native tropical natal charts now provide versioned planetary positions, nodes,
+  major aspects and supported Placidus/whole-sign house/angle facts. Exact birth
+  time and explicit coordinates are required for full house results; uncertain
+  or unsupported quantities remain partial, not invented. The same saved result
+  drives the original SVG wheel, accessible tables and selected-chart model
+  evidence. See [the natal contract](../../m2/NATAL-CHART.md) for supported dates,
+  conventions, numerical references and licensing. Legacy solar methods remain
+  available; general other-body transit timing, synastry and progressions are
+  not implied by natal support.
+- Uploaded reference images/PDFs are separate from computed charts. Their use
+  requires explicit per-turn selection and disclosure for a supported model;
+  filenames/digests are archived and reading the picture does not turn it into
+  verified chart facts. Persistent conversation-wide file consent is not enabled.
+- Retrieval infrastructure exists, but a selected real interpretive library and
+  automatic interpretive retrieval during ordinary chat have not been delivered.
+- Files are private runtime state too: attachments, credentials, journals and
+  snapshots do not all live inside PostgreSQL. Independent exports/backups have
+  their own retention/deletion implications.
+
+These are logical responsibilities inside the existing application, not a
+proposal to split it into microservices or evidence of production readiness.
+
+## Source map
+
+| Responsibility | Current implementation |
+| --- | --- |
+| Browser shell, conversation state and provider controls | `web/src/main.tsx`, `archive.ts`, `provider.tsx`, `turns.tsx` |
+| HTTP/security boundary and serialized lifecycle | `m2/web_server.py`, `web_auth.py` |
+| People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
+| Turn scheduling and commit-before-delivery | `m2/chat_jobs.py`, `gateway.py`, `store.py` |
+| Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |
+| Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `probes/core_calc.py` |
+| Natal SVG wheel and accessible placement/aspect tables | `web/src/natal.tsx` |
+| Optional provider authentication/inference and selected media | `m2/siwc.py`, `provider_model.py`, `provider_media.py` |
+| Private files, deletion and restore | `m2/attachments.py`, `deletion.py`, `backup.py` |
+| Alternative local tools | `m2/cli.py`, `fixture_cli.py`, `mcp_server.py` |
+
+The diagram reflects the local implementation through native-natal feature tip
+`3a82e36`. It is architecture documentation, not an independent code, numerical,
+security or live-provider review. Green boxes are logical responsibilities inside
+one application, not additional network services.
+
+## Regenerate
+
+With Mermaid CLI (`mmdc`) and a local Chromium installation:
+
+```sh
+mmdc -i docs/architecture/katstrology.mmd \
+  -o docs/architecture/katstrology.svg --size 1800 -b '#f5f3ec'
+mmdc -i docs/architecture/katstrology.mmd \
+  -o docs/architecture/katstrology.png --size 1800 -s 1.5 -b '#f5f3ec'
+```
+
+If Chromium is not discoverable, supply `-p /path/to/puppeteer-config.json` with
+an `executablePath` appropriate to the machine. Rendering requires no real
+workspace data, account credentials or external model request. Images use only
+architecture labels, not screenshots of private runtime content.

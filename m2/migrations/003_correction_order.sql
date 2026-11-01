@@ -1,0 +1,2 @@
+ALTER TABLE corrections
+    ADD COLUMN sequence bigint GENERATED ALWAYS AS IDENTITY;

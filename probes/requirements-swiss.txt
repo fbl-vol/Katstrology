@@ -1,0 +1,2 @@
+# Local feasibility environment: CPython 3.11.16, available Linux x86_64 wheel.
+pyswisseph==2.10.3.2

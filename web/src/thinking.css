@@ -1,0 +1,67 @@
+/* Decorative v2 study art, scoped to an actual open turn's answer slot. */
+.thinking-wait{
+  --thinking-star:#dfb873;--thinking-gold-light:#f7dca7;--thinking-magic:#76bda9;
+  --thinking-fade-low:.94;
+  --thinking-deep:#291d2c;--thinking-metal:#80687b;
+  display:flex;align-items:center;gap:18px;min-height:96px;
+  color:var(--link);font-size:14px;line-height:1.5;
+}
+:root[data-theme="aubergine"] .thinking-wait{
+  --thinking-star:#f0cf9d;--thinking-gold-light:#ffe8bf;--thinking-magic:#a6e8db;
+  --thinking-fade-low:.65;
+  --thinking-deep:#211529;--thinking-metal:#543852;
+}
+:root[data-theme="rosewood"] .thinking-wait{
+  --thinking-star:#91612d;--thinking-gold-light:#bd8f50;--thinking-magic:#377b6b;
+  --thinking-fade-low:.9;
+  --thinking-deep:#4e293d;--thinking-metal:#845066;
+}
+.thinking-label{color:var(--muted);white-space:nowrap;animation:thinking-label-fade 3.6s ease-in-out infinite}
+.thinking-art{width:90px;height:90px;flex:none;overflow:visible;
+  filter:drop-shadow(0 0 10px color-mix(in srgb,var(--accent) 12%,transparent))}
+.thinking-ring{fill:none;stroke:currentColor;stroke-width:.65;opacity:.44}
+.thinking-dash{stroke-dasharray:1 6;stroke-width:1.4;opacity:.6}
+.thinking-fine{fill:none;stroke:currentColor;stroke-width:.85;stroke-linecap:round;stroke-linejoin:round}
+.thinking-gold{fill:var(--thinking-star);stroke:none}
+.thinking-dust{fill:var(--thinking-gold-light);animation:thinking-stardust 4s ease-in-out infinite}
+.thinking-dust:nth-child(2n){animation-delay:-1.4s}.thinking-dust:nth-child(3n){animation-delay:-2.6s}
+.thinking-orbit{transform-origin:60px 60px;animation:thinking-orbit 14s linear infinite}
+.thinking-reverse{animation-direction:reverse;animation-duration:21s}
+.thinking-crescent{animation:thinking-bloom 5s ease-in-out infinite}
+.thinking-moon-fill{fill:url(#thinking-lunar-gold);stroke:var(--thinking-gold-light);stroke-width:.55}
+.thinking-crater{fill:var(--thinking-deep);opacity:.18}
+.thinking-zodiac{font:9px 'DejaVu Sans',serif;fill:currentColor;opacity:.8}
+.thinking-sigil{transform-origin:60px 60px;animation:thinking-sigil-drift 9s ease-in-out infinite}
+.thinking-thread{fill:none;stroke:var(--thinking-gold-light);stroke-width:1.1;stroke-linejoin:round;
+  stroke-dasharray:225;animation:thinking-sigil-trace 6s ease-in-out infinite;
+  filter:drop-shadow(0 0 2px var(--thinking-star))}
+.thinking-node{fill:var(--white);stroke:var(--accent);stroke-width:1}
+.thinking-core{fill:var(--thinking-gold-light);animation:thinking-bloom 4s ease-in-out infinite;
+  filter:drop-shadow(0 0 3px var(--thinking-star))}
+.thinking-liquid{fill:var(--thinking-magic);opacity:.82}
+.thinking-ripple{fill:none;stroke:var(--thinking-magic);stroke-width:.9;transform-origin:60px 56px;
+  animation:thinking-ripple 3s ease-in-out infinite}
+.thinking-ripple.second{animation-delay:-1.5s}
+.thinking-vapour{fill:none;stroke:var(--thinking-magic);stroke-width:1;stroke-linecap:round;
+  stroke-dasharray:32 46;opacity:.8;animation:thinking-vapour 5s linear infinite}
+.thinking-vapour.second{stroke:var(--accent);animation-delay:-2s}
+.thinking-ember{fill:var(--thinking-gold-light);animation:thinking-ember-rise 3.9s ease-in-out infinite}
+.thinking-ember.second{animation-delay:-1.7s}.thinking-ember.third{fill:var(--thinking-magic);animation-delay:-2.8s}
+.thinking-bowl{fill:url(#thinking-pot-metal);stroke:currentColor;stroke-width:1.3;stroke-linejoin:round}
+.thinking-pot-detail{fill:none;stroke:var(--thinking-gold-light);stroke-width:.7;opacity:.8}
+.thinking-handle{fill:none;stroke:currentColor;stroke-width:1.8}
+@keyframes thinking-label-fade{0%,100%{opacity:1}50%{opacity:var(--thinking-fade-low)}}
+@keyframes thinking-orbit{to{transform:rotate(360deg)}}
+@keyframes thinking-bloom{0%,100%{opacity:.78;filter:drop-shadow(0 0 1px var(--thinking-star))}
+  50%{opacity:1;filter:drop-shadow(0 0 4px var(--thinking-star))}}
+@keyframes thinking-stardust{0%,100%{opacity:.3}45%,65%{opacity:1}}
+@keyframes thinking-sigil-trace{0%{stroke-dashoffset:225;opacity:.25}45%,65%{stroke-dashoffset:0;opacity:1}
+  100%{stroke-dashoffset:-225;opacity:.25}}
+@keyframes thinking-sigil-drift{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}
+@keyframes thinking-ripple{0%,100%{transform:scaleX(.7);opacity:.3}50%{transform:scaleX(1.05);opacity:.85}}
+@keyframes thinking-vapour{to{stroke-dashoffset:-78}}
+@keyframes thinking-ember-rise{0%{transform:translateY(9px) scale(.75);opacity:0}25%{opacity:1}
+  75%{opacity:.8}100%{transform:translateY(-17px) scale(.4);opacity:0}}
+@media(max-width:700px){.thinking-wait{gap:14px;min-height:88px;font-size:13px}.thinking-art{width:80px;height:80px}}
+@media(prefers-reduced-motion:reduce){.thinking-wait,.thinking-wait *{animation:none!important;transition:none!important;filter:none!important;transform:none!important}
+  .thinking-thread{stroke-dashoffset:0}.thinking-label{opacity:1!important}}

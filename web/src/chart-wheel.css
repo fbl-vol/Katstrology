@@ -1,0 +1,16 @@
+/* The screen wheel follows Appearance without changing chart geometry or data.
+   Each SVG paint attribute has a light fallback for standalone, stylesheet-free export. */
+.natal-wheel {
+  --wheel-paper:var(--white);--wheel-frame:var(--line);--wheel-ring:var(--line);
+  --wheel-ink:var(--ink);--wheel-muted:var(--muted);--wheel-angle:var(--link);
+  --wheel-cusp:var(--line);--wheel-glyph:var(--ink);--wheel-leader:var(--muted);
+  --wheel-sky:#245b4e;--wheel-natal:#a16134;
+  --wheel-aspect-gold:#a87931;--wheel-aspect-warm:#ad684c;--wheel-aspect-cool:#487b72;
+}
+:root:is([data-theme="midnight-pine"],[data-theme="ink-copper"],[data-theme="blue-hour"],[data-theme="aubergine"],[data-theme="charcoal-gold"],[data-theme="black-cherry"],[data-theme="moonstone"],[data-theme="cocoa-rose"],[data-theme="midnight-orchid"]) .natal-wheel {
+  --wheel-sky:#9de0cc;--wheel-natal:#f3bb8e;
+  --wheel-aspect-gold:#f1ca82;--wheel-aspect-warm:#f0a38e;--wheel-aspect-cool:#96d5c5;
+}
+.wheel-export-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.natal-wheel-frame .wheel-export-actions button{margin:0;min-height:40px;white-space:normal}
+.natal-wheel-frame .wheel-export-note{color:var(--muted);font-size:11px;text-align:center;margin:8px 0 0}

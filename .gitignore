@@ -1,0 +1,71 @@
+# Private workspace material is local-only, not future public documentation.
+# These rules apply even when a file is placed in a subdirectory.
+[Pp][Ll][Aa][Nn].md
+session*.txt
+IMPLEMENTATION-CHECKPOINT.md
+IMPLEMENTATION-*-CHECKPOINT.md
+IMPLEMENTATION-TODO.md
+REVIEW*.md
+ASSESSMENT*.md
+
+# Private chart/document originals accidentally dropped in the checkout root.
+# Product assets belong in an explicitly reviewed source/assets directory.
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
+/*.pdf
+
+# Runtime data, evidence, exports, snapshots, models and local environment.
+/books/
+.local/
+/runtime/
+/data/
+/uploads/
+/attachments/
+/exports/
+/backups/
+/models/
+.venv*/
+.env
+.env.*
+!.env.example
+credentials.json
+chatgpt-auth.json
+chatgpt-host.json
+*.pem
+*.key
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.jsonl
+*.log
+
+# Developer/editor/browser artifacts, not application source.
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+.*.kate-swp
+*~
+.pytest_cache/
+.ruff_cache/
+.playwright-cli/
+.playwright/
+test-results/
+node_modules/
+dist/
+
+# Design explorations and their decision notes remain local working material.
+# Selected product UI assets can be added under the application's source tree.
+/mockups/
+
+# Ignore rules do not remove tracked files or clean historical commits.
+# See docs/PUBLICATION.md before creating any public history or pushing.
