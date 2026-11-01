@@ -52,6 +52,24 @@ class ReferenceLifecycleTests(DatabaseCase):
                          ['source_id'], source_id)
         self.assertEqual(refs.readable_passage(self.alice, source_id, 'seasons-distance-axis')
                          ['rights_basis'], 'open_license')
+
+        # An editorial locator correction changes edition identity, never the retained
+        # original or a previously archived citation. It is not a new astronomy claim.
+        revised = json.loads(manifest.read_text())
+        revised['source_id'] = source_id + '-location-v2'
+        revised['supersedes_source_id'] = source_id
+        revised['edition'] = revised['edition'] + ', location revision'
+        revised['passages'][0]['section'] = '4.2 The Seasons, distance/axis paragraph'
+        revised_path = Path(self.directory.name) / 'location-v2.json'
+        revised_path.write_text(json.dumps(revised))
+        revised_id = refs.import_text_file(self.alice, revised_path, original)['source_id']
+        refs.select(self.alice, revised_id)
+        self.assertEqual(refs.readable_passage(self.alice, revised_id, 'seasons-distance-axis')
+                         ['section'], '4.2 The Seasons, distance/axis paragraph')
+        self.assertEqual(refs.get_passage(self.alice, source_id, 'seasons-distance-axis')
+                         ['section'], '4.2 The Seasons, paragraph 2 (distance versus axial tilt)')
+        snapshot = Path(self.directory.name) / 'public-source-before-withdrawal.dump'
+        dump_owned(self.dsn, snapshot)
         altered = Path(self.directory.name) / 'changed.txt'
         altered.write_text(original.read_text().replace('23.5°', '25°'))
         with self.assertRaisesRegex(ValueError, 'different content'):
@@ -59,13 +77,36 @@ class ReferenceLifecycleTests(DatabaseCase):
         refs.revoke(self.alice, source_id)
         with self.assertRaises(PermissionError):
             refs.readable_passage(self.alice, source_id, 'seasons-distance-axis')
-        self.assertEqual(search_evidence(self.store, self.alice, 'seasons')['results'], [])
+        self.assertEqual({item['source_id'] for item in search_evidence(
+            self.store, self.alice, 'seasons')['results']}, {revised_id})
+        self.ledger.delete_reference(self.store, self.alice, revised_id)
         self.ledger.delete_reference(self.store, self.alice, source_id)
         self.assertEqual(self.store.db.execute('''
             SELECT count(*) AS n FROM reference_originals WHERE owner_id='alice'
         ''').fetchone()['n'], 0)
+        self._assert_public_source_deleted_after_restore(snapshot, source_id, revised_id)
         with self.assertRaises(ValueError):
             refs.import_text_file(self.alice, manifest, original)
+
+    def _assert_public_source_deleted_after_restore(self, snapshot, *source_ids):
+        database = 'kat_m2_restored_' + uuid4().hex[:12]
+        dsn = make_conninfo(self.admin_dsn, dbname=database)
+        with psycopg.connect(self.admin_dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database)))
+        restored = None
+        try:
+            restore_owned(dsn, snapshot)
+            restored = Store(dsn, Path(self.directory.name) / 'restored-public-files', self.ledger)
+            session = restored.authenticate('alice', 'synthetic-password-alice')
+            for source_id in source_ids:
+                with self.assertRaises(KeyError):
+                    References(restored).readable_passage(session, source_id, 'seasons-distance-axis')
+            self.assertEqual(search_evidence(restored, session, 'seasons')['results'], [])
+        finally:
+            if restored:
+                restored.close()
+            with psycopg.connect(self.admin_dsn, autocommit=True) as admin:
+                admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database)))
 
     def metadata(self, source_id, edition, **options):
         return dict(source_id=source_id, author='Synthetic author',
