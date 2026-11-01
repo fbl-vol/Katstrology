@@ -12,7 +12,7 @@ class PromptIdentityTests(unittest.TestCase):
         self.assertIs(SYSTEM, LOCAL)
         expected = {
             'local': '704636f680a118535bfa69aa4f1b52bdcfe629ceeb7466c744a897845f8e6444',
-            'hosted': 'ab4830ec472bbbb6ad222780bd65fa968529c0ab5b2725c585d9772dacadb176',
+            'hosted': '4239dfe3591551a4974ceac2c64c87b29ee64bdf33fc278cd473b8a39aeb1584',
         }
         for mode, text in (('local', LOCAL), ('hosted', HOSTED)):
             with self.subTest(mode=mode):
@@ -53,8 +53,9 @@ class PromptIdentityTests(unittest.TestCase):
                     self.assertIn('authorized historical media or supported alternate clients', text)
                     self.assertIn('declared, bounded read-only functions', text)
                     self.assertIn('a read count alone does not end the conversation', text)
-                    self.assertIn('read passage IDs and actual supporting text', text)
-                    self.assertIn('follow next_offset if needed', text)
+                    self.assertIn('Cite fetched passage IDs', text)
+                    self.assertIn('follow next_offset when needed', text)
+                    self.assertIn('Check claim support', text)
         with self.assertRaises(ValueError):
             identity('unknown')
 
