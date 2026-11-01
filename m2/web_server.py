@@ -282,12 +282,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('serve', 'enroll'), nargs='?', default='serve')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--state-directory', type=Path, default=ROOT / '.local',
+                        help='Absolute directory containing the existing owned fixture and browser-runtime')
+    parser.add_argument('--served-dist', type=Path, default=ROOT / 'web/dist',
+                        help='Absolute path to the verified static build')
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('Port must be 1..65535')
-    files = ROOT / '.local/browser-runtime/files'
-    ledger = ROOT / '.local/browser-runtime/deletions.jsonl'
-    dsn = fixture_dsn()  # only the currently owned local PostgreSQL fixture
+    if not args.state_directory.is_absolute() or not args.served_dist.is_absolute():
+        parser.error('State directory and served dist must be absolute paths')
+    state = args.state_directory
+    files = state / 'browser-runtime/files'
+    ledger = state / 'browser-runtime/deletions.jsonl'
+    dsn = fixture_dsn(state)  # only the explicitly selected owned local fixture
     if args.action == 'enroll':
         username = input('Synthetic local username: ')
         password = getpass.getpass('Synthetic local password (12+ characters): ')
@@ -298,7 +305,7 @@ def main():
     if os.environ.get('KAT_ENABLE_SIWC') == '1':
         from m2.siwc import ProviderBridge
         siwc_factory = ProviderBridge
-    app = create_app(dsn, files, ledger, ROOT / 'web/dist', port=args.port,
+    app = create_app(dsn, files, ledger, args.served_dist, port=args.port,
                      siwc_factory=siwc_factory)
     uvicorn.run(app, host='127.0.0.1', port=args.port, access_log=False, log_level='warning')
 
