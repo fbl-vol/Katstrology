@@ -29,7 +29,8 @@ async def send(request):
     payload = await json_body(request)
     required = {'id', 'text', 'selected_people', 'parent', 'revision_kind', 'replaces_turn_id'}
     legacy = {'mode', 'model_slug', 'chart_file', 'reporting_zone'}
-    if set(payload) - (required | legacy) or required - set(payload):
+    optional = {'selected_result'}
+    if set(payload) - (required | legacy | optional) or required - set(payload):
         raise ValueError('Invalid chat request')
     runtime = request.app.state.runtime
     try:
@@ -43,7 +44,9 @@ async def send(request):
         original = archived['selected_people']
         new_shape = not set(payload) & legacy
         if new_shape:
-            if (set(payload) != required or not isinstance(payload['selected_people'], list)
+            if (set(payload) - optional != required or
+                    payload.get('selected_result') != archived['events'][0]['payload'].get('selected_result') or
+                    not isinstance(payload['selected_people'], list)
                     or sorted(item['person_id'] for item in payload['selected_people']
                               if isinstance(item, dict) and set(item) == {'person_id'}) !=
                     [item['person_id'] for item in original]
@@ -59,11 +62,12 @@ async def send(request):
             chart_file=payload.get('chart_file'),
             reporting_zone=(REPORTING_ZONE if new_shape else payload.get('reporting_zone')),
             archived_selection=([{'person_id': item['person_id'], 'chart_id': item['chart_id']}
-                                 for item in original] if new_shape else None))
+                                 for item in original] if new_shape else None),
+            selected_result=payload.get('selected_result'))
         return json_response(result, 202)
 
     # A new browser turn has no client-controlled provider, model, zone or file.
-    if (set(payload) != required or not isinstance(payload['selected_people'], list)
+    if (set(payload) - optional != required or not isinstance(payload['selected_people'], list)
             or any(not isinstance(item, dict) or set(item) != {'person_id'}
                    for item in payload['selected_people'])):
         raise ValueError('New chat accepts person IDs, not chart versions or files')
@@ -84,7 +88,8 @@ async def send(request):
             payload['selected_people'], parent_id=payload['parent'],
             revision_kind=payload['revision_kind'], replaces_turn_id=payload['replaces_turn_id'],
             mode='chatgpt', model_slug=MODEL, reporting_zone=REPORTING_ZONE,
-            resolve_active=True, admission=admission)
+            resolve_active=True, admission=admission,
+            selected_result=payload.get('selected_result'))
     except ProviderFailure:
         return json_response({'error': 'selected_account_changed'}, 409)
     return json_response(result, 202)

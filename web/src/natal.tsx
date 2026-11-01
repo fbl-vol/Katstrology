@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { bodyGlyph, bodyLabel, ChartNotation, chartNotation, EmbeddedGlyphFonts } from './chart-symbols';
+import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import './chart-wheel.css';
 import { WheelExportActions } from './chart-export';
 
@@ -54,7 +54,6 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
   return <div className={`natal-wheel-frame${compact ? ' compact-natal-wheel' : ''}`}>
     <div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel" xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 480 480" role="img" aria-labelledby={`wheel-title-${chart.id} wheel-desc-${chart.id}`}>
-      <EmbeddedGlyphFonts />
       <title id={`wheel-title-${chart.id}`}>Tropical {label.toLowerCase()} wheel{compact ? ' for the next message' : ''}</title>
       <desc id={`wheel-desc-${chart.id}`}>Calculated {natal.houses.system} cusps, planets, nodes, ascendant, midheaven and displayed aspects. {natal.positions.some(body => body.id === 'chiron') ? 'Opted-in Chiron included. ' : ''}Wheel labels: {chartNotation}. Sign labels use their first three letters. Numbered rays are house cusps. The following tables list degrees, cusps and aspect names/orbs.</desc>
       <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />

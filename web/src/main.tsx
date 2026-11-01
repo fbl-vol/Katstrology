@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, type Workspace } from './api';
-import { useArchiveChat } from './archive';
+import { useArchiveChat, type SelectedResult } from './archive';
 import { LocalPendingMessage } from './local-pending';
 import { ConversationBrowseList, ScopeChips, ScopePicker, type Conversation, type Selection } from './conversation';
 import { ContextChart } from './context-chart';
@@ -62,6 +62,7 @@ function App() {
   const [nextConversationOffset, setNextConversationOffset] = useState<number | null>(null);
   const [listStatus, setListStatus] = useState('');
   const [message, setMessage] = useState('');
+  const [discuss, setDiscuss] = useState<{ selected: SelectedResult; label: string } | null>(null);
   const chatComposer = useGrowingComposer(message);
   const [editing, setEditing] = useState<Edit | null>(null);
   const pendingConversationId = useRef('');
@@ -236,7 +237,7 @@ function App() {
       returnToPlanetary.current = null; planetaryDraft.current = null;
       archive.reset(); invalidateSubmission(); setSettingsOpen(false); setWorkspace(null); setPeople([]); setPerson(null); setConversation(null); setSkyOpen(false); setChartHub(null);
       setSelection([]);
-      setMessage(''); setEditing(null); closeDrawer();
+      setMessage(''); setDiscuss(null); setEditing(null); closeDrawer();
     } catch { setNotice('Sign-out did not complete. Try again.'); }
   }
 
@@ -250,7 +251,7 @@ function App() {
     navigationVersion.current++; archive.reset(); invalidateSubmission();
     setSettingsOpen(false); setSkyOpen(false); setSkyFromHub(false); setChartHub(null);
     setProfileFromHub(false); setProfileChartFocus(false); setProfileChildFocus(false);
-    setPerson(null); setConversation(null); setFilterPersonId(null);
+    setPerson(null); setConversation(null); setDiscuss(null); setFilterPersonId(null);
     pendingConversationId.current = '';
     setSearched(''); setSearchQuery('');
     if (!filterPersonId) void loadThreads(0, '');
@@ -262,7 +263,7 @@ function App() {
   function newChat(personIds?: string | string[]) {
     setSettingsOpen(false); setSkyOpen(false); setChartHub(null); setProfileChartFocus(false); navigationVersion.current++; archive.reset(); invalidateSubmission(); setPerson(null); setConversation(null);
     setSelection((personIds ? (Array.isArray(personIds) ? personIds : [personIds]) : []).map(person_id => ({ person_id })));
-    setMessage(''); setEditing(null); pendingConversationId.current = '';
+    setMessage(''); setDiscuss(null); setEditing(null); pendingConversationId.current = '';
     closeDrawer();
   }
 
@@ -282,7 +283,7 @@ function App() {
         selected = active.selected_people.map(item => ({ person_id: item.person_id }));
       }
       if (version !== navigationVersion.current) return;
-      setConversation(thread); setSelection(selected);
+      setConversation(thread); setSelection(selected); setDiscuss(null);
       setEditing(null);
       setPerson(null); closeDrawer();
     } catch { if (version === navigationVersion.current) setNotice('Conversation could not be opened. Your current draft remains here.'); }
@@ -328,6 +329,18 @@ function App() {
     } });
   }
 
+  function discussSavedResult(personId: string, selected: SelectedResult, label: string) {
+    if (archive.hasPending) {
+      setNotice('Finish or retry the current message before choosing another result.'); return;
+    }
+    navigationVersion.current++; archive.reset(); invalidateSubmission();
+    setSettingsOpen(false); setChartHub(null); setSkyOpen(false);
+    setPerson(null); setConversation(null); setSelection([{ person_id: personId }]);
+    setDiscuss({ selected, label }); setEditing(null); pendingConversationId.current = '';
+    closeDrawer();
+    requestAnimationFrame(() => messageInput.current?.focus());
+  }
+
   async function startConversation(selected: Selection[]): Promise<Conversation | null> {
     if (!workspace) return null;
     const version = ++navigationVersion.current;
@@ -359,8 +372,10 @@ function App() {
     const selected = (revision?.selected || selection).map(item => ({ ...item }));
     const queued = archive.queue(conversation?.id || pendingConversationId.current, submittedMessage,
       selected, revision?.parent || editing?.parent || '@active',
-      revision?.kind || editing?.kind || 'normal', revision?.replaces || editing?.replaces || null);
+      revision?.kind || editing?.kind || 'normal', revision?.replaces || editing?.replaces || null,
+      revision || editing ? undefined : discuss?.selected);
     if (!queued) { submissionInFlight.current = false; setPreparingSend(false); return false; }
+    setDiscuss(null); // The immutable pending payload retains the selection on retry.
     if (clearComposer) {
       setMessage(current => current === submittedMessage ? '' : current);
       setEditing(null);
@@ -573,6 +588,7 @@ function App() {
       {(chartHub === 'solar_return' || chartHub === 'lunar_return') &&
         <AdvancedView key={chartHub} workspace={workspace} people={people} technique={chartHub}
           initialDraft={advancedDraft.current || undefined}
+          onDiscuss={discussSavedResult}
           onClose={() => { advancedDraft.current = null; setChartHub('hub'); }}
           onCreateNatal={(id, draft) => {
             returnToAdvanced.current = { choice: chartHub, draft }; openHubPerson(id);
@@ -614,6 +630,7 @@ function App() {
         onClose={() => { setSkyOpen(false); if (skyFromHub) setChartHub('hub'); setSkyFromHub(false); }} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
       {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople}
+        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'basic'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
         onReturn={profileFromHub ? () => {
@@ -653,7 +670,10 @@ function App() {
           <div className="welcome"><div className="eyebrow">THE READING ROOM</div><h1>What’s on your mind?</h1><p>A chart, a question, or a thought to follow.</p></div>}
         <ContextChart selection={selection} people={people} turns={archive.turns} activeHead={conversation?.active_head || null} onOpenChart={openContextChart} />
         </div>
-        <div className="composer-wrap" ref={chatComposer.dock}><form className="composer" onSubmit={sendMessage}>
+        <div className="composer-wrap" ref={chatComposer.dock}>{discuss && <p className="compose-context" role="status">
+          Discuss {discuss.label} · saved result, not recalculated. Your draft is unchanged.
+          <button type="button" onClick={() => setDiscuss(null)}>Remove result</button></p>}
+          <form className="composer" onSubmit={sendMessage}>
           <ScopeChips selection={selection} people={people}
             remove={id => setSelection(selection.filter(item => item.person_id !== id))}
             open={() => setScopePicker(true)} />

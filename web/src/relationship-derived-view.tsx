@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, type Workspace } from './api';
 import { useManualChartIntent } from './manual-chart-intent';
-import { bodyGlyph, bodyLabel, ChartNotation, EmbeddedGlyphFonts } from './chart-symbols';
+import { bodyGlyph, bodyLabel, ChartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
 import { point, ReturnWheel, signs, zodiac, type Chart, type NatalResult } from './natal';
 import type { Person } from './people';
@@ -37,7 +37,6 @@ function CompositeWheel({ result }: { result: Derived }) {
   });
   return <div className="natal-wheel-frame"><div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel"
     xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" role="img" aria-labelledby="composite-title composite-desc">
-    <EmbeddedGlyphFonts />
     <title id="composite-title">Shortest-circle symbolic composite of two saved natal charts</title>
     <desc id="composite-desc">Each planet is the shortest circular midpoint of two natal longitudes. An exactly opposite pair has no unique midpoint and is omitted from the wheel. There are no houses, axes or physical event instant; the table lists source degrees.</desc>
     <rect width="480" height="480" rx="20" fill="var(--wheel-paper, #fffef9)" />

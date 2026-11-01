@@ -1,4 +1,5 @@
 import { useState, type RefObject } from 'react';
+import { embeddedGlyphFontsStyle } from './chart-symbols';
 
 const paletteNames = ['paper', 'frame', 'ring', 'ink', 'muted', 'angle', 'cusp', 'glyph', 'leader',
   'sky', 'natal', 'aspect-gold', 'aspect-warm', 'aspect-cool'] as const;
@@ -13,6 +14,9 @@ const svgNamespace = 'http://www.w3.org/2000/svg';
 function wheelMarkup(svg: SVGSVGElement, mode: 'existing' | 'screen' | 'print', provenance: object) {
   const copy = svg.cloneNode(true) as SVGSVGElement;
   copy.setAttribute('xmlns', svgNamespace);
+  const fontStyles = document.createElementNS(svgNamespace, 'style');
+  fontStyles.textContent = embeddedGlyphFontsStyle;
+  copy.insertBefore(fontStyles, copy.firstChild);
   if (mode !== 'existing') {
     const computed = getComputedStyle(svg);
     for (const name of paletteNames) {

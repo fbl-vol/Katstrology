@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { bodyGlyph, ChartNotation, EmbeddedGlyphFonts } from './chart-symbols';
+import { bodyGlyph, ChartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
 import { point, signs } from './natal';
 
@@ -25,7 +25,6 @@ export function SymbolicComparisonWheel({ positions, natalPositions, label, desc
   const ref = useRef<SVGSVGElement>(null);
   return <div className="natal-wheel-frame"><div className="natal-wheel-scroll"><svg ref={ref} className="natal-wheel"
     viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="symbolic-wheel-title symbolic-wheel-desc">
-    <EmbeddedGlyphFonts />
     <title id="symbolic-wheel-title">{label} compared with saved natal</title>
     <desc id="symbolic-wheel-desc">{description} Outer teal marks {frame === 'actual' ? 'actual Sun and Moon positions at the selected UTC instant' : 'symbolic directed positions'}. Inner amber marks saved natal positions. {frame === 'actual' ? 'This is a real-sky snapshot without a local visibility calculation.' : 'These are not a simultaneous sky.'} Tables give longitudes and aspects.</desc>
     <rect width="480" height="480" rx="20" fill="var(--wheel-paper, #fffef9)" />

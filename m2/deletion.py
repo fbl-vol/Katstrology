@@ -106,7 +106,9 @@ class Tombstones:
                 record = json.loads(line)
                 single = ({'owner', 'conversation'}, {'owner', 'conversation', 'attachment'},
                           {'owner', 'person'}, {'owner', 'person', 'person_attachment'},
-                          {'owner', 'reference'}, {'owner', 'reference_revoked'})
+                          {'owner', 'reference'}, {'owner', 'reference_revoked'},
+                          {'owner', 'person', 'watch_item'},
+                          {'owner', 'person', 'journal_entry'})
                 if not isinstance(record, dict) or (set(record) not in single and
                     (set(record) != {'owner', 'conversations'} or
                      not isinstance(record['conversations'], list) or
@@ -136,6 +138,10 @@ class Tombstones:
                    and record.get('person_attachment') == attachment_id
                    for record in self._records())
 
+    def contains_person_record(self, owner, person_id, record_id, kind):
+        return any(record['owner'] == owner and record.get('person') == person_id
+                   and record.get(kind) == record_id for record in self._records())
+
     def contains_reference(self, owner, source_id):
         return any(record['owner'] == owner and record.get('reference') == source_id
                    for record in self._records())
@@ -149,6 +155,14 @@ class Tombstones:
                     ids = [store._id(item) for item in record['conversations']]
                     store.db.execute('DELETE FROM conversations WHERE owner_id=%s AND id=ANY(%s)',
                                      (owner, ids))
+                elif 'watch_item' in record:
+                    store.db.execute('''
+                        DELETE FROM watch_items WHERE owner_id=%s AND person_id=%s AND id=%s
+                    ''', (owner, store._id(record['person']), store._id(record['watch_item'])))
+                elif 'journal_entry' in record:
+                    store.db.execute('''
+                        DELETE FROM journal_entries WHERE owner_id=%s AND person_id=%s AND id=%s
+                    ''', (owner, store._id(record['person']), store._id(record['journal_entry'])))
                 elif 'person_attachment' in record:
                     store.db.execute('''
                         DELETE FROM person_attachments
@@ -239,6 +253,21 @@ class Tombstones:
             raise ValueError('Delete conversations containing this person selection or evidence first')
         store._blocked = True
         self._append({'owner': owner, 'person': person_id})
+        self.reconcile(store)
+
+    def delete_person_record(self, store, session, person_id, record_id, kind):
+        """Retain an independent deletion authority across older DB snapshots."""
+        if kind not in ('watch_item', 'journal_entry'):
+            raise ValueError('Unsupported person record')
+        owner = store.owner(session)
+        store._id(person_id); store._id(record_id)
+        table = 'watch_items' if kind == 'watch_item' else 'journal_entries'
+        if not store.db.execute(f'''
+            SELECT 1 FROM {table} WHERE owner_id=%s AND person_id=%s AND id=%s
+        ''', (owner, person_id, record_id)).fetchone():
+            raise KeyError('Person record not found')
+        store._blocked = True
+        self._append({'owner': owner, 'person': person_id, kind: record_id})
         self.reconcile(store)
 
     def delete_person_attachment(self, store, session, person_id, attachment_id):

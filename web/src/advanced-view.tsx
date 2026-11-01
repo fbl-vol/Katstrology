@@ -4,6 +4,7 @@ import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-c
 import type { Person } from './people';
 import { ReturnWheel, type NatalResult, type Chart } from './natal';
 import { birthReference, ReturnReferencePlace, type ReferenceChoice } from './return-reference-place';
+import type { SelectedResult } from './archive';
 
 type Technique = 'solar_return' | 'lunar_return';
 export type AdvancedDraft = { personId: string; year: string; start: string; end: string;
@@ -22,9 +23,10 @@ type ReturnHistory = { id: string; first_utc: string | null;
   reference_place?: ReturnResult['reference_place'];
   reference_place_source?: ReturnResult['reference_place_source'] };
 
-export function AdvancedView({ workspace, people, technique, onClose, onCreateNatal, initialDraft }: {
+export function AdvancedView({ workspace, people, technique, onClose, onCreateNatal, onDiscuss, initialDraft }: {
   workspace: Workspace; people: Person[]; technique: Technique; onClose: () => void;
-  onCreateNatal: (personId: string, draft: AdvancedDraft) => void; initialDraft?: AdvancedDraft;
+  onCreateNatal: (personId: string, draft: AdvancedDraft) => void; onDiscuss?: (personId: string, result: SelectedResult, label: string) => void;
+  initialDraft?: AdvancedDraft;
 }) {
   const label = technique === 'solar_return' ? 'Solar return' : 'Lunar returns';
   const [personId, setPersonId] = useState('');
@@ -238,6 +240,9 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
           result.reference_place_source?.kind === 'saved_birthplace_coordinates' ? 'Saved birthplace coordinates' :
           'Reference coordinates'}: {result.reference_place?.latitude}°, {result.reference_place?.longitude}°.
           {entry.chart.houses.status !== 'supported' && ' Houses and angles are unavailable at this place.'}</p>
+        {result.id && result.person_id && onDiscuss && <button type="button" onClick={() => onDiscuss(result.person_id!,
+          { result_id: result.id!, event_index: index },
+          `${label} · ${moment(entry.instant_utc)} UTC`)}>Discuss this crossing</button>}
         {result.source_birth && result.source_settings && result.id && result.person_id && result.source_birth_id &&
           result.method_version && result.engine_version && result.profile_id && result.profile_revision &&
           <ReturnWheel natal={entry.chart} resultId={`${result.id}-${index}`} personId={result.person_id}

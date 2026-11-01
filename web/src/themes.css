@@ -171,8 +171,8 @@ input,select,textarea{color:var(--ink)}
 .person-page button.primary{color:var(--on-accent)}
 
 /* Palette previews do not alter the selected document theme. */
-@font-face{font-family:KatAstro;src:url('./assets/kat-astro-forms.woff') format('woff');font-display:swap}
-@font-face{font-family:KatAstroSun;src:url('./assets/kat-astro-sun.woff') format('woff');font-display:swap}
+@font-face{font-family:KatAstro;src:url('./assets/kat-astro-forms.woff?no-inline') format('woff');font-display:swap}
+@font-face{font-family:KatAstroSun;src:url('./assets/kat-astro-sun.woff?no-inline') format('woff');font-display:swap}
 .astro-glyph{font-family:KatAstro,sans-serif;font-size:1.3em;line-height:1}
 .astro-glyph.astro-sun{font-family:KatAstroSun,sans-serif}
 .chart-notation table{width:100%;max-width:300px;border-collapse:collapse;margin:8px 0}

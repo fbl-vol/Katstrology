@@ -371,6 +371,16 @@ that earlier saved snapshot has not been rerun through this final migration.
 These local rules do not solve real-data backup retention, source redistribution rights, database RLS,
 file-level cross-owner deduplication or external-client ingestion.
 
+## Saved timing and private person records (local-only)
+
+Person timing pages **saved** advanced results by immutable source chart and the selected UTC interval. Each row carries its technique, method version, source status and original result ID; the opened result uses the exact owner-scoped saved original. A dated point is not a prediction, a gap is not a no-event finding, and this is not an exhaustive ephemeris scan. The Now header describes the source's saved interval, never an inferred personal state. Source status and stale-source labels remain visible. Saved/manual calculation pages are the sources; no model request is made to load them.
+
+A person may explicitly choose one saved crossing for **Discuss this result**. The retry identity includes that exact result, event index, UTC instant and person; the server verifies the source on acknowledgement and stores it with the user turn, then attaches bounded source/version/crossing evidence. A source invalidated before acknowledgement fails closed. Unselected browsing is not a discussion and neither browsing nor creating a watchlist sends a model request.
+
+Watchlist reminders are owner-scoped, opt-in, local in-app date/time entries; there is no background scheduler, push, email or automatic chat. UTC, local wall time, timezone and DST occurrence are explicitly stored; same-ID writes/retries are idempotent. Private journal entries are owner-scoped local records, **not** semantic recall, provider context, model tools or conversation attachments. They link a saved result only for private navigation and remain private when discussing a result. Person/conversation deletion replay removes these projections when an older backup is restored with the independent newer deletion journal; exported old snapshots remain separate copies. No migration or service activation is implied by these local source changes.
+
+Animation was not added: on the owned Swiss fixture, 31 directly calculated daily sky snapshots × 10 bodies took 0.005 s, but interpolating two month endpoints missed Mercury's retrograde midpoint by 9.479°. A future motion UI would need individually calculated, dated frames and frame-by-frame qualifications; a smooth endpoint tween would misrepresent the sky.
+
 ## Boundaries and evidence
 
 - PostgreSQL schema migrations `001`–`008` are transactional/versioned, from

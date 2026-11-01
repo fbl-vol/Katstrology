@@ -29,11 +29,10 @@ export const chartNotation = bodies.filter(([id]) => id !== 'chiron')
   .map(([, glyph, label]) => `${glyph} ${label}`).join(' · ') +
   ' · Asc Ascendant · MC Midheaven';
 
-// SVG exports contain their own subset fonts. No installed font, stylesheet, or network fetch is needed.
-export function EmbeddedGlyphFonts() {
-  return <style>{`@font-face{font-family:KatAstro;src:url("${formsFont}") format("woff");}
-    @font-face{font-family:KatAstroSun;src:url("${sunFont}") format("woff");}`}</style>;
-}
+// Insert only in a detached standalone export, never in the page DOM under CSP.
+// Its URLs are literal bundled subset WOFF bytes; export has no remote dependency.
+export const embeddedGlyphFontsStyle = `@font-face{font-family:KatAstro;src:url("${formsFont}") format("woff");}
+@font-face{font-family:KatAstroSun;src:url("${sunFont}") format("woff");}`;
 
 export function Glyph({ id }: { id: string }) {
   const mark = byId.get(id);

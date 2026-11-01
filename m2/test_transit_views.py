@@ -1,14 +1,35 @@
 """Independent anchor and isolated owner-scoped sky/natal view regressions."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from time import perf_counter
 
 from m2.people import People
 from m2.revisions import correct
 from m2.test_support import DatabaseCase
 from m2.transit_views import reporting_instant, view
+from m2.transits import _position_at
 
 
 class TransitViewTests(DatabaseCase):
+    def test_month_animation_requires_recalculation_not_endpoint_interpolation(self):
+        # Mercury's April 2024 retrograde loop makes endpoint tweening factually wrong.
+        start = datetime(2024, 3, 20, tzinfo=timezone.utc)
+        end = start + timedelta(days=30)
+        beginning = _position_at('mercury', start)[0]
+        finish = _position_at('mercury', end)[0]
+        middle = _position_at('mercury', start + timedelta(days=15))[0]
+        linear_middle = beginning + ((finish - beginning + 180) % 360 - 180) / 2
+        error = abs((middle - linear_middle + 180) % 360 - 180)
+        self.assertGreater(error, 1.0)
+        began = perf_counter()
+        for day in range(31):
+            instant = start + timedelta(days=day)
+            for body in ('sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn',
+                         'uranus', 'neptune', 'pluto'):
+                _position_at(body, instant)
+        print(f'month sampled sky: 31 dates x 10 bodies, {perf_counter() - began:.3f}s; '
+              f'endpoint interpolation Mercury error {error:.3f} degrees')
+
     def test_wall_clock_zone_dst_gap_overlap_and_utc_instant(self):
         instant, report = reporting_instant('2024-03-20', '04:06', 'Europe/Paris')
         self.assertEqual(instant, datetime(2024, 3, 20, 3, 6, tzinfo=timezone.utc))

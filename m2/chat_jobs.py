@@ -68,12 +68,12 @@ class ChatJobs:
                      parent_id='@active', revision_kind='normal', replaces_turn_id=None,
                      mode='local', model_slug=None, chart_file=None,
                      reporting_zone=None, resolve_active=False, archived_selection=None,
-                     admission=None):
+                     admission=None, selected_result=None):
         owner = session.owner_id
         key = owner, conv_id, turn_id
         fingerprint = json.dumps([request, selected_people, parent_id, revision_kind,
                                   replaces_turn_id, mode, model_slug, chart_file,
-                                  reporting_zone], sort_keys=True)
+                                  reporting_zone, selected_result], sort_keys=True)
         job = self.jobs.get(key)
         if job:
             if job.fingerprint != fingerprint:
@@ -84,12 +84,12 @@ class ChatJobs:
         asyncio.create_task(self._run(job, session, request, selected_people, parent_id,
                                       revision_kind, replaces_turn_id, mode, model_slug,
                                       chart_file, reporting_zone, resolve_active, archived_selection,
-                                      admission))
+                                      admission, selected_result))
         return await job.ack
 
     async def _run(self, job, session, request, selected_people, parent_id,
                    revision_kind, replaces_turn_id, mode, model_slug, chart_file,
-                   reporting_zone, resolve_active, archived_selection, admission):
+                   reporting_zone, resolve_active, archived_selection, admission, selected_result):
         loop = asyncio.get_running_loop()
         store = self.runtime.store
         acknowledged = False
@@ -129,7 +129,7 @@ class ChatJobs:
                               model_slug=model_slug, chart_file=chart_file, clock=self.runtime.clock,
                               reporting_zone=reporting_zone,
                               interpret_commands=not (resolve_active or archived_selection is not None),
-                              defer_provider=True)
+                              defer_provider=True, selected_result=selected_result)
 
         def archive_failure(failure):
             if acknowledged:

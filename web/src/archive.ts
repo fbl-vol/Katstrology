@@ -4,8 +4,10 @@ import type { Selection } from './conversation';
 import type { ArchiveEvent, Turn } from './turns';
 
 type TurnPage = { turns: Turn[]; next_offset: number | null };
+export type SelectedResult = { result_id: string; event_index: number | null };
 type Send = { id: string; text: string; selected_people: Selection[]; parent: string;
-  revision_kind: 'normal' | 'edit' | 'regenerate'; replaces_turn_id: string | null };
+  revision_kind: 'normal' | 'edit' | 'regenerate'; replaces_turn_id: string | null;
+  selected_result?: SelectedResult };
 type Pending = { conversationId: string; payload: Send;
   failure?: { message: string; reconnect: boolean } };
 
@@ -194,10 +196,12 @@ export function useArchiveChat(workspace: Workspace | null,
   }
 
   function queue(conversationId: string, text: string, selected: Selection[],
-    parent = '@active', revisionKind: Send['revision_kind'] = 'normal', replaces: string | null = null) {
+    parent = '@active', revisionKind: Send['revision_kind'] = 'normal', replaces: string | null = null,
+    selectedResult?: SelectedResult) {
     if (!workspace || pending.current) return false;
     const payload: Send = { id: `turn-${crypto.randomUUID()}`, text, selected_people: selected,
-      parent, revision_kind: revisionKind, replaces_turn_id: replaces };
+      parent, revision_kind: revisionKind, replaces_turn_id: replaces,
+      ...(selectedResult ? { selected_result: selectedResult } : {}) };
     const item = { conversationId, payload };
     pending.current = item; setLocalPending(item); setHasPending(true);
     return true;

@@ -155,7 +155,7 @@ class Store:
     def begin(self, session, conv_id, turn_id, prompt, parent_id=None,
               source='gateway', attachment_ids=(), revision_kind='normal', replaces_turn_id=None,
               selected_people=(), model_provider='local', model_slug=None, chart_file=None,
-              clock=None, reporting_zone=None):
+              clock=None, reporting_zone=None, selected_result=None):
         owner = self.owner(session)
         zone, _ = checked_reporting_zone(reporting_zone)
         self._id(turn_id)
@@ -190,6 +190,14 @@ class Store:
         if len({person_id for person_id, _ in selection}) != len(selection):
             raise ValueError('Duplicate person in turn selection')
         selection.sort()
+        if selected_result is not None:
+            if (not isinstance(selected_result, dict) or set(selected_result) !=
+                    {'result_id', 'event_index'} or
+                    (selected_result['event_index'] is not None and
+                     (type(selected_result['event_index']) is not int or
+                      not 0 <= selected_result['event_index'] < 1000))):
+                raise ValueError('Choose one saved result and optional crossing')
+            self._id(selected_result['result_id'])
         if chart_file is not None:
             if (not isinstance(chart_file, dict) or set(chart_file) !=
                     {'person_id', 'attachment_id', 'consent'} or chart_file['consent'] is not True):
@@ -214,7 +222,8 @@ class Store:
                            COALESCE(payload->>'model_provider', 'local') AS model_provider,
                            payload->>'model_slug' AS model_slug,
                            payload->'chart_file' AS chart_file,
-                           payload->'clock_anchor' AS clock_anchor FROM events
+                           payload->'clock_anchor' AS clock_anchor,
+                           payload->'selected_result' AS selected_result FROM events
                     WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND sequence=0
                 ''', (owner, conv_id, turn_id)).fetchone()
                 expected = {'prompt': prompt, 'parent_id': parent_id, 'source': source,
@@ -227,6 +236,7 @@ class Store:
                 if (existing != expected or old['attachments'] != attachment_ids or
                         old['model_provider'] != model_provider or old['model_slug'] != model_slug or
                         old['chart_file'] != chart_file or
+                        old['selected_result'] != selected_result or
                         (old['clock_anchor'] is not None and
                          old['clock_anchor']['reporting']['zone'] != zone.key) or
                         [(row['person_id'], row['chart_id']) for row in recorded] != selection or
@@ -260,6 +270,33 @@ class Store:
                     raise ValueError('Replacement must target a complete sibling revision')
                 if revision_kind == 'regenerate' and replaced['prompt'] != prompt:
                     raise ValueError('Regeneration must reuse its source user input')
+            selected_row = None
+            if selected_result:
+                selected_row = self.db.execute('''
+                    SELECT r.chart_a_id,r.chart_b_id,r.result,c.person_id AS person_a,
+                           cb.person_id AS person_b
+                    FROM advanced_results r
+                    JOIN charts c ON c.owner_id=r.owner_id AND c.id=r.chart_a_id
+                    LEFT JOIN charts cb ON cb.owner_id=r.owner_id AND cb.id=r.chart_b_id
+                    WHERE r.owner_id=%s AND r.id=%s
+                ''', (owner, selected_result['result_id'])).fetchone()
+                if not selected_row or not {selected_row['person_a'], selected_row['person_b']} - {None} <= {
+                        person_id for person_id, _ in selection}:
+                    raise KeyError('Selected result not found for these people')
+                index = selected_result['event_index']
+                if index is not None and index >= len(selected_row['result'].get('events', [])):
+                    raise ValueError('Selected crossing is not in the saved result')
+                from m2.charts import Charts
+                from m2.people import People
+                chart_owner = People(self)
+                sources = [(chart_id, person_id) for chart_id, person_id in (
+                    (selected_row['chart_a_id'], selected_row['person_a']),
+                    (selected_row['chart_b_id'], selected_row['person_b'])) if chart_id]
+                if any(Charts(self).get_chart(session, chart_id)['source_status'] != 'current'
+                       for chart_id, _ in sources):
+                    raise ValueError('Selected saved result has an invalidated source')
+                source_status = ('current' if all(chart_owner.active_chart_id(session, person_id) == chart_id
+                                                   for chart_id, person_id in sources) else 'historical')
             clock_anchor = snapshot(clock, reporting_zone) if clock is not None else None
             self.db.execute('''
                 INSERT INTO turns(owner_id, conversation_id, id, parent_id, prompt, source, status,
@@ -275,9 +312,19 @@ class Store:
                                                    'model_provider': model_provider,
                                                    'model_slug': model_slug,
                                                    'chart_file': chart_file,
+                                                   'selected_result': selected_result,
                                                    'clock_anchor': clock_anchor,
                                                    'revision_kind': revision_kind,
                                                    'replaces_turn_id': replaces_turn_id})))
+            if selected_row:
+                self.db.execute('''
+                    INSERT INTO turn_selected_results(owner_id,conversation_id,turn_id,result_id,
+                                                      event_index,chart_a_id,chart_b_id,
+                                                      source_status_at_ack)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ''', (owner, conv_id, turn_id, selected_result['result_id'],
+                      selected_result['event_index'], selected_row['chart_a_id'],
+                      selected_row['chart_b_id'], source_status))
             for person_id, chart_id in selection:
                 person = self.db.execute('''
                     SELECT 1 FROM people WHERE owner_id=%s AND id=%s

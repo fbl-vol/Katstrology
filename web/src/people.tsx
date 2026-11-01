@@ -4,6 +4,9 @@ import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from './natal';
 import { InsightNotebook } from './insights';
 import { PersonTiming } from './person-timing';
+import { PersonRecords } from './person-records';
+import { AstrologyHelp } from './astrology-help';
+import type { SelectedResult } from './archive';
 
 export type Draft = { birth_date: string; birth_time: string; birthplace: string; time_unknown: boolean };
 export type Person = {
@@ -61,15 +64,18 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 }
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
-  initialEditorOpen = false, initialTab = 'basic', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace' }: {
+  initialEditorOpen = false, initialTab = 'basic', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
+  discussSavedResult }: {
   workspace: Workspace; person: Person; refresh: () => Promise<void>;
   startConversation: () => void; openConversation: (id: string) => void;
+  discussSavedResult: (result: SelectedResult, label: string) => void;
   onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'basic' | 'charts'; editorRequest?: number;
   childFocus?: boolean; onReturn?: () => void; returnLabel?: string;
 }) {
   const tabsId = useId();
   const [tab, setTab] = useState<'basic' | 'charts' | 'insights'>(initialEditorOpen ? 'charts' : initialTab);
   const [editorOpen, setEditorOpen] = useState(initialEditorOpen);
+  const [watchVersion, setWatchVersion] = useState(0);
   const [generated, setGenerated] = useState<{ result: Generation; draft: Draft } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -150,8 +156,12 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         <div><dt>Birthplace</dt><dd>{latestDraft.birthplace || 'Not supplied'}</dd></div></dl> :
         <p>No birth date, time or place has been supplied. You can still start a conversation without chart evidence.</p>}
       <details className="detail-section profile-secondary"><summary>Where am I now? · saved timing</summary>
-        {tab === 'basic' && <PersonTiming workspace={workspace} person={person} />}
+        {tab === 'basic' && <PersonTiming workspace={workspace} person={person} onDiscuss={discussSavedResult}
+          onWatch={() => setWatchVersion(value => value + 1)} />}
       </details>
+      {tab === 'basic' && <PersonRecords workspace={workspace} personId={person.id}
+        onDiscuss={discussSavedResult} watchVersion={watchVersion} />}
+      <AstrologyHelp />
       <section className="conversation-entry" aria-label="Conversation about this person">
         <p>{hasActive ? 'A new message uses the current generated natal, not an older version.' :
           'No generated natal is active; a conversation can still be general.'}</p>

@@ -15,6 +15,7 @@ from m2.birth_flow import BirthFlow
 from m2.deletion import Tombstones
 from m2.local_fixture import ROOT
 from m2.people import People
+from m2.selected_results import selected_evidence
 from m2.store import Store
 from m2.test_support import test_fixture_dsn
 from m2.web_server import create_app
@@ -122,6 +123,40 @@ class TransitHttpTests(unittest.TestCase):
                 **query, 'chart_id': self.legacy_id}).status_code, 404)
         with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
             self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
+
+    def test_selected_saved_crossing_is_owner_fenced_and_committed_exactly_at_ack(self):
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            alice = store.authenticate('alice', 'synthetic-password-alice')
+            bob = store.authenticate('bob', 'synthetic-password-bob')
+            from m2.advanced import Advanced
+            result = Advanced(store).save(alice, 'selected-return', 'one', 'solar_return',
+                {'year': 2026, 'latitude': 55.68, 'longitude': 12.57})
+            self.assertEqual(result['status'], 'supported')
+            selection = [{'person_id': 'one', 'chart_id': self.chart_id}]
+            store.create_conversation(alice, 'selected-thread')
+            choice = {'result_id': 'selected-return', 'event_index': 0}
+            self.assertRaises(KeyError, store.begin, bob, 'selected-thread', 'foreign-turn',
+                              'What does this crossing mean?', selected_people=selection,
+                              selected_result=choice)
+            self.assertRaises(ValueError, store.begin, alice, 'selected-thread', 'bad-index',
+                              'Meaning?', selected_people=selection,
+                              selected_result={**choice, 'event_index': 100})
+            self.assertTrue(store.begin(alice, 'selected-thread', 'selected-turn',
+                'What does this crossing mean?', selected_people=selection,
+                selected_result=choice))
+            evidence = selected_evidence(store, alice, 'selected-thread', 'selected-turn')
+            self.assertEqual(evidence['source_chart_ids'], [self.chart_id])
+            self.assertEqual(evidence['facts']['instant_utc'], result['events'][0]['instant_utc'])
+            self.assertEqual(store.read_turn(alice, 'selected-thread', 'selected-turn')['events'][0]
+                             ['payload']['selected_result'], choice)
+            self.assertFalse(store.begin(alice, 'selected-thread', 'selected-turn',
+                'What does this crossing mean?', selected_people=selection,
+                selected_result=choice))
+            self.assertRaises(ValueError, store.begin, alice, 'selected-thread', 'selected-turn',
+                              'What does this crossing mean?', selected_people=selection,
+                              selected_result={**choice, 'event_index': None})
+            self.assertRaises(KeyError, selected_evidence, store, bob,
+                              'selected-thread', 'selected-turn')
 
     def test_clock_endpoint_is_authenticated_read_only_and_zone_qualified(self):
         instant = datetime(2026, 1, 1, 1, 15, 42, tzinfo=timezone.utc)

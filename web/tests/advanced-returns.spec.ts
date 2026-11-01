@@ -57,4 +57,7 @@ test('normal return workflows save trusted charts without sending a message', as
   await lunar.getByLabel('Until (UTC, exclusive)').fill('2026-08-20');
   await lunar.getByRole('button', { name: 'Calculate lunar returns' }).click();
   await expect.poll(async () => lunar.locator('.advanced-event').count()).toBeGreaterThanOrEqual(2);
+  await lunar.getByRole('button', { name: 'Discuss this crossing' }).first().click();
+  await expect(page.locator('.compose-context')).toContainText('saved result, not recalculated');
+  expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
 });

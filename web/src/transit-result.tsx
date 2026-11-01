@@ -1,5 +1,5 @@
 import { useRef, type Ref } from 'react';
-import { bodyGlyph, bodyLabel, ChartNotation, chartNotation, EmbeddedGlyphFonts } from './chart-symbols';
+import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
 import { point, signs, zodiac, type Point } from './natal';
 
@@ -42,7 +42,6 @@ function SkyWheel({ result }: { result: TransitResultData }) {
   const skyTracks = tracks(positions), natalTracks = tracks(natal);
   return <div className="natal-wheel-frame"><div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel"
     viewBox="0 0 480 480" role="img" aria-labelledby="transit-wheel-title transit-wheel-desc">
-    <EmbeddedGlyphFonts />
     <title id="transit-wheel-title">{combined ? 'Natal and transiting' : 'Sky-only'} tropical positions on {result.reporting.date} at {result.reporting.time} {result.reporting.zone}</title>
     <desc id="transit-wheel-desc">Outer marks are transiting planets; inner marks are natal positions when available. Wheel labels: {chartNotation}. Sign labels use their first three letters. No sky houses or aspect formations are drawn; the tables give exact degrees and bounded aspect names/orbs.</desc>
     <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Workspace } from './api';
-import { bodyGlyph, bodyLabel, ChartNotation, chartNotation, EmbeddedGlyphFonts } from './chart-symbols';
+import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
 import { point, signs, zodiac } from './natal';
 import type { Person } from './people';
@@ -36,7 +36,6 @@ function PositionRing({ positions, radius, stroke }: { positions: Position[]; ra
 function PairWheel({ result, aName, bName }: { result: SynastryData; aName: string; bName: string }) {
   const svg = useRef<SVGSVGElement>(null);
   return <div className="natal-wheel-frame"><p className="wheel-scroll-hint">Swipe the wheel sideways for the full chart.</p><div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel" viewBox="0 0 480 480" role="img" aria-labelledby="pair-title pair-desc" xmlns="http://www.w3.org/2000/svg">
-    <EmbeddedGlyphFonts />
     <title id="pair-title">Two-person tropical chart: outer ring {aName}; inner ring {bName}</title>
     <desc id="pair-desc">Two separately calculated natal position rings. Outer teal is {aName}; inner amber is {bName}. Wheel labels: {chartNotation}. Sign labels use the first three letters. No house sectors, compatibility score or aspect formations are drawn; tables show exact longitudes, directional house overlays and calculated aspects.</desc>
     <rect width="480" height="480" rx="20" fill="var(--wheel-paper, #fffef9)" />
