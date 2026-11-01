@@ -47,14 +47,31 @@ def main():
         raise RuntimeError('Image architecture does not match the requested artifact')
     subprocess.run(['docker', 'save', '-o', str(image), image_id], cwd=ROOT, check=True)
     with tarfile.open(image) as archive:
-        manifest = json.load(archive.extractfile('manifest.json'))
-        if len(manifest) != 1 or manifest[0]['Config'] != image_id.removeprefix('sha256:') + '.json':
-            raise RuntimeError('Saved archive config is not the inspected image ID')
-        config = json.load(archive.extractfile(manifest[0]['Config']))
+        def blob(digest):
+            content = archive.extractfile('blobs/sha256/' + digest.removeprefix('sha256:')).read()
+            if sha256(content).hexdigest() != digest.removeprefix('sha256:'):
+                raise RuntimeError('Archive contains a mismatched OCI digest')
+            return json.loads(content)
+
+        saved = json.load(archive.extractfile('manifest.json'))
+        index = json.load(archive.extractfile('index.json'))
+        if len(saved) != 1 or not any(item['digest'] == image_id for item in index['manifests']):
+            raise RuntimeError('Saved archive index does not identify the inspected image')
+        image_index = blob(image_id)
+        platform = next((item for item in image_index['manifests']
+                         if item.get('platform') == {'os': 'linux', 'architecture': 'amd64'}), None)
+        if platform is None:
+            raise RuntimeError('Archive has no linux/amd64 application manifest')
+        application = blob(platform['digest'])
+        config_digest = application['config']['digest']
+        if saved[0]['Config'] != 'blobs/sha256/' + config_digest.removeprefix('sha256:'):
+            raise RuntimeError('Saved archive config differs from the amd64 manifest')
+        config = blob(config_digest)
         if config.get('config', {}).get('Labels', {}).get('org.opencontainers.image.revision') != commit:
             raise RuntimeError('Saved archive does not identify the committed source')
     receipt = {'commit': commit, 'tree': tree, 'architecture': architecture,
-               'image_id': image_id, 'image_archive_sha256': file_hash(image),
+               'image_id': image_id, 'config_digest': config_digest,
+               'image_archive_sha256': file_hash(image),
                'source_offer_sha256': file_hash(source),
                'image_archive': str(image), 'source_offer': str(source)}
     (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
