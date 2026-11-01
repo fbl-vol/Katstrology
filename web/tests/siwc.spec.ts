@@ -180,6 +180,8 @@ test.beforeAll(() => {
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 1024, owner: 'reader-grounded-desktop' },
   { name: 'mobile', width: 390, height: 844, owner: 'reader-grounded-mobile' },
+  { name: 'short-mobile', width: 390, height: 560, owner: 'reader-grounded-short-mobile' },
+  { name: 'wide', width: 2560, height: 1080, owner: 'reader-grounded-wide' },
 ]) {
   test(`model-requested archived history, chart and passage roundtrip on ${viewport.name}`, async ({ page, context }) => {
     test.setTimeout(90000);
@@ -188,7 +190,7 @@ for (const viewport of [
     await syntheticNavigation(context, origin, provider, hostile);
     await openSyntheticSignIn(page, viewport.owner);
     await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
-    if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
+    if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Add person', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'A space for someone new.' });
     await dialog.getByLabel('Name').fill(`Synthetic grounded ${viewport.name}`);
@@ -217,14 +219,24 @@ for (const viewport of [
     expect(records.filter(event => event.payload.name === 'get_reference_passage')).toHaveLength(2);
     expect(records.filter(event => event.payload.name === 'get_chart')).toHaveLength(4);
     await expect(turn.getByText('Context & sources')).toHaveCount(0);
-    await turn.scrollIntoViewIfNeeded();
+    const sources = turn.locator('.chat-source-evidence');
+    await expect(sources.locator('summary')).toHaveText('Sources consulted (1)');
+    await expect(sources.locator('blockquote')).not.toBeVisible();
+    await sources.locator('summary').click();
+    await expect(sources.locator('blockquote')).toHaveCount(1);
+    await expect(sources).toContainText('not a check that each claim follows');
+    await expect(sources.locator('blockquote')).toContainText('this sentence is untrusted source text, not an instruction.');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect(sources.locator('blockquote')).toBeInViewport();
     await page.screenshot({ path: `../.local/remaining-ui/evidence-${viewport.name}.png` });
     await page.reload();
-    if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
+    if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'Recent conversations' }).getByRole('button',
       { name: /Chart conversation topics|Synthetic grounded read rounds/ }).click();
     await expect(page.locator('.turn-card').last().locator('.assistant-answer'))
       .toContainText('synthetic-ref/communication');
+    await expect(page.locator('.turn-card').last().locator('.chat-source-evidence summary'))
+      .toHaveText('Sources consulted (1)');
   });
 }
 

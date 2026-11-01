@@ -38,6 +38,35 @@ function TransitDisclosure({ item, turn, people }: { item: ArchiveEvent; turn: T
     <p>Only a partial saved chart is available. No unsupported wheel or invented natal positions are shown.</p>)}</details>;
 }
 
+type PassageRead = {
+  source_id: string; passage_id: string; author: string; title: string;
+  edition: string; section: string; content: string; source_url?: string | null;
+  offset: number; next_offset: number | null;
+};
+
+function archivedPassage(event: ArchiveEvent): PassageRead | null {
+  if (event.kind !== 'tool_result' || event.payload.name !== 'get_reference_passage') return null;
+  const result = event.payload.result;
+  if (!result || typeof result !== 'object') return null;
+  const row = result as Record<string, unknown>;
+  if (['source_id', 'passage_id', 'author', 'title', 'edition', 'section', 'content']
+      .some(key => typeof row[key] !== 'string')) return null;
+  return row as PassageRead;
+}
+
+function SourceEvidence({ passages }: { passages: { sequence: number; read: PassageRead }[] }) {
+  if (!passages.length) return null;
+  return <details className="chat-source-evidence"><summary>Sources consulted ({passages.length})</summary>
+    <p>These are the actual saved excerpts, not a check that each claim follows from them. A source may have changed or been withdrawn since this reply.</p>
+    {passages.map(({ sequence, read }) => <section key={sequence} className="chat-source-passage">
+      <p><strong>{read.author}</strong>, <cite>{read.title}</cite> · {read.edition} · {read.section}</p>
+      <blockquote>{read.content}</blockquote>
+      {read.next_offset !== null && <p>More of this passage was available than this read retrieved.</p>}
+      {read.source_url?.startsWith('https://') && <a href={read.source_url} target="_blank" rel="noreferrer noopener">Original source</a>}
+    </section>)}
+  </details>;
+}
+
 export type TurnActions = {
   onBranch: (id: string) => void;
   onEdit: (turn: Turn) => void;
@@ -55,19 +84,22 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
 }) {
   const [correction, setCorrection] = useState(false);
   const [replacement, setReplacement] = useState('');
-  const { user, chunks, calculatedViews, terminalError } = useMemo(() => {
+  const { user, chunks, calculatedViews, passages, terminalError } = useMemo(() => {
     let user: ArchiveEvent | undefined;
     let terminalError: Record<string, unknown> | undefined;
     const text: string[] = [];
     const calculatedViews: ArchiveEvent[] = [];
+    const passages: { sequence: number; read: PassageRead }[] = [];
     for (const event of turn.events) {
       if (event.kind === 'user' && !user) user = event;
       if (event.kind === 'error' && !terminalError) terminalError = event.payload;
       if (event.kind === 'assistant_chunk') text.push(String(event.payload.content || ''));
+      const read = archivedPassage(event);
+      if (read) passages.push({ sequence: event.sequence, read });
       if (event.kind === 'tool_result' && event.payload.name === 'get_transit_view' &&
           event.payload.result && typeof event.payload.result === 'object') calculatedViews.push(event);
     }
-    return { user, chunks: text.join(''), calculatedViews, terminalError };
+    return { user, chunks: text.join(''), calculatedViews, passages, terminalError };
   }, [turn.events]);
   const compacting = turn.status === 'open' && turn.events.some(event =>
     event.kind === 'compaction' && event.payload.status === 'starting') &&
@@ -96,6 +128,7 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
       {hasAnswer && <div className="assistant-answer"><span className="assistant-signature">kat.</span>
         {waiting ? <ThinkingIndicator waitId={turn.id} /> : <AssistantMarkdown text={chunks || 'No text returned.'} />}</div>}</>}
     {calculatedViews.map(item => <TransitDisclosure key={item.sequence} item={item} turn={turn} people={people} />)}
+    <SourceEvidence passages={passages} />
     {compacting && <p className="compaction-status" role="status">Summarizing earlier conversation before responding…</p>}
     {turn.status === 'error' && <p className="turn-warning" role="alert">{terminalError?.tool ?
       'A chart or source lookup could not finish.' :

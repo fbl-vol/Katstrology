@@ -172,6 +172,8 @@ def _valid_read_arguments(name, serialized):
         field = schema['properties'][key]
         allowed = field['type'] if isinstance(field['type'], list) else [field['type']]
         if not ((isinstance(value, str) and 'string' in allowed) or
+                (type(value) is int and 'integer' in allowed and
+                 field.get('minimum', value) <= value <= field.get('maximum', value)) or
                 (value is None and 'null' in allowed)):
             return False
         if isinstance(value, str) and (

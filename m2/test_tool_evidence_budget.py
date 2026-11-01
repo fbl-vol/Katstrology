@@ -23,6 +23,8 @@ from m2.test_support import DatabaseCase
 
 
 def native_call(index, name, arguments):
+    if name == 'get_reference_passage':
+        arguments = {**arguments, 'offset': arguments.get('offset', 0)}
     item = {'type': 'function_call', 'id': f'fc-{index}', 'call_id': f'call-{index}',
             'name': name, 'arguments': json.dumps(arguments)}
     return [added({**item, 'arguments': ''}),

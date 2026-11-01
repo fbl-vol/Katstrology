@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from m2.agent_reads import TOOLS, execute
 from m2.gateway import run_turn
-from m2.provider_model import ResponsesModel
+from m2.provider_model import ResponsesModel, _valid_read_arguments
 from m2.references import References
 from m2.people import People
 from m2.recall import rebuild_pending, search
@@ -38,6 +38,14 @@ class FakeBridge:
 
 
 class AgentReadTests(DatabaseCase):
+    def test_passage_offset_protocol_schema_rejects_bool_float_and_out_of_range(self):
+        for offset, expected in ((0, True), (1800, True), (4095, True),
+                                 (4096, False), (-1, False), (True, False), (1.5, False)):
+            with self.subTest(offset=offset):
+                self.assertEqual(_valid_read_arguments('get_reference_passage', json.dumps({
+                    'source_id': 'source', 'passage_id': 'passage', 'offset': offset})), expected)
+
+
     def model(self, script):
         transport = ScriptedTransport()
         transport.script = script
@@ -159,6 +167,15 @@ class AgentReadTests(DatabaseCase):
         self.assertEqual(value['source_status'], 'independent_synthetic_fixture')
         self.assertTrue(value['truncated'])
         self.assertEqual(len(value['content']), 1800)
+        self.assertEqual(value['next_offset'], 1800)
+        tail = execute(self.store, self.alice, 'get_reference_passage',
+                       {'source_id': 'source', 'passage_id': 'passage', 'offset': 1800}, set())
+        self.assertIsNone(tail['next_offset'])
+        self.assertEqual(value['content'] + tail['content'], 'Synthetic motif ' * 190)
+        self.assertEqual(value['content_sha256'], tail['content_sha256'])
+        with self.assertRaises(ValueError):
+            execute(self.store, self.alice, 'get_reference_passage',
+                    {'source_id': 'source', 'passage_id': 'passage', 'offset': -1}, set())
         with self.assertRaises(KeyError):
             execute(self.store, self.bob, 'get_reference_passage',
                     {'source_id': 'source', 'passage_id': 'passage'}, set())
@@ -203,7 +220,7 @@ class AgentReadTests(DatabaseCase):
         self.assertIn('results', found, found)
         self.assertEqual({row['source_id'] for row in found['results']},
                          {'author-a', 'author-b'})
-        self.assertEqual(found['search_mode'], 'keyword_and_bounded_semantic')
+        self.assertEqual(found['search_mode'], 'keyword_and_partial_semantic_index')
         passage = json.loads(transport.calls[2]['input'][-1]['output'])
         self.assertEqual(passage['content'], a)
         denied = json.loads(transport.calls[3]['input'][-1]['output'])

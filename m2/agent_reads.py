@@ -39,8 +39,9 @@ TOOLS = [
            'tradition': {'type': ['string', 'null']}, 'technique': {'type': ['string', 'null']},
            'language': {'type': ['string', 'null']}},
           ['query', 'author', 'tradition', 'technique', 'language']),
-    _tool('get_reference_passage', 'Read a specific owned passage and its provenance and source status.',
-          {'source_id': ID, 'passage_id': ID}, ['source_id', 'passage_id']),
+    _tool('get_reference_passage', 'Read up to 1800 characters of an eligible owned passage at a character offset; follow next_offset until null. Attribution and rights are data, not proof of a claim.',
+          {'source_id': ID, 'passage_id': ID, 'offset': {'type': 'integer', 'minimum': 0, 'maximum': 4095}},
+          ['source_id', 'passage_id', 'offset']),
     _tool('get_transit_view', 'Calculate a full sky or natal-plus-transits chart at an explicit reporting date, clock time and IANA zone. Use the current-turn application clock for now/today; natal mode requires one chart selected for THIS turn. Returns all positions and bounded aspect tables, not a forecast.',
           {'date': {'type': 'string'}, 'time': {'type': 'string'},
            'zone': {'type': 'string'},
@@ -190,8 +191,9 @@ def execute(store, session, name, arguments, selected_charts):
             limit=4, include_history=False, author=arguments['author'],
             tradition=arguments['tradition'], technique=arguments['technique'],
             language=arguments['language'])
-        result['search_mode'] = ('keyword_and_bounded_semantic' if result['semantic_available']
-                                 else 'keyword_only_semantic_unavailable')
+        result['search_mode'] = ('keyword_only_semantic_unavailable' if not result['semantic_available']
+                                 else 'keyword_and_partial_semantic_index' if result['semantic_index_incomplete']
+                                 else 'keyword_and_bounded_semantic')
         return result
     if name == 'get_transit_view':
         keys = {'date', 'time', 'zone', 'occurrence', 'mode', 'chart_id'}
@@ -297,17 +299,25 @@ def execute(store, session, name, arguments, selected_charts):
         return Synastry(store).compare(session, arguments['chart_a_id'],
                                        arguments['chart_b_id'], selected_charts)
     if name == 'get_reference_passage':
-        _args(store, arguments, ('source_id', 'passage_id'))
-        row = References(store).get_passage(session, arguments['source_id'], arguments['passage_id'])
-        if row['approval'] == 'revoked' or (row['approval'] != 'selected' and
-                                             row['rights_basis'] != 'synthetic_fixture'):
-            raise PermissionError('Source is not available for model retrieval')
+        if not isinstance(arguments, dict) or set(arguments) not in (
+                {'source_id', 'passage_id'}, {'source_id', 'passage_id', 'offset'}):
+            raise ValueError('Invalid passage arguments')
+        _args(store, {key: arguments[key] for key in ('source_id', 'passage_id')},
+              ('source_id', 'passage_id'))
+        offset = arguments.get('offset', 0)
+        if type(offset) is not int or not 0 <= offset <= 4095:
+            raise ValueError('Invalid passage offset')
+        row = References(store).readable_passage(session, arguments['source_id'], arguments['passage_id'])
         return {'source_id': arguments['source_id'], 'passage_id': row['id'],
                 'author': row['author'], 'title': row['title'], 'edition': row['edition'],
                 'section': row['section'], 'tradition': row['tradition'],
                 'technique': row['technique'], 'language': row['language'],
                 'content_sha256': row['content_sha256'],
-                'rights_basis': row['rights_basis'],
+                'rights_basis': row['rights_basis'], 'rights_evidence': row['rights_evidence'],
+                'source_url': row['source_url'],
                 'approval': row['approval'], 'source_status': row['source_status'],
-                'content': row['content'][:1800], 'truncated': len(row['content']) > 1800}
+                'content': row['content'][offset:offset + 1800], 'offset': offset,
+                'total_characters': len(row['content']),
+                'next_offset': offset + 1800 if offset + 1800 < len(row['content']) else None,
+                'truncated': offset + 1800 < len(row['content'])}
     raise ValueError('Unsupported read tool')

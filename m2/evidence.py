@@ -229,6 +229,16 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                    AND (%s::text IS NULL OR s.technique=%s)
                    AND (%s::text IS NULL OR s.author=%s)
                    AND (%s::text IS NULL OR s.language=%s)) AS references,
+               (SELECT count(*) FROM reference_passages p JOIN reference_sources s
+                   ON (s.owner_id=p.owner_id AND s.id=p.source_id)
+                 LEFT JOIN reference_vectors v ON (v.owner_id=p.owner_id AND v.source_id=p.source_id
+                   AND v.passage_id=p.id AND v.model_id=%s AND v.content_sha256=p.content_sha256)
+                 WHERE p.owner_id=%s AND v.owner_id IS NULL AND s.approval<>'revoked'
+                   AND (s.approval='selected' OR s.rights_basis='synthetic_fixture')
+                   AND (%s::text IS NULL OR s.tradition=%s)
+                   AND (%s::text IS NULL OR s.technique=%s)
+                   AND (%s::text IS NULL OR s.author=%s)
+                   AND (%s::text IS NULL OR s.language=%s)) AS unindexed_references,
                (SELECT count(*) FROM search_entries e JOIN conversations c
                  ON (c.owner_id=e.owner_id AND c.id=e.conversation_id AND c.epoch=e.epoch)
                  WHERE e.owner_id=%s AND (%s::text IS NULL OR EXISTS (
@@ -241,7 +251,10 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                              AND correction.id=e.source_id
                              AND correction.source_turn_id=tp.turn_id))))) AS history
     ''', (owner, tradition, tradition, technique, technique,
-          author, author, language, language, owner, person_id, person_id)).fetchone()
+          author, author, language, language,
+          MODEL_ID, owner, tradition, tradition, technique, technique,
+          author, author, language, language,
+          owner, person_id, person_id)).fetchone()
     lag = search_history(store, session, query, 1)['pending_conversations']
     selected = [dict(item, score=round(score, 4)) for score, item in scored[:limit]]
     reference_scan_truncated = scanned >= MAX_REFERENCE_SCAN and count['references'] > scanned
@@ -250,6 +263,7 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                        'incomplete_candidate_scan' if reference_scan_truncated else 'not_found')
     return {'results': selected, 'evidence_status': evidence_status,
             'pending_conversations': lag, 'semantic_available': query_vec is not None,
+            'semantic_index_incomplete': bool(count['unindexed_references']),
             'person_filter': person_id,
             'history_excluded_for_person_filter': False,
             'semantic_candidates_truncated': count['references'] > CANDIDATE_LIMIT or

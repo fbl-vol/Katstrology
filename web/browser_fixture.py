@@ -58,7 +58,7 @@ async def main():
                 scroll_owners = tuple(f'reader-chat-scroll-{view}-{theme}' for view in
                                       ('desktop', 'mobile', 'short-mobile') for theme in
                                       ('reading-room', 'blue-hour'))
-                for owner in ('reader-shell', 'reader-people', 'reader-shared', 'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-complete-alt', 'reader-newchat-normal', 'reader-delete', 'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-disconnected', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-siwc', 'reader-siwc-identity', 'reader-siwc-failure', 'reader-output-compat', 'reader-streamed-output', 'reader-incomplete-output', 'reader-budget-reads', 'reader-profile-media', 'reader-profile-media-mobile', 'reader-handoff-file', 'reader-budget-desktop', 'reader-budget-mobile', 'reader-compaction-desktop', 'reader-compaction-mobile', 'reader-markdown-desktop', 'reader-markdown-mobile', 'reader-grounded-desktop', 'reader-grounded-mobile', 'reader-natal', 'reader-natal-mobile', 'reader-natal-unknown', 'reader-natal-polar', 'reader-transit-desktop', 'reader-transit-mobile', 'reader-appearance', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-thinking-normal', 'reader-thinking-reduced', 'reader-browse-mobile', 'reader-browse-wide', 'reader-notebook', 'reader-ordinary-desktop', 'reader-ordinary-mobile') + layout_owners + scroll_owners:
+                for owner in ('reader-shell', 'reader-people', 'reader-shared', 'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-complete-alt', 'reader-newchat-normal', 'reader-delete', 'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-disconnected', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-siwc', 'reader-siwc-identity', 'reader-siwc-failure', 'reader-output-compat', 'reader-streamed-output', 'reader-incomplete-output', 'reader-budget-reads', 'reader-profile-media', 'reader-profile-media-mobile', 'reader-handoff-file', 'reader-budget-desktop', 'reader-budget-mobile', 'reader-compaction-desktop', 'reader-compaction-mobile', 'reader-markdown-desktop', 'reader-markdown-mobile', 'reader-grounded-desktop', 'reader-grounded-mobile', 'reader-grounded-short-mobile', 'reader-grounded-wide', 'reader-natal', 'reader-natal-mobile', 'reader-natal-unknown', 'reader-natal-polar', 'reader-transit-desktop', 'reader-transit-mobile', 'reader-appearance', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-thinking-normal', 'reader-thinking-reduced', 'reader-browse-mobile', 'reader-browse-wide', 'reader-notebook', 'reader-ordinary-desktop', 'reader-ordinary-mobile') + layout_owners + scroll_owners:
                     store.register_local(owner, 'synthetic-browser-password')
                 from m2.people import People
                 from m2.attachments import Attachments
@@ -143,7 +143,8 @@ async def main():
                     store.append(session, 'paged-normal', turn_id, 'complete', {})
                     parent = turn_id
                 from m2.recall import rebuild_pending
-                for owner in ('reader-grounded-desktop', 'reader-grounded-mobile'):
+                for owner in ('reader-grounded-desktop', 'reader-grounded-mobile',
+                              'reader-grounded-short-mobile', 'reader-grounded-wide'):
                     session = store.authenticate(owner, 'synthetic-browser-password')
                     store.create_conversation(session, 'older-grounded')
                     store.begin(session, 'older-grounded', 'earlier',
@@ -464,7 +465,7 @@ async def main():
                                 if ('positions=' not in chart['evidence'] or chart['source_status'] != 'current'):
                                     raise AssertionError('Actual selected chart result missing')
                                 call = ('get_reference_passage', {'source_id': 'synthetic-ref',
-                                                                  'passage_id': 'communication'})
+                                                                  'passage_id': 'communication', 'offset': 0})
                             elif len(outputs) == 3:
                                 passage = json.loads(outputs[2]['output'])
                                 if (passage['source_id'] != 'synthetic-ref' or

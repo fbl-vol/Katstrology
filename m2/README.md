@@ -15,7 +15,7 @@ command; explicit `saved chart <id>`, `chart events <id> <start> <end>` and
 or other private M2 material. `PLAN.md` and private M1 fixtures stay local;
 probe source and generic methods may be tracked without their personal oracle.
 
-Reference editions now have optional preserved small originals (up to 128 KiB), SHA-256, extraction note, language, HTTPS provenance URL and declared rights state. Located passages must occur verbatim in the original when one is present; an edition is selected explicitly, never by a model. Edits use a new source ID linked to the older edition rather than rewriting cited evidence. Revocation excludes reference reads, keyword/semantic candidates and vectors, and invalidates dependent conversation derivatives while originals remain available for explicit deletion. A selected real edition and jurisdiction-specific processing rights have **not** been approved or imported; the implemented fixture exercises synthetic originals and simulated rights only. Reference search can use the cached offline semantic model, with keyword-only status if unavailable, plus exact author/tradition/technique/language filters. Person-scoped history filters at selected **turn** granularity, including correction lineage, not whole conversation membership. Source selection, numerical quality and interpretive relevance remain separate evidence gates.
+Reference editions retain small originals (up to 128 KiB for non-fixtures), SHA-256, extraction note, language, HTTPS provenance URL and declared rights state. Located passages must occur verbatim in the original when one is present; an edition is selected explicitly, never by a model. Edits use a new source ID linked to the older edition rather than rewriting cited evidence. Revocation excludes reference reads, keyword/semantic candidates and vectors, and invalidates dependent conversation derivatives while originals remain available for explicit deletion. One permitted OpenStax *Astronomy* paragraph is checked in with attribution/CC BY 4.0 as an **optional local import fixture**, not a Kat-approved interpretive edition. The selected source remains a local operator action; no user archive is changed by shipping it. `m2/STARTER-SOURCES.md` names editorial and language gaps. The authenticated CLI supports explicit UTF-8 text original + manifest import, same-ID exact retry, operator selection and revocation. It reads only paths you provide; do not pass private library files without separate scoped permission. It does not fetch URLs or perform OCR. The preserved original is the exact imported text file, not an entire remote webpage; never imply unimported figures or sections are available. Read tools return 1800-character windows with `next_offset` for complete bounded continuation. The browser's collapsed Sources consulted card shows actual saved reads, not a claim-support certification or current-source eligibility check. Reference search can use the cached offline semantic model, with keyword-only status if unavailable, plus exact author/tradition/technique/language filters. Person-scoped history filters at selected **turn** granularity, including correction lineage, not whole conversation membership. Source selection, numerical quality and interpretive relevance remain separate evidence gates.
 
 The optional **Sky at a date** browser companion calls the authenticated read-only
 `GET /api/transit-view` endpoint. The browser sends an explicit date and Copenhagen
@@ -84,6 +84,25 @@ needs none. A saved in-conversation chart card reopens from archived JSON withou
 recalculation or auto-attaching manual output. Later corrections take precedence
 over a chart source's status as it was when the turn ran. These local tests use a
 scripted fake transport, not a live provider or interpretive acceptance.
+
+For the optional public text fixture, with an already owned isolated local Store/fixture and explicit editorial decision, run:
+
+```bash
+.venv-swiss/bin/python -m m2.fixture_cli import-reference m2/data/openstax-seasons-manifest.json m2/data/openstax-seasons-excerpt.txt --confirm-rights
+.venv-swiss/bin/python -m m2.fixture_cli select-reference openstax-astronomy-seasons-4-2-excerpt-v1
+.venv-swiss/bin/python -m m2.fixture_cli get-passage openstax-astronomy-seasons-4-2-excerpt-v1 seasons-distance-axis
+# Optional withdrawal, then deletion only after dependent conversations are removed:
+.venv-swiss/bin/python -m m2.fixture_cli revoke-reference openstax-astronomy-seasons-4-2-excerpt-v1
+```
+
+`--confirm-rights` acknowledges the manifest you inspected, **not** Kat endorsement.
+Use a new immutable ID for an edited edition; a same-ID retry refuses changed
+content/metadata. An offline vector index failure does not discard the original:
+keyword search remains, `semantic_available` reports its limitation. The
+external deletion/revocation ledger prevents older backups re-enabling removed
+sources when that journal and its tip survive. Do not import private material
+into the public test fixture. Original-source and claim-support correctness need
+separate human evaluation.
 
 ## Owned fixture and reproducible checks
 
