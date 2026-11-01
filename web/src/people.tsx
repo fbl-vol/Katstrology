@@ -3,6 +3,7 @@ import { api, ApiError, type Workspace } from './api';
 import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from './natal';
 import { InsightNotebook } from './insights';
+import { PersonTiming } from './person-timing';
 
 export type Draft = { birth_date: string; birth_time: string; birthplace: string; time_unknown: boolean };
 export type Person = {
@@ -148,6 +149,9 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         <div><dt>Birth time</dt><dd>{latestDraft.time_unknown ? 'Unknown — no Ascendant or houses are inferred' : latestDraft.birth_time || 'Not supplied'}</dd></div>
         <div><dt>Birthplace</dt><dd>{latestDraft.birthplace || 'Not supplied'}</dd></div></dl> :
         <p>No birth date, time or place has been supplied. You can still start a conversation without chart evidence.</p>}
+      <details className="detail-section profile-secondary"><summary>Where am I now? · saved timing</summary>
+        {tab === 'basic' && <PersonTiming workspace={workspace} person={person} />}
+      </details>
       <section className="conversation-entry" aria-label="Conversation about this person">
         <p>{hasActive ? 'A new message uses the current generated natal, not an older version.' :
           'No generated natal is active; a conversation can still be general.'}</p>

@@ -88,6 +88,41 @@ class TransitHttpTests(unittest.TestCase):
             self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
             self.assertEqual(store.db.execute('SELECT count(*) AS n FROM advanced_results').fetchone()['n'], 1)
 
+    def test_period_pages_all_saved_sources_and_never_claims_complete_ephemeris_coverage(self):
+        payload = {'person_id': 'one', 'technique': 'solar_return',
+                   'parameters': {'year': 2026, 'latitude': 55.68, 'longitude': 12.57}}
+        query = {'person_id': 'one', 'chart_id': self.chart_id,
+                 'start': '2026-01-01', 'end': '2027-01-01', 'offset': '0'}
+        with TestClient(create_app(self.dsn, self.files, self.ledger, self.dist),
+                        base_url='http://127.0.0.1:8765') as client:
+            self.assertEqual(client.get('/api/advanced-results/period', params=query).status_code, 401)
+            client.post('/api/login', headers={'Origin': 'http://127.0.0.1:8765'},
+                        json={'username': 'bob', 'password': 'synthetic-password-bob'})
+            self.assertEqual(client.get('/api/advanced-results/period', params=query).status_code, 404)
+            client.post('/api/login', headers={'Origin': 'http://127.0.0.1:8765'},
+                        json={'username': 'alice', 'password': 'synthetic-password-alice'})
+            empty = client.get('/api/advanced-results/period', params=query).json()
+            self.assertEqual(empty['coverage'], 'no_saved_calculations')
+            self.assertEqual(client.get('/api/advanced-results/period', params={
+                **query, 'end': '2028-01-01'}).status_code, 400)
+            for index in range(16):
+                saved = client.post('/api/advanced-results', json={**payload, 'id': f'return-{index}'},
+                    headers={'Origin': 'http://127.0.0.1:8765',
+                             'X-Kat-CSRF': client.get('/api/session').json()['csrf']})
+                self.assertEqual(saved.status_code, 201)
+            first = client.get('/api/advanced-results/period', params=query).json()
+            self.assertEqual(len(first['entries']), 10)
+            self.assertEqual(first['coverage'], 'partial_saved_results')
+            second = client.get('/api/advanced-results/period', params={
+                **query, 'offset': str(first['next_offset'])}).json()
+            self.assertEqual(len(second['entries']), 6)
+            self.assertIsNone(second['next_offset'])
+            self.assertEqual(len({row['id'] for row in first['entries'] + second['entries']}), 16)
+            self.assertEqual(client.get('/api/advanced-results/period', params={
+                **query, 'chart_id': self.legacy_id}).status_code, 404)
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
+
     def test_clock_endpoint_is_authenticated_read_only_and_zone_qualified(self):
         instant = datetime(2026, 1, 1, 1, 15, 42, tzinfo=timezone.utc)
         with TestClient(create_app(self.dsn, self.files, self.ledger, self.dist,

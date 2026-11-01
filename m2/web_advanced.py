@@ -3,6 +3,7 @@
 from starlette.routing import Route
 
 from m2.advanced import Advanced
+from m2.periods import Periods
 from m2.web_server import authorized, json_body, json_response
 
 
@@ -34,6 +35,19 @@ async def read(request):
     return json_response(result)
 
 
-routes = [Route('/api/advanced-results', create, methods=['POST']),
+async def period(request):
+    session = await authorized(request)
+    query = request.query_params
+    if set(query) != {'person_id', 'chart_id', 'start', 'end', 'offset'} or any(
+            len(query.getlist(key)) != 1 for key in query) or not query['offset'].isdigit():
+        raise ValueError('Select a person, source chart and bounded UTC period')
+    result = await request.app.state.runtime.call(lambda store, _: Periods(store).read(
+        session, query['person_id'], query['chart_id'], query['start'], query['end'],
+        int(query['offset'])))
+    return json_response(result)
+
+
+routes = [Route('/api/advanced-results/period', period, methods=['GET']),
+          Route('/api/advanced-results', create, methods=['POST']),
           Route('/api/advanced-results', list_results, methods=['GET']),
           Route('/api/advanced-results/{result_id}', read, methods=['GET'])]
