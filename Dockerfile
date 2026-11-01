@@ -29,7 +29,9 @@ COPY probes/*.py ./probes/
 COPY --from=browser /build/web/dist ./web/dist
 RUN pg_dump --version && pg_restore --version
 RUN groupadd --gid 10001 kat && useradd --uid 10001 --gid kat --home-dir /opt/kat --no-create-home kat && \
-    mkdir -p /opt/kat/.local/ephe /var/lib/kat && chown -R kat:kat /var/lib/kat /opt/kat/.local
+    mkdir -p /opt/kat/.local/ephe /var/lib/kat/browser-runtime/files \
+      /var/lib/kat/browser-runtime/deletions /var/lib/kat/browser-runtime/siwc && \
+    chown -R kat:kat /var/lib/kat /opt/kat/.local
 USER 10001:10001
 EXPOSE 8765
 CMD ["python", "-m", "m2.web_server", "serve"]
