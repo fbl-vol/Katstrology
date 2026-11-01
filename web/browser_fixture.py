@@ -244,7 +244,7 @@ async def main():
                                         'zone': 'Europe/Copenhagen', 'occurrence': 'unspecified',
                                         'mode': 'natal_transits', 'chart_id': budget_chart_id}),
                                     ('get_reference_passage', {'source_id': 'budget-source-ref',
-                                        'passage_id': 'budget-passage'}),
+                                        'passage_id': 'budget-passage', 'offset': 0}),
                                     ('search_references', {'query': 'Syntetisk', 'author': None,
                                         'tradition': None, 'technique': None, 'language': None}),
                                     ('search_conversations', {'query': 'Synthetic', 'person_id': None}),
@@ -294,7 +294,7 @@ async def main():
                                         'zone': 'Europe/Copenhagen', 'occurrence': 'unspecified',
                                         'mode': 'natal_transits', 'chart_id': budget_chart_id}),
                                     ('get_reference_passage', {'source_id': 'budget-source-ref',
-                                        'passage_id': 'budget-passage'})][index]
+                                        'passage_id': 'budget-passage', 'offset': 0})][index]
                                 call = {'type': 'function_call', 'id': f'budget-fc-{index + 1}',
                                         'call_id': f'budget-call-{index + 1}', 'name': name,
                                         'arguments': json.dumps(args)}

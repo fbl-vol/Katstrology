@@ -17,7 +17,7 @@ from m2.people import People
 from m2.provider_model import ResponsesModel
 from m2.references import References
 from m2.store import MAX_EVENT_BYTES, MAX_TOOL_RESULT_BYTES
-from m2.tool_evidence import MAX_MODEL_EVIDENCE_BYTES, prepare
+from m2.tool_evidence import MAX_MODEL_EVIDENCE_BYTES, encoded, prepare, project
 from m2.test_provider_output_compat import model_for, added, slim_footer, text
 from m2.test_support import DatabaseCase
 
@@ -177,6 +177,23 @@ class ToolEvidenceBudgetTests(DatabaseCase):
             self.assertLess(len(str(events[-3]['payload']).encode()), MAX_TOOL_RESULT_BYTES)
         finally:
             bridge.close()
+
+    def test_model_shortened_passage_has_contiguous_next_offset_not_silent_gap(self):
+        read = execute_read(self.store, self.alice, 'get_reference_passage', {
+            'source_id': 'source-danish', 'passage_id': 'passage-danish', 'offset': 0}, set())
+        projected, reduced = project('get_reference_passage', read, len(encoded(read)) - 400)
+        self.assertTrue(reduced)
+        self.assertLess(len(projected['content']), len(read['content']))
+        self.assertEqual(projected['next_offset'], len(projected['content']))
+        continuation = execute_read(self.store, self.alice, 'get_reference_passage', {
+            'source_id': 'source-danish', 'passage_id': 'passage-danish',
+            'offset': projected['next_offset']}, set())
+        self.assertEqual(projected['content'] + continuation['content'],
+                         self.store.db.execute('''
+                             SELECT content FROM reference_passages
+                             WHERE owner_id='alice' AND source_id='source-danish'
+                         ''').fetchone()['content'][:projected['next_offset'] + 1800])
+        self.assertEqual(projected['content_sha256'], continuation['content_sha256'])
 
     def test_excessive_read_returns_structured_limit_not_success_shaped_evidence(self):
         for size, scope in ((20_000, 'per_call'), (75_000, 'archive')):

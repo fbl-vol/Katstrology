@@ -137,11 +137,19 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
         projected = dict(result)
         if len(encoded(projected)) > available_bytes:
             projected.update({'model_content_shortened': True,
-                              'model_projection_note': 'Passage shortened for model; full '
-                              'read is in this turn archive; source truncation remains separate.'})
+                              'model_projection_note': 'Passage shortened for model; '
+                              'resume at next_offset. Full read remains in the turn archive.'})
             while len(encoded(projected)) > available_bytes and projected['content']:
                 projected['content'] = projected['content'][:-80]
+            if not projected['content'] and result['content']:
+                # A zero-progress success would strand the unread remainder.
+                # Leave the oversized result for prepare() to refuse honestly.
+                return result, False
             projected['model_content_characters_shown'] = len(projected['content'])
+            projected['next_offset'] = (result['offset'] + len(projected['content'])
+                                        if result['offset'] + len(projected['content']) < result['total_characters']
+                                        else None)
+            projected['truncated'] = projected['next_offset'] is not None
         return projected, projected != result
     return result, False
 
