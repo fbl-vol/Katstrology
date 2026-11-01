@@ -4,6 +4,8 @@ An independently retained, newer Tombstones journal MUST be supplied on restore.
 No restored Store is returned until reconciliation and blob checks succeed.
 """
 
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from hashlib import file_digest, sha256
 import json
 import os
@@ -15,7 +17,9 @@ import tempfile
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
+from psycopg.rows import dict_row
 
+from m2.deletion import Tombstones
 from m2.store import Store
 
 
@@ -25,6 +29,41 @@ DIGEST = re.compile(r'[a-f0-9]{64}\Z')
 def current_schema_version():
     return max(int(path.name.split('_', 1)[0]) for path in
                (Path(__file__).parent / 'migrations').glob('[0-9]*.sql'))
+
+
+@dataclass(frozen=True)
+class SnapshotSource:
+    """Read-only, exclusively owned backup input; never runs Store recovery."""
+
+    _dsn: str = field(repr=False)
+    db: psycopg.Connection
+    files: Path
+    ledger: Tombstones
+
+
+@contextmanager
+def deployment_snapshot_source(dsn, files, journal_path):
+    """Reject stale/missing state before any Store migration or journal creation."""
+    files, journal_path = Path(files), Path(journal_path)
+    tip = journal_path.with_name(journal_path.name + '.tip')
+    if not files.is_dir() or not journal_path.is_file() or not tip.is_file():
+        raise ValueError('Existing files and independent deletion journal/tip required')
+    with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as db:
+        db.execute('SET default_transaction_read_only = on')
+        acquired = db.execute('''
+            SELECT pg_try_advisory_lock(hashtext(current_database()), 20261028) AS acquired
+        ''').fetchone()['acquired']
+        if not acquired:
+            raise RuntimeError('Conversation owner already active')
+        versions = [row['version'] for row in db.execute(
+            'SELECT version FROM schema_migrations ORDER BY version')]
+        expected = [int(path.name.split('_', 1)[0]) for path in sorted(
+            (Path(__file__).parent / 'migrations').glob('[0-9]*.sql'))]
+        if versions != expected:
+            raise RuntimeError('Backup requires the current migrated schema')
+        ledger = Tombstones(journal_path)  # Both files existed; constructor cannot mint authority.
+        ledger.verify()
+        yield SnapshotSource(dsn, db, files, ledger)
 
 
 def digest_file(path):

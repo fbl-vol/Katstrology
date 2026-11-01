@@ -69,6 +69,25 @@ class RuntimePathTests(TestCase):
             self.assertTrue(app.call_args.kwargs['deployment'])
             self.assertEqual(run.call_args.kwargs['host'], '0.0.0.0')
             self.assertFalse(run.call_args.kwargs['proxy_headers'])
+            # The exact image path equals ROOT/web/dist; explicit presence, not
+            # equality with the local fallback, determines deployment validity.
+            image_argv = [*argv]
+            image_argv[image_argv.index(str(root / 'dist'))] = str(ROOT / 'web/dist')
+            with patch('sys.argv', image_argv), patch('m2.web_server.fixture_dsn') as fixture, \
+                 patch('m2.web_server.create_app', return_value=object()) as packaged, \
+                 patch('m2.web_server.uvicorn.run'):
+                main()
+            fixture.assert_not_called()
+            self.assertEqual(packaged.call_args.args[3], ROOT / 'web/dist')
+            omitted = [item for item in image_argv if item not in ('--served-dist', str(ROOT / 'web/dist'))]
+            with patch('sys.argv', omitted), patch('m2.web_server.fixture_dsn') as fixture, \
+                 patch('m2.web_server.deployment_dsn') as deployment, \
+                 patch('m2.web_server.create_app') as packaged:
+                with self.assertRaises(SystemExit):
+                    main()
+            fixture.assert_not_called()
+            deployment.assert_not_called()
+            packaged.assert_not_called()
             secret.chmod(0o644)
             with patch('sys.argv', argv), patch('m2.web_server.fixture_dsn') as fixture, \
                  patch('m2.web_server.create_app') as app:

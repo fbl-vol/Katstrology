@@ -8,9 +8,8 @@ import argparse
 from pathlib import Path
 import sys
 
-from m2.backup import backup, deployment_pg_command, restore
+from m2.backup import backup, deployment_pg_command, deployment_snapshot_source, restore
 from m2.deletion import Tombstones
-from m2.store import Store
 from m2.web_server import deployment_dsn
 
 
@@ -31,15 +30,15 @@ def main(argv=None):
     try:
         dsn = deployment_dsn(args.db_password_file, 'db', args.db_name, args.db_user)
         ledger_path = args.state_directory / 'browser-runtime/deletions/deletions.jsonl'
-        if args.action == 'verify-restore' and (not ledger_path.is_file()
-                                                 or not ledger_path.with_name(ledger_path.name + '.tip').is_file()):
-            raise ValueError('Independent newer deletion journal and tip required')
-        ledger = Tombstones(ledger_path)
         files = args.state_directory / 'browser-runtime/files'
         if args.action == 'backup':
-            with Store(dsn, files, ledger) as store:
-                backup(store, args.snapshot, dump_database=deployment_pg_command)
+            with deployment_snapshot_source(dsn, files, ledger_path) as source:
+                backup(source, args.snapshot, dump_database=deployment_pg_command)
         else:
+            if (not ledger_path.is_file() or
+                    not ledger_path.with_name(ledger_path.name + '.tip').is_file()):
+                raise ValueError('Independent newer deletion journal and tip required')
+            ledger = Tombstones(ledger_path)
             restored = restore(args.snapshot, dsn, files, ledger,
                                restore_dump=lambda target, path: deployment_pg_command(
                                    target, path, restore_mode=True),

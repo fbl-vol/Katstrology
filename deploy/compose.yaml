@@ -34,7 +34,7 @@ services:
       - siwc_credentials:/var/lib/kat/browser-runtime/siwc
       - ${KAT_EPHE_DIR:?private Swiss ephemeris directory required}:/opt/kat/.local/ephe:ro
     read_only: true
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     user: "10001:10001"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

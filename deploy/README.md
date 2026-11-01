@@ -43,7 +43,13 @@ secret value may be supplied in argv, environment, image, receipt or browser.
 PostgreSQL receives its own Compose file secret. Confirm the effective mounted
 permissions on the intended host; a Compose file-secret mode is not a substitute
 for this check. Make the separate state, deletion, credential and DB volumes
-writable by their intended owners without publishing them.
+writable by their intended owners without publishing them. For a **local-only**
+packaged startup regression, `python -m deploy.smoke_local --receipt
+<ignored-exact-tip-receipt> --execute` creates a uniquely named disposable Compose
+project, dynamic loopback host port and synthetic DB secret/empty ephemeris mount.
+It checks effective mounts, image-served assets, unauthenticated Host behavior,
+empty schema and restart, then removes only that project's containers and volumes.
+The default without `--execute` is a plan. This is not host activation.
 
 ## Accounts and selected model
 
@@ -76,7 +82,10 @@ chat is unavailable.
 
 `python -m m2.deployment_backup backup --state-directory <stopped-source-state>
 --snapshot <new-private-dir-outside-state> --db-password-file <private-file>`
-requires sole Store ownership and current migrated schema. It snapshots the DB
+requires the serving Store to be stopped. It acquires the exclusive Store advisory
+lock on a read-only connection and checks the exact current schema and existing
+independent journal/tip **before** any snapshot. It never starts a Store or
+migrates the source while backing up. It snapshots the DB
 (including inline reference originals/passages), all referenced attachment and
 person-file blobs, and the journal identity/prefix, but **not** the deletion
 journal/tip themselves. Verify-restore takes a disposable **empty separate DB**

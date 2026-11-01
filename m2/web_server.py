@@ -351,20 +351,20 @@ def main():
                         help='Allow only offline-enrolled ChatGPT registration in deployment')
     parser.add_argument('--state-directory', type=Path, default=ROOT / '.local',
                         help='Absolute directory containing the existing owned fixture and browser-runtime')
-    parser.add_argument('--served-dist', type=Path, default=ROOT / 'web/dist',
+    parser.add_argument('--served-dist', type=Path,
                         help='Absolute path to the verified static build')
     args = parser.parse_args()
+    served_dist = args.served_dist if args.served_dist is not None else ROOT / 'web/dist'
     if not 1 <= args.port <= 65535:
         parser.error('Port must be 1..65535')
-    if not args.state_directory.is_absolute() or not args.served_dist.is_absolute():
+    if not args.state_directory.is_absolute() or not served_dist.is_absolute():
         parser.error('State directory and served dist must be absolute paths')
     deployment = args.deployment_origin is not None
     if deployment:
         # Reject incomplete deployment input before any Store or fixture access.
         origin = deployment_origin(args.deployment_origin)
         if (args.db_password_file is None or args.state_directory == ROOT / '.local'
-                or args.served_dist == ROOT / 'web/dist'
-                or not args.state_directory.is_absolute()):
+                or args.served_dist is None):
             parser.error('Deployment requires explicit private state, build and database password paths')
         dsn = deployment_dsn(args.db_password_file, 'db', args.db_name, args.db_user)
     else:
@@ -386,7 +386,7 @@ def main():
     if args.enable_siwc or (not deployment and os.environ.get('KAT_ENABLE_SIWC') == '1'):
         from m2.siwc import ProviderBridge
         siwc_factory = ProviderBridge
-    app = create_app(dsn, files, ledger, args.served_dist, port=args.port,
+    app = create_app(dsn, files, ledger, served_dist, port=args.port,
                      siwc_factory=siwc_factory, origin=origin, deployment=deployment)
     uvicorn.run(app, host='0.0.0.0' if deployment else '127.0.0.1',
                 port=args.port, proxy_headers=False, access_log=False, log_level='warning')

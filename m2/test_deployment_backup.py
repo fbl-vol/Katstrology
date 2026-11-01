@@ -5,9 +5,70 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
+import psycopg
 from psycopg.conninfo import make_conninfo
 
-from m2.backup import deployment_pg_command
+from m2.backup import backup, deployment_pg_command, deployment_snapshot_source
+from m2.test_support import DatabaseCase
+
+
+class DeploymentSnapshotTests(DatabaseCase):
+    fixture_requires_fresh_migration = True
+
+    def test_refuses_active_owner_before_any_backup(self):
+        destination = Path(self.directory.name) / 'active-snapshot'
+        with self.assertRaisesRegex(RuntimeError, 'owner already active'):
+            with deployment_snapshot_source(self.dsn, self.store.files, self.ledger.path) as source:
+                backup(source, destination)
+        self.assertFalse(destination.exists())
+
+    def test_missing_journal_cannot_be_invented_by_backup(self):
+        self.store.close()
+        absent = Path(self.directory.name) / 'absent/deletions.jsonl'
+        destination = Path(self.directory.name) / 'missing-journal-snapshot'
+        with self.assertRaisesRegex(ValueError, 'journal/tip required'):
+            with deployment_snapshot_source(self.dsn, self.store.files, absent) as source:
+                backup(source, destination)
+        self.assertFalse(absent.parent.exists())
+        self.assertFalse(destination.exists())
+
+    def test_old_schema_refusal_does_not_migrate_or_create_snapshot(self):
+        self.store.close()
+        with psycopg.connect(self.dsn, autocommit=True) as db:
+            with db.transaction():
+                db.execute('ALTER TABLE reference_sources DROP CONSTRAINT reference_sources_one_previous_check')
+                db.execute('ALTER TABLE reference_sources DROP COLUMN supersedes_deleted_source_id')
+                db.execute('DELETE FROM schema_migrations WHERE version=22')
+        journal = self.ledger.path.read_bytes()
+        tip_path = self.ledger.path.with_name(self.ledger.path.name + '.tip')
+        tip = tip_path.read_bytes()
+        destination = Path(self.directory.name) / 'old-schema-snapshot'
+        with self.assertRaisesRegex(RuntimeError, 'current migrated schema'):
+            with deployment_snapshot_source(self.dsn, self.store.files, self.ledger.path) as source:
+                backup(source, destination)
+        with psycopg.connect(self.dsn) as db:
+            self.assertEqual(db.execute('SELECT max(version) FROM schema_migrations').fetchone()[0], 21)
+            self.assertIsNone(db.execute("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='reference_sources' AND column_name='supersedes_deleted_source_id'
+            """).fetchone())
+        self.assertEqual(self.ledger.path.read_bytes(), journal)
+        self.assertEqual(tip_path.read_bytes(), tip)
+        self.assertFalse(destination.exists())
+
+    def test_current_schema_snapshots_read_only_with_existing_journal(self):
+        self.store.close()
+        destination = Path(self.directory.name) / 'current-snapshot'
+        before = self.ledger.path.read_bytes()
+
+        def synthetic_dump(_dsn, path):
+            path.write_bytes(b'synthetic non-restorable pg dump')
+
+        with deployment_snapshot_source(self.dsn, self.store.files, self.ledger.path) as source:
+            manifest = backup(source, destination, dump_database=synthetic_dump)
+        self.assertEqual(manifest['schema_version'], 22)
+        self.assertTrue((destination / 'manifest.json').is_file())
+        self.assertEqual(self.ledger.path.read_bytes(), before)
 
 
 class PgCommandTests(TestCase):
