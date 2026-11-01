@@ -85,6 +85,15 @@ test('saved cross-technique dates sort chronologically and open their actual cal
     .getByRole('button', { name: 'Open saved result' }).click();
   await expect(timing.getByText('True forward solar arc', { exact: false }).last()).toBeVisible();
   await expect(timing.locator('.timing-opened .natal-wheel')).toBeVisible();
+  for (const [button, file] of [['Download safe SVG wheel', 'corrected-arc.svg'],
+    ['Download PNG wheel', 'corrected-arc.png']]) {
+    const downloaded = page.waitForEvent('download');
+    await timing.locator('.timing-opened').getByRole('button', { name: button }).click();
+    copyFileSync(await (await downloaded).path(), resolve(renders, file));
+  }
+  expect(readFileSync(resolve(renders, 'corrected-arc.svg'), 'utf8')).toContain('timing-arc-producer');
+  expect(readFileSync(resolve(renders, 'corrected-arc.png')).subarray(0, 8)).toEqual(
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   await timing.locator('[data-result-id="timing-progression-producer"]').first()
     .getByRole('button', { name: 'Open saved result' }).click();
   await expect(timing.getByText('Secondary progression for age', { exact: false })).toBeVisible();
@@ -175,6 +184,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await watchForm.getByLabel('Timezone (IANA)').fill('Europe/Copenhagen');
   await watchForm.getByRole('button', { name: 'Save item' }).click();
   await expect(watchForm.getByLabel('Repeated clock hour')).toBeVisible();
+  await page.screenshot({ path: resolve(renders, 'corrected-reminder-edit-short.png'), fullPage: true });
   await expect(watchForm.getByLabel('Private note (optional)')).toHaveValue('Saved synthetic date');
   await watchForm.getByLabel('Repeated clock hour').selectOption('1');
   await watchForm.getByRole('button', { name: 'Save item' }).click();
@@ -202,6 +212,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await expect(page.getByText('A cancelled private note')).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit text' }).click();
   await journalEdit.getByLabel('Your reflection').fill('A revised private synthetic life note');
+  await page.screenshot({ path: resolve(renders, 'corrected-journal-edit-short.png'), fullPage: true });
   await journalEdit.getByRole('button', { name: 'Save edit' }).click();
   await expect(page.getByText('A revised private synthetic life note')).toBeVisible();
   const glossary = page.getByText('What do these chart terms mean?');
