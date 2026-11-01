@@ -574,8 +574,9 @@ function App() {
     </aside>
     <main className={`main${settingsOpen ? ' settings-main' : !person && !skyOpen && !chartHub ? ' chat-scroll-page' : ''}`} inert={drawer}>
       <header className="header"><div className="header-left"><button ref={menuButton} className="mobile-menu" aria-label="Open navigation" aria-expanded={drawer} onClick={() => setDrawer(true)}>☰</button><span className="header-title">{settingsOpen ? 'Settings' : chartHub ? 'Create chart' : skyOpen ? 'Sky at a date' : person ? person.name : conversation?.title || 'New conversation'}</span></div><span className="model-label">{provider.error.startsWith('Connection status could not') ? 'ChatGPT connection unavailable' :
-          provider.status.connected ? 'ChatGPT connected' :
-          provider.status.registration === 'offline' ? 'Chat not connected' : 'Connect ChatGPT plan to send'}</span></header>
+          provider.status.registration === 'offline' ?
+            provider.status.connected ? 'ChatGPT account saved' : 'Chat not connected' :
+            provider.status.connected ? 'ChatGPT connected' : 'Connect ChatGPT plan to send'}</span></header>
       {settingsOpen && <SettingsView workspace={workspace} provider={provider} onClose={closeSettings} />}
       <div className={settingsOpen ? 'settings-hidden' : 'settings-visible'} inert={settingsOpen}>
       {chartHub === 'synastry' && <SynastryView workspace={workspace} people={people}

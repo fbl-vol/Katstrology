@@ -85,7 +85,9 @@ export function ProviderSettings({ provider, workspace }: { provider: Provider; 
       provider.status.registration === 'offline' ?
       'Chat is not connected. This personal workspace needs an offline ChatGPT registration before chat can be used.' :
       'ChatGPT plan connection is disabled for this local build. No model or billing route will be substituted.'}</p> : <>
-      {selected && <p>{provider.status.connected && <strong>Connected · </strong>}Selected account: {selected.email || selected.client_id} · {selected.plan_enabled ? 'Plan permission granted' : 'Identity only; plan use not permitted'}</p>}
+      {selected && <p>{provider.status.connected && <strong>{provider.status.registration === 'offline' ? 'Account saved' : 'Connected'} · </strong>}Selected account: {selected.email || selected.client_id} · {selected.plan_enabled ?
+        provider.status.registration === 'offline' ? 'Saved plan permission; checked when chat is used' : 'Plan permission granted' :
+        'Identity only; plan use not permitted'}</p>}
       {provider.status.accounts.length > 1 && <label>Saved account<select value={provider.status.selected || ''} onChange={event => void provider.choose(event.target.value)}>
         {provider.status.accounts.map(account => <option key={account.client_id} value={account.client_id}>{account.email || account.client_id} · {account.plan_enabled ? 'plan enabled' : 'identity only'}</option>)}
       </select></label>}
