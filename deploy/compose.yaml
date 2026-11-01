@@ -1,0 +1,52 @@
+# Source template only. Do not run until a separately approved app-install scope.
+name: kat-production
+services:
+  db:
+    image: postgres:16-bookworm@sha256:cf5d353f55240ecc2f811827a15c7d1f2d562f08019b49dca12b5a59f4ab5962
+    pull_policy: never
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kat
+      POSTGRES_USER: kat
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kat -d kat"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+  app:
+    image: ${KAT_APP_IMAGE:?inspected immutable local image ID required}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    command: ["python", "-m", "m2.web_server", "serve", "--deployment-origin", "https://katstrology.dk", "--db-password-file", "/run/secrets/db_password", "--state-directory", "/var/lib/kat", "--served-dist", "/opt/kat/web/dist", "--enable-siwc"]
+    ports: ["127.0.0.1:28765:8765"]
+    volumes:
+      # File owned by app UID 10001, mode 0400; not a world-readable Compose secret.
+      - ${KAT_DB_PASSWORD_FILE:?private password file path required}:/run/secrets/db_password:ro
+      - kat_state:/var/lib/kat
+      - deletion_authority:/var/lib/kat/browser-runtime/deletions
+      - siwc_credentials:/var/lib/kat/browser-runtime/siwc
+      - ${KAT_EPHE_DIR:?private Swiss ephemeris directory required}:/opt/kat/.local/ephe:ro
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [private, outbound]
+networks:
+  private: {internal: true}
+  outbound: {}
+volumes:
+  pgdata:
+  kat_state:
+  deletion_authority:
+  siwc_credentials:
+secrets:
+  db_password:
+    file: ${KAT_DB_PASSWORD_FILE:?private password file path required}

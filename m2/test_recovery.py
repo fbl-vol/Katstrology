@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import tempfile
 from uuid import uuid4
@@ -10,6 +11,7 @@ from m2.attachments import Attachments
 from m2.backup import backup, restore
 from m2.deletion import Tombstones
 from m2.recall import rebuild_one, rebuild_pending, search
+from m2.references import References
 from m2.test_support import DatabaseCase
 
 
@@ -70,6 +72,21 @@ class RecoveryTests(DatabaseCase):
         with self.assertRaises(KeyError):
             self.store.read_turn(self.alice, 'doomed', 'turn')
 
+    def test_snapshot_refuses_corrupt_inline_reference_before_dump(self):
+        text = 'Original synthetic notebook page.'
+        References(self.store).ingest_edition(self.alice, {
+            'source_id': 'original', 'author': 'Synthetic author', 'title': 'Synthetic page',
+            'edition': 'v1', 'tradition': 'invented_fixture', 'technique': 'aspects',
+            'provenance': 'Synthetic fixture only', 'rights_basis': 'synthetic_fixture',
+            'rights_evidence': 'Synthetic fixture only', 'language': 'en',
+            'extraction_note': 'Synthetic text only'}, text,
+            [{'id': 'one', 'section': 'part', 'content': text}])
+        self.store.db.execute("UPDATE reference_originals SET original_text='altered' WHERE source_id='original'")
+        target = Path(self.directory.name) / 'rejected-snapshot'
+        with self.assertRaisesRegex(RuntimeError, 'Stored reference checksum mismatch'):
+            backup(self.store, target)
+        self.assertFalse(target.exists())
+
     def test_restore_backup_predating_deletion_replays_newer_ledger_before_access(self):
         self.store.create_conversation(self.alice, 'deleted')
         self.store.create_conversation(self.alice, 'retained')
@@ -102,6 +119,16 @@ class RecoveryTests(DatabaseCase):
                         self.ledger)
             self.assertFalse((Path(self.directory.name) / 'corrupt-restore').exists())
             (snapshot / 'blobs' / digest).write_bytes(content)
+            # Legacy format-1 backups lacked an explicit schema revision. The
+            # normal local restore still accepts them with newer deletion authority.
+            manifest_path = snapshot / 'manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            manifest.pop('schema_version')
+            manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, 'Unsupported backup manifest'):
+                restore(snapshot, target_dsn, Path(self.directory.name) / 'legacy-rejected',
+                        self.ledger, require_current_schema=True)
+            self.assertFalse((Path(self.directory.name) / 'legacy-rejected').exists())
             restored = restore(snapshot, target_dsn,
                                Path(self.directory.name) / 'restored-files', self.ledger)
             user = restored.authenticate('alice', 'synthetic-password-alice')

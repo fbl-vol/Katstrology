@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
@@ -19,6 +20,11 @@ from m2.store import Store
 
 
 DIGEST = re.compile(r'[a-f0-9]{64}\Z')
+
+
+def current_schema_version():
+    return max(int(path.name.split('_', 1)[0]) for path in
+               (Path(__file__).parent / 'migrations').glob('[0-9]*.sql'))
 
 
 def digest_file(path):
@@ -62,9 +68,52 @@ def restore_owned(dsn, path):
         raise RuntimeError('Owned pg_restore failed; target remains quarantined')
 
 
-def backup(store, destination):
+def deployment_pg_command(dsn, path, restore_mode=False):
+    """Private Compose DB only; ephemeral pgpass never enters args, logs or image."""
+    settings = conninfo_to_dict(dsn)
+    if (settings.get('host') != 'db' or settings.get('port') != '5432' or
+            not re.fullmatch(r'[A-Za-z0-9_]{1,80}', settings.get('dbname', '')) or
+            not re.fullmatch(r'[A-Za-z0-9_]{1,80}', settings.get('user', '')) or
+            not settings.get('password')):
+        raise ValueError('Explicit private deployment database required')
+    with tempfile.TemporaryDirectory(prefix='kat-pgpass-') as directory:
+        passfile = Path(directory) / 'pass'
+        # Database/user names are deliberately restricted above; escape password
+        # according to libpq pgpass rules. The temp directory is mode 0700.
+        password = settings['password'].replace('\\', '\\\\').replace(':', '\\:')
+        fd = os.open(passfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as output:
+            output.write(f"db:5432:{settings['dbname']}:{settings['user']}:{password}\n")
+        command = (['pg_restore', '--no-owner', '--no-acl', '--exit-on-error'] if restore_mode
+                   else ['pg_dump', '--format=custom', '--no-owner', '--no-acl'])
+        command += ['--no-password', '-h', 'db', '-p', '5432', '-U', settings['user'],
+                    '-d', settings['dbname']]
+        env = {'PATH': os.environ.get('PATH', os.defpath),
+               'PGPASSFILE': str(passfile)}
+        with Path(path).open('rb' if restore_mode else 'wb') as stream:
+            channels = ({'stdin': stream, 'stdout': subprocess.DEVNULL} if restore_mode
+                        else {'stdout': stream})
+            result = subprocess.run(command, **channels, stderr=subprocess.DEVNULL,
+                                    env=env, timeout=90)
+        if result.returncode:
+            raise RuntimeError('Deployment database dump/restore failed; target remains quarantined')
+
+
+def verify_reference_contents(store):
+    # Reference originals and passages are inline DB text, not filesystem blobs.
+    for table, content, digest in (('reference_originals', 'original_text', 'content_sha256'),
+                                   ('reference_passages', 'content', 'content_sha256')):
+        for row in store.db.execute(f'SELECT {content}, {digest} FROM {table}'):
+            if sha256(row[content].encode('utf-8')).hexdigest() != row[digest]:
+                raise RuntimeError('Stored reference checksum mismatch')
+
+
+def backup(store, destination, dump_database=dump_owned):
     """Caller has quiesced this sole local owner; never snapshots active writes."""
     target = Path(destination)
+    verify_reference_contents(store)
+    if store.db.execute('SELECT max(version) AS version FROM schema_migrations').fetchone()['version'] != current_schema_version():
+        raise RuntimeError('Backup requires the current migrated schema')
     target.mkdir(parents=True, mode=0o700, exist_ok=False)
     (target / 'blobs').mkdir(mode=0o700)
     rows = store.db.execute('''
@@ -81,7 +130,7 @@ def backup(store, destination):
         shutil.copyfile(source, target / 'blobs' / digest)
         os.chmod(target / 'blobs' / digest, 0o600)
     dump = target / 'database.dump'
-    dump_owned(store._dsn, dump)
+    dump_database(store._dsn, dump)
     after = [row['digest'] for row in store.db.execute('''
         SELECT digest FROM attachments UNION SELECT digest FROM person_attachments
         ORDER BY digest
@@ -90,7 +139,8 @@ def backup(store, destination):
         raise RuntimeError('Attachment references changed during backup; discard snapshot')
     store.ledger.verify()
     journal_snapshot = store.ledger.path.read_bytes()
-    manifest = {'format': 1, 'database_sha256': digest_file(dump), 'blobs': expected,
+    manifest = {'format': 1, 'schema_version': current_schema_version(),
+                'database_sha256': digest_file(dump), 'blobs': expected,
                 'journal_id': store.ledger.journal_id,
                 'journal_prefix_bytes': len(journal_snapshot),
                 'journal_prefix_sha256': sha256(journal_snapshot).hexdigest()}
@@ -99,11 +149,15 @@ def backup(store, destination):
     return manifest
 
 
-def restore(backup_dir, target_dsn, target_files, newer_ledger):
+def restore(backup_dir, target_dsn, target_files, newer_ledger,
+            restore_dump=restore_owned, require_current_schema=False):
     """Empty owned target DB/files only; caller must never expose raw restore."""
     source = Path(backup_dir)
     manifest = json.loads((source / 'manifest.json').read_text())
-    if manifest.get('format') != 1 or not isinstance(manifest.get('blobs'), list):
+    version = manifest.get('schema_version')
+    if (manifest.get('format') != 1 or not isinstance(manifest.get('blobs'), list)
+            or version not in (None, current_schema_version())
+            or (require_current_schema and version != current_schema_version())):
         raise ValueError('Unsupported backup manifest')
     newer_ledger.verify()  # independent tip must attest the complete newer journal
     journal = newer_ledger.path.read_bytes()  # independently retained, never the backup's copy
@@ -128,7 +182,13 @@ def restore(backup_dir, target_dsn, target_files, newer_ledger):
     for digest in manifest['blobs']:
         shutil.copyfile(source / 'blobs' / digest, files / 'blobs' / digest)
         os.chmod(files / 'blobs' / digest, 0o600)
-    restore_owned(target_dsn, source / 'database.dump')
+    restore_dump(target_dsn, source / 'database.dump')
     # The ledger is independently retained after this backup. Store startup
     # replays tombstones before any authenticated read can be served.
-    return Store(target_dsn, files, newer_ledger)
+    recovered = Store(target_dsn, files, newer_ledger)
+    try:
+        verify_reference_contents(recovered)
+    except BaseException:
+        recovered.close()
+        raise
+    return recovered
