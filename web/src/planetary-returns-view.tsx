@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { api, type Workspace } from './api';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { unavailableCalculation } from './advanced-result-status';
 import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
 import { ReturnWheel, zodiac, type NatalResult, type Chart } from './natal';
 import type { Person } from './people';
@@ -54,26 +56,23 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
     if (clock.today) { setStart(current => current || clock.today); setEnd(current => current || utcDays(clock.today, 365)); }
   }, [clock.today]);
   const [reference, setReference] = useState<ReferenceChoice>(() => birthReference(null));
-  const [result, setResult] = useState<ReturnResult | null>(null);
+  const { result, history, error, busy, setError, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<ReturnResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
-  const [history, setHistory] = useState<{ id: string; first_utc?: string; created_at: string }[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const request = useRef<{ key: string; id: string } | null>(null);
-  const version = useRef(0);
   const personVersion = useRef(0);
   const personInput = useRef<HTMLSelectElement>(null);
   const restoreDraft = useRef(!!initialDraft);
   const exactSource = active?.result.natal?.status === 'complete';
   useEffect(() => {
     if (initialDraft?.personId) choosePerson(initialDraft.personId);
-    return () => { version.current++; personVersion.current++; };
+    return () => { personVersion.current++; };
   }, []);
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
   function choosePerson(id: string) {
     const preservingDraft = restoreDraft.current && id === initialDraft?.personId;
     restoreDraft.current = false;
-    change(); setPersonId(id); setActive(null); setReference(birthReference(null)); setHistory([]);
+    loadPerson(id, 'planetary_return', 'Saved planetary returns could not be listed.');
+    setPersonId(id); setActive(null); setReference(birthReference(null));
     setLoadingSource(!!id); setSourceUnavailable(false);
     const current = ++personVersion.current;
     if (!id) return;
@@ -87,10 +86,6 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
         (draft.latitude === birthplace.latitude && draft.longitude === birthplace.longitude));
       setReference(useDraft ? draft : birthplace);
     }).catch(() => { if (current === personVersion.current) { setLoadingSource(false); setSourceUnavailable(true); } });
-    void api<{ results: { id: string; first_utc?: string; created_at: string }[] }>(
-      `advanced-results?person_id=${encodeURIComponent(id)}&technique=planetary_return`).then(data => {
-        if (current === personVersion.current) setHistory(data.results);
-      }).catch(() => { if (current === personVersion.current) setError('Saved planetary returns could not be listed.'); });
   }
   async function calculate(event: FormEvent) {
     event.preventDefault();
@@ -109,36 +104,20 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
       end_utc: `${end}T00:00:00+00:00`, latitude: Number(reference.latitude),
       longitude: Number(reference.longitude),
       ...(reference.placeId ? { reference_place_id: reference.placeId } : {}) };
-    const key = JSON.stringify({ personId, parameters });
-    if (request.current?.key !== key) request.current = { key, id: `planet-return-${crypto.randomUUID()}` };
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(true); intent.revealResult();
-    try {
-      const saved = await api<ReturnResult>('advanced-results', workspace.csrf, 'POST',
-        { id: request.current.id, person_id: personId, technique: 'planetary_return', parameters });
-      if (current !== version.current) return;
-      if (saved.status === 'supported') {
-        setResult(saved);
-        if (saved.id) setHistory(rows => rows.some(row => row.id === saved.id) ? rows :
-          [{ id: saved.id!, first_utc: saved.events[0]?.instant_utc,
-            created_at: new Date().toISOString() }, ...rows]);
-      } else setError(saved.status === 'partial_near_station_contact'
+    intent.revealResult();
+    await saveResult(personId, 'planetary_return', parameters, {
+      prefix: 'planet-return',
+      firstRow: (saved, id) => ({ id, first_utc: saved.events[0]?.instant_utc,
+        created_at: new Date().toISOString() }),
+      unavailable: status => status === 'partial_near_station_contact'
         ? 'A near-station crossing cannot be resolved as a complete pass history. No partial return was saved.'
-        : `This natal source is unavailable (${saved.status}); no birth time was invented.`);
-    } catch (cause) { if (current === version.current) {
-      if (cause instanceof ApiError && cause.status === 400) {
-        request.current = null;
-        setError('Check the UTC interval and reference coordinates, then correct the form. No return was saved.');
-      } else setError('Saving was not confirmed. Retry this same request or check saved returns before starting a new one.');
-    } }
-    finally { if (current === version.current) setBusy(false); }
+        : unavailableCalculation('Planetary returns', status),
+      invalid: 'Check the UTC interval and reference coordinates, then correct the form. No return was saved.',
+      uncertain: 'Saving was not confirmed. Retry this same request or check saved returns before starting a new one.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current; setResult(null); setError(''); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: ReturnResult; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) setResult({ ...saved.result, id, source_status: saved.source_status });
-    } catch { if (current === version.current) setError('Could not open saved planetary returns.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open saved planetary returns.');
   }
   return <section className="advanced-view" aria-label="Planetary returns chart">
     <div className="transit-heading"><div><span className="eyebrow">SAVED NATAL · ALL PASSES</span>

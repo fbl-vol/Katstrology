@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Workspace } from './api';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
 import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
 import type { Person } from './people';
 import { bodyLabel } from './chart-symbols';
@@ -24,65 +25,34 @@ export function McTransitsView({ workspace, people, onClose }: {
   }, [clock.today]);
   const [body, setBody] = useState('sun');
   const [aspect, setAspect] = useState('conjunction');
-  const [result, setResult] = useState<McResult | null>(null);
+  const { result, history, error, busy, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<McResult, { id: string; first_utc: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
-  const [history, setHistory] = useState<{ id: string; first_utc: string; created_at: string }[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const request = useRef<{ id: string; key: string } | null>(null);
-  const version = useRef(0);
-  useEffect(() => () => { version.current++; }, []);
   const person = people.find(item => item.id === personId);
-  const key = JSON.stringify({ personId, start, end, body, aspect });
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
-  async function choosePerson(id: string) {
-    change(); setPersonId(id); setHistory([]);
-    const current = version.current;
-    if (!id) return;
-    try {
-      const response = await api<{ results: { id: string; first_utc: string; created_at: string }[] }>(
-        `advanced-results?person_id=${encodeURIComponent(id)}&technique=mc_transit`);
-      if (current === version.current) setHistory(response.results);
-    } catch { if (current === version.current) setError('Saved timelines could not be listed. Calculation remains available.'); }
+  function choosePerson(id: string) {
+    setPersonId(id);
+    loadPerson(id, 'mc_transit', 'Saved timelines could not be listed. Calculation remains available.');
   }
   async function calculate(event: FormEvent) {
-    event.preventDefault();
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(true); intent.revealResult();
-    const id = request.current?.key === key ? request.current.id : `mc-transit-${crypto.randomUUID()}`;
-    request.current = { id, key };
-    try {
-      const saved = await api<McResult>('advanced-results', workspace.csrf, 'POST', {
-        id, person_id: personId, technique: 'mc_transit', parameters: {
-          start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`,
-          transit_body: body, aspect,
-        },
-      });
-      if (current !== version.current) return;
-      if (saved.status === 'supported') {
-        setResult(saved);
-        setHistory(rows => rows.some(row => row.id === id) ? rows : [
-          { id, first_utc: saved.events?.[0]?.instant_utc || '', created_at: new Date().toISOString() }, ...rows]);
-      } else setError(saved.status === 'unsupported_natal_mc_houses' ?
-        'The saved natal has no qualified astronomical Midheaven. No tenth-house cusp was substituted.' :
-        saved.status === 'no_active_natal' ? 'Choose a person with a current generated natal.' :
-        'The selected natal source cannot provide an exact-time Midheaven. No contact was calculated.');
-    } catch (cause) {
-      if (current === version.current) {
-        if (cause instanceof ApiError && cause.status === 400) {
-          request.current = null;
-          setError('Check the UTC interval (up to 30 days), body and aspect, then correct the form. No timeline was saved.');
-        } else setError('Saving was not confirmed. Retry the same request or check saved timelines before starting another.');
-      }
-    } finally { if (current === version.current) setBusy(false); }
+    event.preventDefault(); intent.revealResult();
+    await saveResult(personId, 'mc_transit', {
+      start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`,
+      transit_body: body, aspect,
+    }, {
+      prefix: 'mc-transit',
+      firstRow: (saved, id) => ({ id, first_utc: saved.events?.[0]?.instant_utc || '',
+        created_at: new Date().toISOString() }),
+      unavailable: status => status === 'unsupported_natal_mc_houses'
+        ? 'The saved natal has no qualified astronomical Midheaven. No tenth-house cusp was substituted.'
+        : status === 'no_active_natal' ? 'Choose a person with a current generated natal.'
+        : 'The selected natal source cannot provide an exact-time Midheaven. No contact was calculated.',
+      invalid: 'Check the UTC interval (up to 30 days), body and aspect, then correct the form. No timeline was saved.',
+      uncertain: 'Saving was not confirmed. Retry the same request or check saved timelines before starting another.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current;
-    setError(''); setResult(null); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: McResult; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) setResult({ ...saved.result, id, source_status: saved.source_status });
-    } catch { if (current === version.current) setError('Could not open the archived MC timeline.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open the archived MC timeline.');
   }
   function downloadCsv() {
     if (!result?.events) return;

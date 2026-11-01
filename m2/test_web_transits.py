@@ -127,6 +127,29 @@ class TransitHttpTests(unittest.TestCase):
         with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
             self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
 
+    def test_half_open_saved_windows_do_not_displace_overlapping_periods(self):
+        from m2.advanced import Advanced
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            alice = store.authenticate('alice', 'synthetic-password-alice')
+            advanced = Advanced(store)
+            for identifier, start, end in (
+                ('ends-at-start', '2026-01-01', '2026-03-01'),
+                ('overlapping', '2026-03-01', '2026-04-01'),
+                ('starts-at-end', '2026-04-01', '2026-05-01'),
+            ):
+                saved = advanced.save(alice, identifier, 'one', 'lunar_return', {
+                    'start_utc': f'{start}T00:00:00+00:00',
+                    'end_utc': f'{end}T00:00:00+00:00',
+                    'latitude': 55.68, 'longitude': 12.57})
+                self.assertEqual(saved['status'], 'supported')
+            page = Periods(store).read(alice, 'one', self.chart_id,
+                                       '2026-03-01', '2026-04-01')
+            self.assertEqual([entry['id'] for entry in page['entries']], ['overlapping'])
+            self.assertEqual(page['coverage'], 'saved_results_only')
+            self.assertIsNone(page['next_offset'])
+            self.assertTrue(all('2026-03-01' <= event['instant_utc'][:10] < '2026-04-01'
+                                for event in page['entries'][0]['events']))
+
     def test_persisted_lunations_maxima_and_symbolic_dates_keep_distinct_locators(self):
         from m2.advanced import Advanced
         with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:

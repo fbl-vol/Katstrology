@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Workspace } from './api';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
 import { useApplicationUtcDate, useManualChartIntent } from './manual-chart-intent';
 import { bodyLabel } from './chart-symbols';
 import { zodiac } from './natal';
@@ -29,59 +30,27 @@ export function ProgressionsView({ workspace, people, onClose }: {
   const [date, setDate] = useState('');
   const clock = useApplicationUtcDate();
   useEffect(() => { if (clock.today) setDate(current => current || clock.today); }, [clock.today]);
-  const [result, setResult] = useState<Progression | null>(null);
+  const { result, history, error, busy, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<Progression, { id: string; created_at: string; first_utc?: string }>(workspace);
   const intent = useManualChartIntent(result);
-  const [history, setHistory] = useState<{ id: string; created_at: string; first_utc?: string }[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const request = useRef<{ id: string; key: string } | null>(null);
-  const version = useRef(0);
-  useEffect(() => () => { version.current++; }, []);
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
-  async function choosePerson(id: string) {
-    change(); setPersonId(id); setHistory([]);
-    const current = version.current;
-    if (!id) return;
-    try {
-      const saved = await api<{ results: { id: string; created_at: string; first_utc?: string }[] }>(
-        `advanced-results?person_id=${encodeURIComponent(id)}&technique=secondary_progression`);
-      if (current === version.current) setHistory(saved.results);
-    } catch { if (current === version.current) setError('Saved progressions could not be listed. Calculation remains available.'); }
+  function choosePerson(id: string) {
+    setPersonId(id);
+    loadPerson(id, 'secondary_progression', 'Saved progressions could not be listed. Calculation remains available.');
   }
   async function calculate(event: FormEvent) {
-    event.preventDefault();
-    const current = ++version.current;
-    setBusy(true); setResult(null); setError(''); intent.revealResult();
-    const key = `${personId}:${date}`;
-    const id = request.current?.key === key ? request.current.id : `progression-${crypto.randomUUID()}`;
-    request.current = { id, key };
-    try {
-      const calculated = await api<Progression>('advanced-results', workspace.csrf, 'POST', {
-        id, person_id: personId, technique: 'secondary_progression',
-        parameters: { effective_utc: `${date}T00:00:00+00:00` },
-      });
-      if (current !== version.current) return;
-      if (calculated.status === 'supported') {
-        setResult(calculated);
-        setHistory(rows => rows.some(row => row.id === id) ? rows : [
-          { id, created_at: new Date().toISOString(), first_utc: calculated.effective_utc }, ...rows]);
-      } else setError(calculated.status === 'no_active_natal' ? 'Choose a person with a current generated natal.' :
-        'This source cannot supply an exact-time progression. Nothing was inferred from an uncertain or stale natal.');
-    } catch (cause) { if (current === version.current) {
-      if (cause instanceof ApiError && cause.status === 400) {
-        request.current = null;
-        setError('Choose a supported effective UTC date after the saved birth instant. No progression was saved.');
-      } else setError('Saving was not confirmed. Retry the same request or check saved progressions before starting another.');
-    } }
-    finally { if (current === version.current) setBusy(false); }
+    event.preventDefault(); intent.revealResult();
+    await saveResult(personId, 'secondary_progression', { effective_utc: `${date}T00:00:00+00:00` }, {
+      prefix: 'progression',
+      firstRow: (calculated, id) => ({ id, created_at: new Date().toISOString(), first_utc: calculated.effective_utc }),
+      unavailable: status => status === 'no_active_natal' ? 'Choose a person with a current generated natal.' :
+        'This source cannot supply an exact-time progression. Nothing was inferred from an uncertain or stale natal.',
+      invalid: 'Choose a supported effective UTC date after the saved birth instant. No progression was saved.',
+      uncertain: 'Saving was not confirmed. Retry the same request or check saved progressions before starting another.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: Progression; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) setResult({ ...saved.result, id, source_status: saved.source_status });
-    } catch { if (current === version.current) setError('Could not open the archived progression.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open the archived progression.');
   }
   return <section className="advanced-view" aria-label="Secondary progression chart">
     <div className="transit-heading"><div><span className="eyebrow">SYMBOLIC TIMING</span>

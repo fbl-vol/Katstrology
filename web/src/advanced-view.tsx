@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { api, type Workspace } from './api';
+import { unavailableCalculation } from './advanced-result-status';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
 import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
 import type { Person } from './people';
 import { ReturnWheel, type NatalResult, type Chart } from './natal';
@@ -44,19 +46,15 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
     setEnd(current => current || utcDays(clock.today, 30));
   }, [clock.today]);
   const [reference, setReference] = useState<ReferenceChoice>(() => birthReference(null));
-  const [result, setResult] = useState<ReturnResult | null>(null);
-  const [sourceStatus, setSourceStatus] = useState('current');
-  const [history, setHistory] = useState<ReturnHistory[]>([]);
+  const { result, history, error, busy, setError, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<ReturnResult, ReturnHistory>(workspace);
+  const sourceStatus = result?.source_status || 'current';
   const eventHeadings = useRef<(HTMLHeadingElement | null)[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const request = useRef<{ key: string; id: string } | null>(null);
   const sourceVersion = useRef(0);
-  const historyVersion = useRef(0);
-  const operationVersion = useRef(0);
   useEffect(() => {
     if (initialDraft?.personId) choosePerson(initialDraft.personId);
-    return () => { sourceVersion.current++; historyVersion.current++; operationVersion.current++; };
+    return () => { sourceVersion.current++; };
   }, []);
   const person = people.find(item => item.id === personId);
   const intent = useManualChartIntent(result);
@@ -71,10 +69,9 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
     const preservingDraft = restoreDraft.current && id === initialDraft?.personId;
     restoreDraft.current = false;
     const version = ++sourceVersion.current;
-    operationVersion.current++;
-    setPersonId(id); setActive(null); setResult(null); setHistory([]); setBusy(false);
+    loadPerson(id, technique, 'Saved returns could not be listed. Try choosing the person again.');
+    setPersonId(id); setActive(null);
     setLoadingSource(!!id); setSourceUnavailable(false);
-    setError(''); request.current = null;
     setReference(birthReference(null));
     if (!id) return;
     void api<Person>(`people/${encodeURIComponent(id)}`).then(loaded => {
@@ -89,37 +86,12 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
     }).catch(() => {
       if (version === sourceVersion.current) { setLoadingSource(false); setSourceUnavailable(true); }
     });
-    void loadHistory(id, version);
   }
 
-  function changeSelection() {
-    operationVersion.current++; request.current = null;
-    setResult(null); setError(''); setBusy(false);
-  }
+  function changeSelection() { change(); }
 
-  async function loadHistory(id: string, version: number) {
-    const listVersion = ++historyVersion.current;
-    try {
-      const rows = await api<{ results: ReturnHistory[] }>(
-        `advanced-results?person_id=${encodeURIComponent(id)}&technique=${technique}`);
-      if (version === sourceVersion.current && listVersion === historyVersion.current) setHistory(rows.results);
-    } catch {
-      if (version === sourceVersion.current && listVersion === historyVersion.current)
-        setError('Saved returns could not be listed. Try choosing the person again.');
-    }
-  }
-
-  async function openSaved(id: string) {
-    const version = ++operationVersion.current;
-    setError(''); setResult(null); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: ReturnResult; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (version === operationVersion.current) {
-        setResult({ ...saved.result, id }); setSourceStatus(saved.source_status);
-      }
-    } catch {
-      if (version === operationVersion.current) setError('Saved return could not be opened.');
-    }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Saved return could not be opened.');
   }
 
   async function calculate(event: FormEvent) {
@@ -139,27 +111,14 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
         setError('Choose an end date after the start, within 60 UTC days. Your dates are still here.'); return;
       }
     }
-    const key = JSON.stringify({ personId, technique, parameters });
-    if (request.current?.key !== key) request.current = { key, id: `result-${crypto.randomUUID()}` };
-    const version = ++operationVersion.current;
-    intent.revealResult(); setBusy(true); setError(''); setResult(null);
-    try {
-      const saved = await api<ReturnResult>('advanced-results', workspace.csrf, 'POST',
-        { id: request.current.id, person_id: personId, technique, parameters });
-      if (version === operationVersion.current) {
-        setResult(saved); setSourceStatus(saved.source_status || 'current');
-        if (saved.id) void loadHistory(personId, sourceVersion.current);
-        if (saved.status !== 'supported' && saved.status !== 'no_return_in_window')
-          setError('This return is unavailable for the selected source or interval. No replacement birth time was inferred.');
-      }
-    } catch (cause) {
-      if (version === operationVersion.current) {
-        if (cause instanceof ApiError && cause.status === 400) {
-          request.current = null; // A definitive rejection did not save this request ID.
-          setError('Check the selected year or interval and reference coordinates, then correct the form. Nothing was saved.');
-        } else setError('Saving was not confirmed. Retry this same request or check your saved returns before starting a new one.');
-      }
-    } finally { if (version === operationVersion.current) setBusy(false); }
+    intent.revealResult();
+    await saveResult(personId, technique, parameters, {
+      prefix: 'result', reloadHistory: { error: 'Saved returns could not be listed. Try choosing the person again.' },
+      displayWithoutSaving: ['no_return_in_window'],
+      unavailable: status => unavailableCalculation(label, status),
+      invalid: 'Check the selected year or interval and reference coordinates, then correct the form. Nothing was saved.',
+      uncertain: 'Saving was not confirmed. Retry this same request or check your saved returns before starting a new one.',
+    });
   }
 
   const moment = (instant?: string | null) => instant

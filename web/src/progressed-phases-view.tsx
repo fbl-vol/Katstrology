@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Workspace } from './api';
 import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
 import { zodiac } from './natal';
 import { SymbolicComparisonWheel } from './symbolic-comparison-wheel';
+import { unavailableCalculation } from './advanced-result-status';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
 import type { Person } from './people';
 
 type Event = { phase: string; cycle_index: number; effective_utc: string;
@@ -40,60 +42,31 @@ export function ProgressedPhasesView({ workspace, people, onClose }: {
   useEffect(() => {
     if (clock.today) { setStart(current => current || clock.today); setEnd(current => current || utcDays(clock.today, 30 * 365)); }
   }, [clock.today]);
-  const [result, setResult] = useState<PhaseResult | null>(null);
+  const { result, history, busy, error, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<PhaseResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [history, setHistory] = useState<{ id: string; first_utc?: string; created_at: string }[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const version = useRef(0);
-  const request = useRef<{ id: string; key: string } | null>(null);
-  useEffect(() => () => { version.current++; }, []);
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
-  async function choosePerson(id: string) {
-    change(); setPersonId(id); setHistory([]);
-    const current = version.current;
-    if (!id) return;
-    try {
-      const data = await api<{ results: { id: string; first_utc?: string; created_at: string }[] }>(
-        `advanced-results?person_id=${encodeURIComponent(id)}&technique=progressed_lunar_phases`);
-      if (current === version.current) setHistory(data.results);
-    } catch { if (current === version.current) setError('Saved phase searches could not be listed.'); }
+  function choosePerson(id: string) {
+    setPersonId(id);
+    loadPerson(id, 'progressed_lunar_phases', 'Saved phase searches could not be listed.');
   }
   async function calculate(event: FormEvent) {
-    event.preventDefault();
-    const current = ++version.current;
-    setResult(null); setBusy(true); setError(''); intent.revealResult();
-    const key = `${personId}:${start}:${end}`;
-    const id = request.current?.key === key ? request.current.id : `phase-${crypto.randomUUID()}`;
-    request.current = { key, id };
-    try {
-      const data = await api<PhaseResult>('advanced-results', workspace.csrf, 'POST', {
-        id, person_id: personId, technique: 'progressed_lunar_phases',
-        parameters: { start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00` },
-      });
-      if (current !== version.current) return;
-      if (data.status === 'supported') {
-        setSelectedIndex(0); setResult(data);
-        setHistory(rows => rows.some(row => row.id === id) ? rows : [{ id,
-          first_utc: data.events[0]?.effective_utc,
-          created_at: new Date().toISOString() }, ...rows]);
-      } else setError(`No progressed phase search was saved (${data.status}). Use an exact current natal.`);
-    } catch (cause) { if (current === version.current) {
-      if (cause instanceof ApiError && cause.status === 400) {
-        request.current = null;
-        setError('Choose a positive effective UTC interval after birth, at most 40 years long. No phase search was saved.');
-      } else setError('Saving was not confirmed. Retry the same request or check saved phase searches before starting another.');
-    } }
-    finally { if (current === version.current) setBusy(false); }
+    event.preventDefault(); intent.revealResult();
+    await saveResult(personId, 'progressed_lunar_phases', {
+      start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`,
+    }, {
+      prefix: 'phase', onResult: () => setSelectedIndex(0),
+      firstRow: (data, id) => ({ id, first_utc: data.events[0]?.effective_utc,
+        created_at: new Date().toISOString() }),
+      unavailable: status => unavailableCalculation('Progressed phase search', status),
+      invalid: 'Choose a positive effective UTC interval after birth, at most 40 years long. No phase search was saved.',
+      uncertain: 'Saving was not confirmed. Retry the same request or check saved phase searches before starting another.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: PhaseResult; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) { setSelectedIndex(0); setResult({ ...saved.result, id, source_status: saved.source_status }); }
-    } catch { if (current === version.current) setError('Could not open saved progressed phase search.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open saved progressed phase search.',
+      () => setSelectedIndex(0));
   }
   const chosen = result?.events[selectedIndex];
   return <section className="advanced-view" aria-label="Progressed lunar phase cycles">

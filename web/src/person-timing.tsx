@@ -140,7 +140,7 @@ export function PersonTiming({ workspace, person, onDiscuss, onWatch }: {
       {clock.unavailable && <p role="status">Application date unavailable. Choose a starting date yourself.</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {watchOutcome && <p role="status">{watchOutcome}</p>}
-      {period && <><p role="status">{period.source_status === 'current' ? 'Current natal' : 'Historical natal'} · {start} to {end} UTC (end excluded). {period.note}
+      {period && <><p role="status">{period.chart_id === person.active_chart_id ? 'Current natal' : 'Earlier natal'}{period.source_status !== 'current' && ' · source needs review'} · {start} to {end} UTC (end excluded). {period.note}
         {period.next_offset !== null && ' More saved results remain; this loaded timeline is incomplete.'}</p>
         <label>Technique <select value={filter} onChange={event => { openRequest.current++; setOpened(null); setFilter(event.target.value); }}>
           <option value="all">All saved methods</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}

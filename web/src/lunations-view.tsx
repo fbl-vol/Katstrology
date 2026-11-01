@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Workspace } from './api';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { unavailableCalculation } from './advanced-result-status';
 import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
 import { bodyLabel } from './chart-symbols';
 import { zodiac } from './natal';
@@ -53,25 +55,14 @@ export function LunationsView({ workspace, people, onClose }: {
   }, [clock.today]);
   const [target, setTarget] = useState('sun');
   const [aspect, setAspect] = useState('conjunction');
-  const [result, setResult] = useState<SkyResult | null>(null);
+  const { result, history, error, busy, setError, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<SkyResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
   const [selected, setSelected] = useState<{ kind: 'syzygy' | 'eclipse'; index: number }>({ kind: 'syzygy', index: 0 });
-  const [history, setHistory] = useState<{ id: string; first_utc?: string; created_at: string }[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const version = useRef(0);
-  const request = useRef<{ id: string; key: string } | null>(null);
-  useEffect(() => () => { version.current++; }, []);
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
-  async function choosePerson(id: string) {
-    change(); setPersonId(id); setHistory([]);
-    const current = version.current;
-    if (!id) return;
-    try {
-      const data = await api<{ results: { id: string; first_utc?: string; created_at: string }[] }>(
-        `advanced-results?person_id=${encodeURIComponent(id)}&technique=actual_lunations_eclipses`);
-      if (current === version.current) setHistory(data.results);
-    } catch { if (current === version.current) setError('Saved real-sky searches could not be listed.'); }
+  function choosePerson(id: string) {
+    setPersonId(id);
+    loadPerson(id, 'actual_lunations_eclipses', 'Saved real-sky searches could not be listed.');
   }
   async function calculate(event: FormEvent) {
     event.preventDefault();
@@ -79,42 +70,22 @@ export function LunationsView({ workspace, people, onClose }: {
     if (!Number.isFinite(duration) || duration <= 0 || duration > 120) {
       setError('Choose an end date after the start, within 120 days. Your dates are still here.'); return;
     }
-    const current = ++version.current;
-    setResult(null); setBusy(true); setError(''); intent.revealResult();
-    const key = `${personId}:${start}:${end}:${target}:${aspect}`;
-    const id = request.current?.key === key ? request.current.id : `actual-lunation-${crypto.randomUUID()}`;
-    request.current = { key, id };
-    try {
-      const data = await api<SkyResult>('advanced-results', workspace.csrf, 'POST', {
-        id, person_id: personId, technique: 'actual_lunations_eclipses',
-        parameters: { start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`,
-          natal_target: target, aspect },
-      });
-      if (current !== version.current) return;
-      if (data.status === 'supported') {
-        setSelected({ kind: 'syzygy', index: 0 }); setResult(data);
-        setHistory(rows => rows.some(row => row.id === id) ? rows : [{ id,
-          first_utc: data.lunations[0]?.instant_utc,
-          created_at: new Date().toISOString() }, ...rows]);
-      } else setError(`The selected natal contact is unavailable (${data.status}); no sky facts were guessed.`);
-    } catch (cause) { if (current === version.current) {
-      if (cause instanceof ApiError && cause.status === 400) {
-        request.current = null;
-        setError('Choose a positive UTC interval of at most 120 days and a supported natal target. No sky search was saved.');
-      } else setError('Saving was not confirmed. Retry the same request or check saved sky searches before starting another.');
-    } }
-    finally { if (current === version.current) setBusy(false); }
+    intent.revealResult();
+    await saveResult(personId, 'actual_lunations_eclipses', {
+      start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`,
+      natal_target: target, aspect,
+    }, {
+      prefix: 'actual-lunation', onResult: () => setSelected({ kind: 'syzygy', index: 0 }),
+      firstRow: (data, id) => ({ id, first_utc: data.lunations[0]?.instant_utc,
+        created_at: new Date().toISOString() }),
+      unavailable: status => unavailableCalculation('Selected natal contact', status),
+      invalid: 'Choose a positive UTC interval of at most 120 days and a supported natal target. No sky search was saved.',
+      uncertain: 'Saving was not confirmed. Retry the same request or check saved sky searches before starting another.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: SkyResult; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) {
-        setSelected({ kind: 'syzygy', index: 0 });
-        setResult({ ...saved.result, id, source_status: saved.source_status });
-      }
-    } catch { if (current === version.current) setError('Could not open saved real-sky search.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open saved real-sky search.',
+      () => setSelected({ kind: 'syzygy', index: 0 }));
   }
   const chosen = selected.kind === 'syzygy' ? result?.lunations[selected.index] : result?.eclipses[selected.index];
   const chosenInstant = chosen && ('instant_utc' in chosen ? chosen.instant_utc : chosen.maximum_utc);

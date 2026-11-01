@@ -159,8 +159,8 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         {tab === 'basic' && <PersonTiming workspace={workspace} person={person} onDiscuss={discussSavedResult}
           onWatch={() => setWatchVersion(value => value + 1)} />}
       </details>
-      {tab === 'basic' && <PersonRecords workspace={workspace} personId={person.id}
-        onDiscuss={discussSavedResult} watchVersion={watchVersion} />}
+      <PersonRecords workspace={workspace} personId={person.id}
+        onDiscuss={discussSavedResult} watchVersion={watchVersion} />
       <AstrologyHelp />
       <section className="conversation-entry" aria-label="Conversation about this person">
         <p>{hasActive ? 'A new message uses the current generated natal, not an older version.' :

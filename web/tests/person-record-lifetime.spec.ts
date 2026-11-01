@@ -1,0 +1,224 @@
+import { test, expect } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const renders = resolve(import.meta.dirname, '../../.local/total-review-fixes');
+
+async function profile(page: import('@playwright/test').Page, owner = 'reader-review-records') {
+  await page.goto('/');
+  await page.getByLabel('Username').fill(owner);
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+}
+
+test('private journal fences a late initial read and retains drafts only for this person and session', async ({ page }) => {
+  mkdirSync(renders, { recursive: true });
+  await profile(page);
+  let arrive!: () => void;
+  let release!: () => void;
+  let delivered!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  let first = true;
+  await page.route('**/api/people/transit-person/journal?offset=0', async route => {
+    if (!first) { await route.continue(); return; }
+    first = false;
+    const response = await route.fetch();
+    arrive(); await held;
+    await route.fulfill({ response });
+    delivered();
+  });
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Private event journal', { exact: true }).click();
+  await arrived;
+  await expect(records.getByText('Opening private reflections…')).toBeVisible();
+  await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 560 });
+  await records.getByText('Opening private reflections…').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'journal-loading-short.png') });
+  await records.getByLabel('Your reflection', { exact: true }).fill('A private synthetic entry');
+  await records.getByRole('button', { name: 'Save private reflection' }).click();
+  await expect(records.locator('li').filter({ hasText: 'A private synthetic entry' })).toBeVisible();
+  release(); await done;
+  await expect(records.locator('li').filter({ hasText: 'A private synthetic entry' })).toBeVisible();
+  await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
+  await records.getByLabel('Your reflection', { exact: true }).fill('An unsaved private draft');
+  await records.getByRole('button', { name: 'Edit text' }).click();
+  await records.getByRole('form', { name: 'Edit private reflection' }).getByLabel('Your reflection').fill('An unsaved edit');
+  await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('tab', { name: 'Basic info' }).click();
+  await page.getByRole('tab', { name: 'Basic info' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Charts' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: 'Basic info' })).toBeFocused();
+  await expect(records.locator('form.journal-form').first().locator('textarea')).toHaveValue('An unsaved private draft');
+  await expect(records.getByRole('form', { name: 'Edit private reflection' }).getByLabel('Your reflection')).toHaveValue('An unsaved edit');
+  for (const viewport of [
+    { name: 'desktop', width: 1440, height: 1024 }, { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 }, { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: resolve(renders, `journal-${viewport.name}.png`), fullPage: true });
+    if (viewport.name === 'short') {
+      await records.getByRole('form', { name: 'Edit private reflection' }).getByRole('button', { name: 'Save edit' }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: resolve(renders, 'journal-short-viewport.png') });
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+  }
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Other synthetic reader' }).click();
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByLabel('Username').fill('reader-review-records');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
+  expect((await (await page.request.get('/api/people/transit-person/journal?offset=0')).json()).entries).toHaveLength(1);
+});
+
+test('a failed initial journal read is not described as an empty journal', async ({ page }) => {
+  await profile(page, 'reader-review-page');
+  let failed = false;
+  await page.route('**/api/people/transit-person/journal?offset=0', async route => {
+    if (!failed) { failed = true; await route.fulfill({ status: 503, body: '{}', contentType: 'application/json' }); }
+    else await route.continue();
+  });
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(records.getByText('Private reflections could not be refreshed.', { exact: false })).toBeVisible();
+  await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
+  await page.getByText('Private event journal', { exact: true }).click();
+  await page.getByText('Private event journal', { exact: true }).click();
+  await expect(records.getByText('No private reflections saved.')).toBeVisible();
+});
+
+test('watchlist ignores a read started before saving and retains an unsaved reminder edit across tabs', async ({ page }) => {
+  await profile(page);
+  const session = await (await page.request.get('/api/session')).json();
+  const resultId = `watch-source-${crypto.randomUUID()}`;
+  const result = await page.request.post('/api/advanced-results', {
+    headers: { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin },
+    data: { id: resultId, person_id: 'transit-person', technique: 'solar_return',
+      parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } },
+  });
+  expect(result.status()).toBe(201);
+  await page.getByText('Where am I now? · saved timing').click();
+  const timing = page.getByRole('region', { name: 'Where am I now' });
+  await timing.getByLabel('From (UTC)').fill('2026-01-01');
+  await timing.getByLabel('Explore').selectOption('year');
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  await expect(timing.locator(`[data-result-id="${resultId}"]`).first()).toBeVisible();
+  let arrive!: () => void;
+  let release!: () => void;
+  let delivered!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  let first = true;
+  await page.route('**/api/people/transit-person/watchlist?offset=0', async route => {
+    if (!first) { await route.continue(); return; }
+    first = false;
+    const response = await route.fetch(); arrive(); await held;
+    await route.fulfill({ response }); delivered();
+  });
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Saved for later · in-app reminders').click();
+  await arrived;
+  await expect(records.getByText('Opening saved items…')).toBeVisible();
+  await timing.locator(`[data-result-id="${resultId}"]`).first().getByRole('button', { name: 'Save for later' }).click();
+  await expect(records.getByText('Reminder off.')).toBeVisible();
+  release(); await done;
+  await expect(records.getByText('Reminder off.')).toBeVisible();
+  await expect(records.getByText('No saved items yet.', { exact: false })).toHaveCount(0);
+  await records.getByRole('button', { name: 'Edit note or reminder' }).click();
+  const form = records.getByRole('form', { name: 'Edit saved item' });
+  await form.getByLabel('Private note (optional)').fill('Unsaved reminder note');
+  await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('tab', { name: 'Basic info' }).click();
+  await expect(form.locator('textarea')).toHaveValue('Unsaved reminder note');
+  expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
+});
+
+test('watchlist pagination started before an edit cannot append a stale page', async ({ page }) => {
+  test.setTimeout(60_000);
+  await profile(page, 'reader-review-page');
+  const session = await (await page.request.get('/api/session')).json();
+  const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
+  const resultId = `paged-source-${crypto.randomUUID()}`;
+  expect((await page.request.post('/api/advanced-results', { headers,
+    data: { id: resultId, person_id: 'transit-person', technique: 'solar_return',
+      parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } },
+  })).status()).toBe(201);
+  for (let i = 0; i < 21; i++) {
+    expect((await page.request.post('/api/people/transit-person/watchlist', { headers,
+      data: { id: `page-item-${i}-${resultId}`, result_id: resultId, event_index: 0,
+        note: `Synthetic item ${i}`, reminder: null },
+    })).status()).toBe(201);
+  }
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Saved for later · in-app reminders').click();
+  await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeVisible();
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  let arrive!: () => void;
+  let release!: () => void;
+  let delivered!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  await page.route('**/api/people/transit-person/watchlist?offset=20', async route => {
+    const response = await route.fetch(); arrive(); await held;
+    await route.fulfill({ response }); delivered();
+  });
+  await records.getByRole('button', { name: 'Load more saved items' }).click();
+  await arrived;
+  await records.getByRole('button', { name: 'Edit note or reminder' }).first().click();
+  const form = records.getByRole('form', { name: 'Edit saved item' });
+  await form.getByLabel('Private note (optional)').fill('Edited before stale page');
+  await form.getByRole('button', { name: 'Save item' }).click();
+  await expect(records.getByText('Edited before stale page')).toBeVisible();
+  release(); await done;
+  await page.unroute('**/api/people/transit-person/watchlist?offset=20');
+  await expect(records.locator('ul > li')).toHaveCount(20);
+  await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeVisible();
+  await records.getByRole('button', { name: 'Load more saved items' }).click();
+  await expect(records.locator('ul > li')).toHaveCount(21);
+});
+
+test('watchlist read failure is not an empty list and retried read restores actual items', async ({ page }) => {
+  await profile(page);
+  const session = await (await page.request.get('/api/session')).json();
+  const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
+  const resultId = `watch-retry-source-${crypto.randomUUID()}`;
+  const result = await page.request.post('/api/advanced-results', { headers,
+    data: { id: resultId, person_id: 'transit-person', technique: 'solar_return',
+      parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } },
+  });
+  expect(result.status()).toBe(201);
+  const saved = await page.request.post('/api/people/transit-person/watchlist', { headers,
+    data: { id: `watch-retry-${crypto.randomUUID()}`, result_id: resultId, event_index: 0,
+      note: 'A persisted synthetic item', reminder: null },
+  });
+  expect(saved.status()).toBe(201);
+  let failed = false;
+  await page.route('**/api/people/transit-person/watchlist?offset=0', async route => {
+    if (!failed) { failed = true; await route.fulfill({ status: 503, body: '{}', contentType: 'application/json' }); }
+    else await route.continue();
+  });
+  const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
+  await page.getByText('Saved for later · in-app reminders').click();
+  await expect(records.getByText('Saved items could not be refreshed.', { exact: false })).toBeVisible();
+  await expect(records.getByText('No saved items yet.', { exact: false })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 560 });
+  await page.screenshot({ path: resolve(renders, 'watchlist-error-short.png'), fullPage: true });
+  await page.getByText('Saved for later · in-app reminders').click();
+  await page.getByText('Saved for later · in-app reminders').click();
+  await expect(records.getByText('A persisted synthetic item')).toBeVisible();
+});

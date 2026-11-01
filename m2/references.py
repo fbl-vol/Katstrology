@@ -101,7 +101,9 @@ class References:
         row = self.store.db.execute('''
             SELECT p.id,p.section,p.content,p.content_sha256,s.author,s.title,s.edition,
                    s.tradition,s.technique,s.provenance,s.rights_basis,s.rights_evidence,
-                   s.approval,s.language,s.source_url,s.supersedes_source_id,
+                   s.approval,s.language,s.source_url,
+                   COALESCE(s.supersedes_source_id,s.supersedes_deleted_source_id) AS supersedes_source_id,
+                   s.supersedes_deleted_source_id IS NOT NULL AS supersedes_source_deleted,
                    s.source_conversation_id,s.source_turn_id
             FROM reference_passages p JOIN reference_sources s
               ON (s.owner_id=p.owner_id AND s.id=p.source_id)
@@ -194,7 +196,8 @@ class References:
         existing = self.store.db.execute('''
             SELECT s.author,s.title,s.edition,s.tradition,s.technique,s.provenance,
                    s.rights_evidence,s.rights_basis,s.language,s.source_url,
-                   s.supersedes_source_id,o.extraction_note,o.original_text,o.content_sha256
+                   COALESCE(s.supersedes_source_id,s.supersedes_deleted_source_id) AS supersedes_source_id,
+                   o.extraction_note,o.original_text,o.content_sha256
             FROM reference_sources s JOIN reference_originals o
               ON (s.owner_id=o.owner_id AND s.id=o.source_id)
             WHERE s.owner_id=%s AND s.id=%s

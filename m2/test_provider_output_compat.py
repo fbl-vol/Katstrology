@@ -8,7 +8,7 @@ import httpx
 
 from m2.charts import Charts
 from m2.gateway import run_turn
-from m2.provider_model import ResponsesModel
+from m2.provider_model import ResponsesModel, _valid_read_arguments
 from m2.siwc import OpenAITransport, ProviderFailure, RESPONSES
 from m2.test_support import DatabaseCase
 
@@ -134,6 +134,36 @@ class OutputParserTests(unittest.TestCase):
                     self.assertEqual(len(bridge.requests), 2)
                 finally:
                     bridge.close()
+
+    def test_numeric_return_calls_accept_both_completed_footer_shapes(self):
+        examples = {
+            'get_solar_return': {'chart_id': 'chart-synthetic', 'year': 2026,
+                                 'latitude': 55.68, 'longitude': -12},
+            'get_lunar_returns': {'chart_id': 'chart-synthetic',
+                                  'start_utc': '2026-01-01T00:00:00Z',
+                                  'end_utc': '2026-02-01T00:00:00Z',
+                                  'latitude': 0, 'longitude': 12.5},
+            'get_planetary_returns': {'chart_id': 'chart-synthetic', 'body': 'saturn',
+                                      'start_utc': '2026-01-01T00:00:00Z',
+                                      'end_utc': '2026-02-01T00:00:00Z',
+                                      'latitude': 40.7, 'longitude': -73.9},
+        }
+        for name, arguments in examples.items():
+            call = {**CALL, 'name': name, 'arguments': json.dumps(arguments)}
+            for footer in (slim_footer([]), completed([call])):
+                with self.subTest(name=name, footer=footer['response']['output']):
+                    model, bridge = model_for([added(call, 'response.output_item.done'), footer])
+                    try:
+                        self.assertEqual(list(model.create_completion('Return'))[0]['tool_call'],
+                                         {'call_id': call['call_id'], 'name': name,
+                                          'arguments': call['arguments']})
+                    finally:
+                        bridge.close()
+            for invalid in (True, None, '55.68', float('nan'), float('inf')):
+                with self.subTest(name=name, invalid=invalid):
+                    changed = {**arguments, 'latitude': invalid}
+                    self.assertFalse(_valid_read_arguments(name, json.dumps(changed)))
+            self.assertFalse(_valid_read_arguments(name, json.dumps({**arguments, 'owner': 'bob'})))
 
     def test_arguments_done_supplies_missing_item_done_arguments_without_guessing(self):
         events = streamed_call()

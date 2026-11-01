@@ -1,6 +1,7 @@
 """Supported direct Responses HTTP/SSE adapter; no hosted MCP or provider history."""
 
 import json
+import math
 from m2.agent_reads import TOOLS
 from m2.model_capacity import resolve_capacity
 from m2.prompting import HOSTED
@@ -173,6 +174,9 @@ def _valid_read_arguments(name, serialized):
         allowed = field['type'] if isinstance(field['type'], list) else [field['type']]
         if not ((isinstance(value, str) and 'string' in allowed) or
                 (type(value) is int and 'integer' in allowed and
+                 field.get('minimum', value) <= value <= field.get('maximum', value)) or
+                ((type(value) is int or (type(value) is float and math.isfinite(value)))
+                 and 'number' in allowed and
                  field.get('minimum', value) <= value <= field.get('maximum', value)) or
                 (value is None and 'null' in allowed)):
             return False

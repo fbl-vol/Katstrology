@@ -197,6 +197,8 @@ class CorrectionContinuityTests(DatabaseCase):
             db.execute('ALTER TABLE reference_sources DROP CONSTRAINT reference_sources_previous_fk, '
                        'DROP CONSTRAINT reference_sources_approval_check, '
                        'DROP CONSTRAINT reference_sources_rights_basis_check, '
+                       'DROP CONSTRAINT reference_sources_one_previous_check, '
+                       'DROP COLUMN supersedes_deleted_source_id, '
                        'DROP COLUMN supersedes_source_id, DROP COLUMN source_url, '
                        'DROP COLUMN language')
             db.execute("ALTER TABLE reference_sources ADD CONSTRAINT reference_sources_rights_basis_check "
@@ -236,7 +238,7 @@ class CorrectionContinuityTests(DatabaseCase):
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertIsNone(restored.read_turn(alice, 'thread', 'legacy')['parent_revision'])
             self.assertEqual(restored.db.execute('SELECT max(version) AS version FROM '
-                                                  'schema_migrations').fetchone()['version'], 21)
+                                                  'schema_migrations').fetchone()['version'], 22)
             correct(restored, alice, 'thread', 'withdrawn', 'root', 'withdraw')
             self.assertIsNone(current_text(restored, alice, 'thread', 'legacy',
                                            {'thread': {'root', 'legacy'}}))

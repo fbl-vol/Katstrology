@@ -182,6 +182,74 @@ class ReferenceLifecycleTests(DatabaseCase):
             refs.ingest_edition(self.alice, self.metadata('edition-v1', 'v1'), text,
                 [{'id': 'a', 'section': 'page 1', 'content': text}])
 
+    def test_successor_dependency_rejects_deletion_before_journaling(self):
+        refs = References(self.store)
+        for source_id, previous in (('earlier', None), ('later', 'earlier')):
+            text = f'Synthetic {source_id} reference edition.'
+            refs.ingest_edition(self.alice, self.metadata(source_id, source_id,
+                **({'supersedes_source_id': previous} if previous else {})), text,
+                [{'id': 'p', 'section': 'line 1', 'content': text}])
+        before = self.ledger.path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'successor reference editions'):
+            self.ledger.delete_reference(self.store, self.alice, 'earlier')
+        self.assertEqual(self.ledger.path.read_bytes(), before)
+        self.assertFalse(self.store._blocked)
+        self.ledger.delete_reference(self.store, self.alice, 'later')
+        self.ledger.delete_reference(self.store, self.alice, 'earlier')
+        self.store.close()
+        self.store = Store(self.dsn, Path(self.directory.name) / 'files', self.ledger)
+        alice = self.store.authenticate('alice', 'synthetic-password-alice')
+        with self.assertRaises(KeyError):
+            References(self.store).get_passage(alice, 'earlier', 'p')
+
+    def test_previously_journaled_predecessor_erasure_preserves_successor_and_replays(self):
+        refs = References(self.store)
+        for source_id, previous in (('old', None), ('new', 'old')):
+            text = f'Synthetic {source_id} reference edition.'
+            refs.ingest_edition(self.alice, self.metadata(source_id, source_id,
+                **({'supersedes_source_id': previous} if previous else {})), text,
+                [{'id': 'p', 'section': 'line 1', 'content': text}])
+        snapshot = Path(self.directory.name) / 'before-deletion.dump'
+        dump_owned(self.dsn, snapshot)
+        # Simulate an attested tombstone written by the earlier defective code.
+        self.ledger._append({'owner': 'alice', 'reference': 'old'})
+        self.store._blocked = True
+        self.ledger.reconcile(self.store)
+        self.assertFalse(self.store._blocked)
+        with self.assertRaises(KeyError):
+            refs.get_passage(self.alice, 'old', 'p')
+        survivor = refs.get_passage(self.alice, 'new', 'p')
+        self.assertEqual(survivor['supersedes_source_id'], 'old')
+        self.assertTrue(survivor['supersedes_source_deleted'])
+        self.assertEqual(self.store.db.execute('''
+            SELECT count(*) AS n FROM reference_originals WHERE owner_id='alice'
+        ''').fetchone()['n'], 1)
+        self.store.close()
+        self.store = Store(self.dsn, Path(self.directory.name) / 'files', self.ledger)
+        alice = self.store.authenticate('alice', 'synthetic-password-alice')
+        self.assertEqual(References(self.store).get_passage(alice, 'new', 'p')
+                         ['supersedes_source_id'], 'old')
+        database = 'kat_m2_restored_' + uuid4().hex[:12]
+        dsn = make_conninfo(self.admin_dsn, dbname=database)
+        with psycopg.connect(self.admin_dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database)))
+        restored = None
+        try:
+            restore_owned(dsn, snapshot)
+            restored = Store(dsn, Path(self.directory.name) / 'restored-files', self.ledger)
+            alice = restored.authenticate('alice', 'synthetic-password-alice')
+            with self.assertRaises(KeyError):
+                References(restored).get_passage(alice, 'old', 'p')
+            self.assertEqual(References(restored).get_passage(alice, 'new', 'p')
+                             ['supersedes_source_id'], 'old')
+            self.assertTrue(References(restored).get_passage(alice, 'new', 'p')
+                            ['supersedes_source_deleted'])
+        finally:
+            if restored:
+                restored.close()
+            with psycopg.connect(self.admin_dsn, autocommit=True) as admin:
+                admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database)))
+
     def test_older_backup_cannot_reenable_revoked_source(self):
         refs = References(self.store)
         text = 'Synthetic remembered passage subject to a later revocation.'

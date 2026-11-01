@@ -194,6 +194,23 @@ test('opened progressed MC contact names its branch without inventing a planetar
   expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
 });
 
+test('earlier natal identity is separate from source eligibility in saved timing', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByText('Where am I now? · saved timing').click();
+  const timing = page.getByRole('region', { name: 'Where am I now' });
+  await timing.getByLabel('Source natal').selectOption({ label: 'Earlier natal 2' });
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  await expect(timing.getByRole('status')).toContainText('Earlier natal');
+  await expect(timing.getByRole('status')).not.toContainText('Current natal');
+  await timing.getByLabel('Source natal').selectOption({ label: 'Current natal' });
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  await expect(timing.getByRole('status')).toContainText('Current natal');
+});
+
 test('saved timing keeps the exact result selected for an editable draft', async ({ page }) => {
   mkdirSync(renders, { recursive: true });
   await page.goto('/');

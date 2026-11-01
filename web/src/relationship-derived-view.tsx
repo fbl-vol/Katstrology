@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import type { Workspace } from './api';
+import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { unavailableCalculation } from './advanced-result-status';
 import { useManualChartIntent } from './manual-chart-intent';
 import { bodyGlyph, bodyLabel, ChartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
@@ -72,57 +74,27 @@ export function RelationshipDerivedView({ workspace, people, onClose }: {
   const [first, setFirst] = useState('');
   const [second, setSecond] = useState('');
   const [technique, setTechnique] = useState<Technique>('midpoint_composite');
-  const [result, setResult] = useState<Derived | null>(null);
+  const { result, history, busy, error, setError, change,
+    choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
+    useManualResultLifecycle<Derived, { id: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
-  const [history, setHistory] = useState<{ id: string; created_at: string }[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const version = useRef(0);
-  const request = useRef<{ key: string; id: string } | null>(null);
-  useEffect(() => () => { version.current++; }, []);
-  function change() { version.current++; setResult(null); setError(''); setBusy(false); request.current = null; }
   useEffect(() => {
-    const current = ++version.current;
-    setHistory([]);
-    if (!first) return;
-    void api<{ results: { id: string; created_at: string }[] }>(
-      `advanced-results?person_id=${encodeURIComponent(first)}&technique=${technique}`)
-      .then(data => { if (current === version.current) setHistory(data.results); })
-      .catch(() => { if (current === version.current) setError('Could not list saved relationship charts.'); });
+    loadPerson(first, technique, 'Could not list saved relationship charts.');
   }, [first, technique]);
   async function calculate(event: FormEvent) {
     event.preventDefault();
     if (first === second) { setError('Choose two different people with current natals.'); return; }
-    const current = ++version.current;
-    setBusy(true); setResult(null); setError(''); intent.revealResult();
-    const key = `${first}:${second}:${technique}`;
-    const id = request.current?.key === key ? request.current.id : `relationship-${crypto.randomUUID()}`;
-    request.current = { id, key };
-    try {
-      const calculated = await api<Derived>('advanced-results', workspace.csrf, 'POST', {
-        id, person_id: first, technique, parameters: { person_b_id: second },
-      });
-      if (current !== version.current) return;
-      if (calculated.status === 'supported') {
-        setResult(calculated);
-        setHistory(rows => rows.some(row => row.id === id) ? rows : [
-          { id, created_at: new Date().toISOString() }, ...rows]);
-      } else setError(`No derived chart was created (${calculated.status}). Both natal sources must be compatible and current.`);
-    } catch (cause) { if (current === version.current) {
-      if (cause instanceof ApiError && cause.status === 400) {
-        request.current = null;
-        setError('Check both current natal sources and the selected technique, then correct the selection. No chart was saved.');
-      } else setError('Saving was not confirmed. Retry the same request or check saved derived charts before starting another.');
-    } }
-    finally { if (current === version.current) setBusy(false); }
+    intent.revealResult();
+    await saveResult(first, technique, { person_b_id: second }, {
+      prefix: 'relationship',
+      firstRow: (_, id) => ({ id, created_at: new Date().toISOString() }),
+      unavailable: status => unavailableCalculation('Derived chart', status),
+      invalid: 'Check both current natal sources and the selected technique, then correct the selection. No chart was saved.',
+      uncertain: 'Saving was not confirmed. Retry the same request or check saved derived charts before starting another.',
+    });
   }
-  async function openSaved(id: string) {
-    const current = ++version.current;
-    setResult(null); setError(''); setBusy(false); intent.revealResult();
-    try {
-      const saved = await api<{ result: Derived; source_status: string }>(`advanced-results/${encodeURIComponent(id)}`);
-      if (current === version.current) setResult({ ...saved.result, id, source_status: saved.source_status });
-    } catch { if (current === version.current) setError('Could not open the archived derived chart.'); }
+  function openSaved(id: string) {
+    intent.revealResult(); void openResult(id, 'Could not open the archived derived chart.');
   }
   const name = (id: string) => people.find(person => person.id === id)?.name || 'saved person';
   return <section className="advanced-view" aria-label="Relationship-derived chart">

@@ -41,7 +41,7 @@ class Periods:
             FROM advanced_results
             WHERE owner_id=%s AND chart_a_id=%s AND technique=ANY(%s)
               AND ((result->'window_utc'->>0)::timestamptz < %s
-                   AND (result->'window_utc'->>1)::timestamptz >= %s
+                   AND (result->'window_utc'->>1)::timestamptz > %s
                    OR (result->>'effective_utc')::timestamptz >= %s
                    AND (result->>'effective_utc')::timestamptz < %s)
             ORDER BY created_at DESC,id DESC LIMIT 11 OFFSET %s

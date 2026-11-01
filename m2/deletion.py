@@ -188,8 +188,18 @@ class Tombstones:
                         for item in dependents:
                             store._changed(owner, item['conversation_id'])
                 elif 'reference' in record:
+                    source_id = store._id(record['reference'])
+                    # Only a previously journaled, now-inadmissible deletion reaches
+                    # here with descendants. Keep those editions and their predecessor
+                    # identity while replaying the authoritative erasure on every backup.
+                    store.db.execute('''
+                        UPDATE reference_sources
+                        SET supersedes_deleted_source_id=supersedes_source_id,
+                            supersedes_source_id=NULL
+                        WHERE owner_id=%s AND supersedes_source_id=%s
+                    ''', (owner, source_id))
                     store.db.execute('DELETE FROM reference_sources WHERE owner_id=%s AND id=%s',
-                                     (owner, store._id(record['reference'])))
+                                     (owner, source_id))
                 elif 'attachment' in record:
                     store.db.execute('''
                         DELETE FROM attachments WHERE owner_id=%s AND conversation_id=%s AND id=%s
@@ -321,6 +331,11 @@ class Tombstones:
             SELECT 1 FROM reference_evidence WHERE owner_id=%s AND source_id=%s LIMIT 1
         ''', (owner, source_id)).fetchone()):
             raise ValueError('Delete linked conversations before deleting their reference source')
+        if store.db.execute('''
+            SELECT 1 FROM reference_sources
+            WHERE owner_id=%s AND supersedes_source_id=%s LIMIT 1
+        ''', (owner, source_id)).fetchone():
+            raise ValueError('Delete successor reference editions before their predecessor')
         store._blocked = True
         self._append({'owner': owner, 'reference': source_id})
         self.reconcile(store)
