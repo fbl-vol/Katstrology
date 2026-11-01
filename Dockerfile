@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt pyswisseph==2.10.3.2
 COPY --from=pgclient /usr/lib/postgresql/16/bin/pg_dump /usr/lib/postgresql/16/bin/pg_dump
 COPY --from=pgclient /usr/lib/postgresql/16/bin/pg_restore /usr/lib/postgresql/16/bin/pg_restore
 COPY --from=pgclient /usr/lib/x86_64-linux-gnu/libpq.so* /usr/lib/x86_64-linux-gnu/
+# The pinned PG16 client links Debian LDAP/Kerberos/compression libraries absent
+# from the slim Python image. Check binaries at build time, not at restore time.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libldap-2.5-0 libgssapi-krb5-2 libzstd1 liblz4-1 && rm -rf /var/lib/apt/lists/*
 COPY m2/*.py ./m2/
 COPY m2/migrations ./m2/migrations
 COPY m2/data ./m2/data
