@@ -83,6 +83,25 @@ class PersonRecordTests(DatabaseCase):
         self.assertEqual(item['result_id'], saved['id'])
         self.assertNotEqual(People(self.store).active_chart_id(self.alice, 'one'), chart)
 
+    def test_watched_eclipse_maximum_resolves_original_not_syzygy(self):
+        self.fixture()
+        sky = Advanced(self.store).save(self.alice, 'watched-sky-source', 'one',
+            'actual_lunations_eclipses', {
+                'start_utc': '2024-03-01T00:00:00+00:00',
+                'end_utc': '2024-06-01T00:00:00+00:00',
+                'natal_target': 'sun', 'aspect': 'conjunction'})
+        self.assertTrue(sky['eclipses'])
+        watch = Watchlist(self.store)
+        watch.save(self.alice, 'one', 'watched-maximum', 'watched-sky-source', 500,
+                   'Original maximum, not nearby syzygy', None)
+        listed = watch.list(self.alice, 'one')['items'][0]
+        self.assertEqual(listed['event']['maximum_utc'], sky['eclipses'][0]['maximum_utc'])
+        self.assertEqual(listed['event_index'], 500)
+        with self.assertRaises(ValueError):
+            watch.save(self.alice, 'one', 'invalid-maximum', 'watched-sky-source',
+                       500 + len(sky['eclipses']),
+                       '', None)
+
     def test_private_reflection_excluded_and_deletion_survives_old_backup(self):
         _, saved = self.fixture()
         journal, watch = Journal(self.store), Watchlist(self.store)

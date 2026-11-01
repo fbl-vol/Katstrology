@@ -6,6 +6,7 @@ from m2.advanced import Advanced
 from m2.app_clock import reporting_zone, utc_now
 from m2.core_calc import local_instant
 from m2.people import People
+from m2.saved_timing import source_event
 from psycopg.types.json import Jsonb
 
 
@@ -21,15 +22,14 @@ def _person(store, session, person_id):
 def _result(store, session, person_id, result_id, event_index=None):
     owner = _person(store, session, person_id)
     row = store.db.execute('''
-        SELECT r.result FROM advanced_results r JOIN charts c
+        SELECT r.technique,r.result FROM advanced_results r JOIN charts c
           ON c.owner_id=r.owner_id AND c.id=r.chart_a_id
         WHERE r.owner_id=%s AND r.id=%s AND c.person_id=%s
     ''', (owner, store._id(result_id), person_id)).fetchone()
     if not row:
         raise KeyError('Saved result not found for person')
-    if event_index is not None and (type(event_index) is not int or
-                                    not 0 <= event_index < len(row['result'].get('events', []))):
-        raise ValueError('Choose an actual crossing in the saved result')
+    if event_index is not None:
+        source_event(row['technique'], row['result'], event_index)
     return row
 
 
@@ -161,8 +161,9 @@ class Watchlist:
                           'scheduled' if reminder else 'off',
                           'technique': saved['technique'],
                           'event': ({key: value for key, value in
-                                     saved['result'].get('events', [])[row['event_index']].items()
-                                     if key in ('instant_utc','effective_utc','phase','pass_direction')}
+                                     source_event(saved['technique'], saved['result'], row['event_index'])[1].items()
+                                     if key in ('instant_utc', 'maximum_utc', 'effective_utc',
+                                                'phase', 'pass_direction')}
                                     if row['event_index'] is not None else None),
                           'window_utc': saved['result'].get('window_utc')})
         return {'items': items, 'next_offset': offset + 20 if len(rows) > 20 else None,

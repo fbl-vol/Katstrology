@@ -6,11 +6,15 @@ import type { SelectedResult } from './archive';
 type Reminder = { wall_time: string; zone: string; fold: number | null; instant_utc: string };
 type Watch = { id: string; result_id: string; event_index: number | null; note: string;
   reminder: Reminder | null; source_status: string; reminder_status: string; technique: string;
-  window_utc: string[] | null; event: { instant_utc?: string; phase?: string } | null };
+  window_utc: string[] | null; event: { instant_utc?: string; maximum_utc?: string;
+    effective_utc?: string; phase?: string } | null };
 type Reflection = { id: string; kind: string; local_date: string; instant_utc: string | null;
   zone_name: string | null; linked_result_id: string | null; linked_source_status: string | null;
   text: string; attribution: string };
 type Page<T> = { next_offset: number | null; items?: T[]; entries?: T[] };
+type WatchDraft = { id: string; note: string; enabled: boolean; wall: string; zone: string;
+  fold: number | null; showFold: boolean };
+type JournalDraft = { id: string; text: string };
 const names: Record<string, string> = {
   solar_return: 'Solar return', lunar_return: 'Lunar return', planetary_return: 'Planetary return',
   mc_transit: 'Transit to natal MC', actual_lunations_eclipses: 'Lunation or eclipse',
@@ -38,6 +42,8 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
   const [zone, setZone] = useState(workspace.product.reporting_zone);
   const [fold, setFold] = useState<number | null>(null);
   const [linked, setLinked] = useState('');
+  const [watchDraft, setWatchDraft] = useState<WatchDraft | null>(null);
+  const [journalDraft, setJournalDraft] = useState<JournalDraft | null>(null);
   const journalAttempt = useRef<{ key: string; id: string } | null>(null);
   const editAttempt = useRef<{ key: string; id: string } | null>(null);
   const watchAttempt = useRef<{ key: string; id: string } | null>(null);
@@ -62,36 +68,26 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
     } catch { setError('Private notes could not be opened. Retry by reopening this section.'); }
   }
 
-  async function changeWatch(item: Watch) {
-    const nextNote = window.prompt('Your note (optional, up to 512 characters)', item.note);
-    if (nextNote === null) return;
-    const wantsReminder = window.confirm('Show this item as due in Kat on a future visit? Cancel keeps reminders off. No message arrives while Kat is closed.');
-    let reminder: { wall_time: string; zone: string; fold: number | null } | null = null;
-    if (wantsReminder) {
-      const wall = window.prompt('Local reminder time (YYYY-MM-DDTHH:MM). Leave blank to keep it off.', item.reminder?.wall_time || '');
-      if (wall === null) return;
-      if (wall) {
-        const location = window.prompt('IANA timezone for this local time', item.reminder?.zone || workspace.product.reporting_zone);
-        if (location === null) return;
-        const occurrence = window.prompt('If this local clock hour repeats: earlier, later or blank to check ambiguity',
-          item.reminder?.fold === 0 ? 'earlier' : item.reminder?.fold === 1 ? 'later' : '');
-        if (occurrence === null) return;
-        if (!['', 'earlier', 'later'].includes(occurrence)) { setError('Choose earlier, later or leave the repeated-hour choice blank.'); return; }
-        reminder = { wall_time: wall, zone: location,
-          fold: occurrence === '' ? null : occurrence === 'earlier' ? 0 : 1 };
-      }
-    }
-    const key = JSON.stringify({ item: item.id, nextNote, reminder });
+  async function changeWatch(event: FormEvent) {
+    event.preventDefault();
+    if (!watchDraft) return;
+    const reminder = watchDraft.enabled ? {
+      wall_time: watchDraft.wall, zone: watchDraft.zone, fold: watchDraft.fold,
+    } : null;
+    const key = JSON.stringify({ item: watchDraft.id, note: watchDraft.note, reminder });
     if (watchAttempt.current?.key !== key) watchAttempt.current = { key, id: `watch-edit-${crypto.randomUUID()}` };
     setBusy(true); setError('');
     try {
-      await api(`people/${personId}/watchlist/${item.id}`, workspace.csrf, 'PATCH', {
-        id: watchAttempt.current.id, note: nextNote, reminder,
+      await api(`people/${personId}/watchlist/${watchDraft.id}`, workspace.csrf, 'PATCH', {
+        id: watchAttempt.current.id, note: watchDraft.note, reminder,
       });
       watchAttempt.current = null;
       await loadWatch();
-    } catch { setError('Change not confirmed. Repeat with the same values to retry safely.'); }
-    finally { setBusy(false); }
+      setWatchDraft(null);
+    } catch {
+      setError('Change not confirmed. Check the local time and timezone; if the hour repeats, choose earlier or later. Retry with the same values safely.');
+      setWatchDraft(draft => draft ? { ...draft, showFold: true } : draft);
+    } finally { setBusy(false); }
   }
 
   async function deleteRecord(kind: 'watchlist' | 'journal', id: string) {
@@ -120,16 +116,19 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
     finally { setBusy(false); }
   }
 
-  async function editReflection(item: Reflection) {
-    const next = window.prompt('Edit your reflection', item.text);
-    if (next === null || next === item.text) return;
-    const key = JSON.stringify({ entry: item.id, text: next });
+  async function editReflection(event: FormEvent) {
+    event.preventDefault();
+    if (!journalDraft) return;
+    const key = JSON.stringify({ entry: journalDraft.id, text: journalDraft.text });
     if (editAttempt.current?.key !== key) editAttempt.current = { key, id: `journal-edit-${crypto.randomUUID()}` };
     setBusy(true); setError('');
     try {
-      await api(`people/${personId}/journal/${item.id}`, workspace.csrf, 'PATCH', { id: editAttempt.current.id, text: next });
+      await api(`people/${personId}/journal/${journalDraft.id}`, workspace.csrf, 'PATCH', {
+        id: editAttempt.current.id, text: journalDraft.text,
+      });
       editAttempt.current = null;
       await loadJournal();
+      setJournalDraft(null);
     } catch { setError('Edit was not confirmed. Check the saved text before trying again.'); }
     finally { setBusy(false); }
   }
@@ -139,15 +138,41 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
       <summary>Saved for later · in-app reminders</summary>
       {watchOpen && <><p>Reminders are off unless chosen per item. Due items appear here only when Kat is open; there are no external alerts.</p>
         {watch.length ? <ul>{watch.map(item => <li key={item.id}>
-          <strong>{names[item.technique] || 'Saved result'}</strong>{item.event?.instant_utc && ` · ${item.event.instant_utc.slice(0, 10)} UTC`}
+          <strong>{names[item.technique] || 'Saved result'}</strong>{(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc) &&
+            ` · ${(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc)?.slice(0, 10)} UTC`}
           {item.note && <p>{item.note}</p>}
           <p>{item.source_status === 'historical' ? 'Historical source. Review this saved calculation before relying on a reminder.' : 'Current source.'}
             {' '}{item.reminder_status === 'off' ? 'Reminder off.' : item.reminder_status === 'needs_review' ? 'Reminder needs review.' :
               item.reminder_status === 'due' ? 'Due in Kat now.' : `In-app reminder set for ${item.reminder?.wall_time} ${item.reminder?.zone}.`}</p>
           <button type="button" onClick={() => onDiscuss({ result_id: item.result_id, event_index: item.event_index },
             names[item.technique] || 'saved result')}>Discuss this result</button>
-          <button type="button" disabled={busy} onClick={() => void changeWatch(item)}>Edit note or reminder</button>
+          <button type="button" disabled={busy} onClick={() => {
+            setError(''); setWatchDraft({ id: item.id, note: item.note,
+              enabled: !!item.reminder, wall: item.reminder?.wall_time || '',
+              zone: item.reminder?.zone || workspace.product.reporting_zone,
+              fold: item.reminder?.fold ?? null, showFold: item.reminder?.fold != null });
+          }}>Edit note or reminder</button>
           <button type="button" disabled={busy} onClick={() => void deleteRecord('watchlist', item.id)}>Remove</button>
+          {watchDraft?.id === item.id && <form className="journal-form" aria-label="Edit saved item" onSubmit={event => void changeWatch(event)}>
+            <label className="journal-note">Private note (optional) <textarea autoFocus maxLength={512} value={watchDraft.note}
+              onChange={event => setWatchDraft({ ...watchDraft, note: event.target.value })} /></label>
+            <label className="journal-note reminder-opt-in"><input type="checkbox" checked={watchDraft.enabled}
+              onChange={event => setWatchDraft({ ...watchDraft, enabled: event.target.checked })} />
+              Remind me in Kat when open</label>
+            {watchDraft.enabled && <><p className="journal-note">No message is sent when Kat is closed. Your source must still be reviewed if it becomes historical.</p>
+              <label>Local reminder time <input type="datetime-local" required value={watchDraft.wall}
+                onChange={event => setWatchDraft({ ...watchDraft, wall: event.target.value })} /></label>
+              <label>Timezone (IANA) <input required value={watchDraft.zone}
+                onChange={event => setWatchDraft({ ...watchDraft, zone: event.target.value })} /></label>
+              {watchDraft.showFold ? <label>Repeated clock hour <select value={watchDraft.fold ?? ''}
+                onChange={event => setWatchDraft({ ...watchDraft,
+                  fold: event.target.value === '' ? null : Number(event.target.value) })}>
+                <option value="">Check for ambiguity</option><option value="0">Earlier occurrence</option>
+                <option value="1">Later occurrence</option></select></label> :
+                <button type="button" onClick={() => setWatchDraft({ ...watchDraft, showFold: true })}>Choose a repeated hour</button>}</>}
+            <div className="journal-form-actions"><button type="button" disabled={busy} onClick={() => { setWatchDraft(null); setError(''); }}>Cancel</button>
+              <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save item'}</button></div>
+          </form>}
         </li>)}</ul> : <p>No saved items yet. Choose Save for later from a dated result.</p>}
         {watchNext !== null && <button type="button" onClick={() => void loadWatch(watchNext)}>Load more saved items</button>}
       </>}
@@ -166,7 +191,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
               <option value="">Check for ambiguity</option><option value="0">Earlier occurrence</option><option value="1">Later occurrence</option>
             </select></label></>}
           <label>Link a saved item (optional) <select value={linked} onChange={event => setLinked(event.target.value)}>
-            <option value="">No link</option>{watch.map(item => <option key={item.id} value={item.result_id}>{names[item.technique] || 'Saved calculation'} · {item.event?.instant_utc?.slice(0, 10) || 'saved period'}</option>)}
+            <option value="">No link</option>{watch.map(item => <option key={item.id} value={item.result_id}>{names[item.technique] || 'Saved calculation'} · {(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc)?.slice(0, 10) || 'saved period'}</option>)}
           </select></label>
           <label className="journal-note">Your reflection <textarea required maxLength={4096} value={note} onChange={event => setNote(event.target.value)} /></label>
           <button type="submit" disabled={busy || !note.trim() || !day}>Save private reflection</button>
@@ -174,8 +199,14 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
         {journal.length ? <ul>{journal.map(item => <li key={item.id}>
           <strong>{item.local_date}{item.kind === 'uncertain' && ' · approximate day'}{item.kind === 'instant' && ` · ${item.instant_utc} (recorded instant)`}</strong>
           <p>{item.text}</p>{item.linked_result_id && <p>{item.linked_source_status === 'historical' ? 'Linked calculation is historical; your reflection remains yours.' : 'Linked saved calculation.'}</p>}
-          <button type="button" disabled={busy} onClick={() => void editReflection(item)}>Edit text</button>
+          <button type="button" disabled={busy} onClick={() => { setError(''); setJournalDraft({ id: item.id, text: item.text }); }}>Edit text</button>
           <button type="button" disabled={busy} onClick={() => void deleteRecord('journal', item.id)}>Delete reflection</button>
+          {journalDraft?.id === item.id && <form className="journal-form" aria-label="Edit private reflection" onSubmit={event => void editReflection(event)}>
+            <label className="journal-note">Your reflection <textarea autoFocus required maxLength={4096} value={journalDraft.text}
+              onChange={event => setJournalDraft({ ...journalDraft, text: event.target.value })} /></label>
+            <div className="journal-form-actions"><button type="button" disabled={busy} onClick={() => { setJournalDraft(null); setError(''); }}>Cancel</button>
+              <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save edit'}</button></div>
+          </form>}
         </li>)}</ul> : <p>No private reflections saved.</p>}
         {journalNext !== null && <button type="button" onClick={() => void loadJournal(journalNext)}>Load more reflections</button>}
       </>}
