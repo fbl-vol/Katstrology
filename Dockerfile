@@ -31,7 +31,10 @@ RUN pg_dump --version && pg_restore --version
 RUN groupadd --gid 10001 kat && useradd --uid 10001 --gid kat --home-dir /opt/kat --no-create-home kat && \
     mkdir -p /opt/kat/.local/ephe /var/lib/kat/browser-runtime/files \
       /var/lib/kat/browser-runtime/deletions /var/lib/kat/browser-runtime/siwc && \
-    chown -R kat:kat /var/lib/kat /opt/kat/.local
+    chown -R kat:kat /var/lib/kat /opt/kat/.local && \
+    chmod 0700 /var/lib/kat /var/lib/kat/browser-runtime \
+      /var/lib/kat/browser-runtime/files /var/lib/kat/browser-runtime/deletions \
+      /var/lib/kat/browser-runtime/siwc
 USER 10001:10001
 EXPOSE 8765
 CMD ["python", "-m", "m2.web_server", "serve"]
