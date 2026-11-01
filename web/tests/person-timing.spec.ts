@@ -88,6 +88,22 @@ test('saved cross-technique dates sort chronologically and open their actual cal
   await timing.locator('[data-result-id="timing-progression-producer"]').first()
     .getByRole('button', { name: 'Open saved result' }).click();
   await expect(timing.getByText('Secondary progression for age', { exact: false })).toBeVisible();
+  let reached!: () => void;
+  let resume!: () => void;
+  const intercepted = new Promise<void>(resolve => { reached = resolve; });
+  const held = new Promise<void>(resolve => { resume = resolve; });
+  await page.route('**/api/advanced-results/timing-arc-producer', async route => {
+    reached(); await held; await route.continue();
+  });
+  await timing.locator('[data-result-id="timing-arc-producer"]').first()
+    .getByRole('button', { name: 'Open saved result' }).click();
+  await intercepted;
+  await timing.locator('[data-result-id="timing-progression-producer"]').first()
+    .getByRole('button', { name: 'Open saved result' }).click();
+  await expect(timing.getByText('Secondary progression for age', { exact: false })).toBeVisible();
+  const oldResponse = page.waitForResponse(response => response.url().endsWith('/api/advanced-results/timing-arc-producer'));
+  resume(); await oldResponse;
+  await expect(timing.locator('[data-result-id="timing-arc-producer"] .timing-opened')).toHaveCount(0);
   const sky = timing.locator('[data-result-id="timing-sky-producer"]').first();
   await sky.getByRole('button', { name: 'Open saved result' }).click();
   await expect(sky.getByText('Geocentric lunations and physically distinct', { exact: false })).toBeVisible();
