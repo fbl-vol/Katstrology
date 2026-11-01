@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from m2.charts import Charts
 from m2.people import People
+from m2.saved_timing import points_in_period
 
 TIMING = ('mc_transit', 'actual_lunations_eclipses', 'progressed_mc_contacts',
           'progressed_lunar_phases', 'secondary_progression', 'true_solar_arc',
@@ -50,25 +51,17 @@ class Periods:
         entries = []
         for row in rows[:10]:
             result = row['result']
-            # Keep all saved crossings including repeat retrograde passes. The
-            # offset is by source result, not by event, so no crossing is split.
-            events = []
-            for index, event in enumerate(result.get('events', [])):
-                instant = event.get('instant_utc') or event.get('effective_utc')
-                if instant and start_utc <= datetime.fromisoformat(instant) < end_utc:
-                    events.append({'index': index, 'instant_utc': instant,
-                                   'phase': event.get('phase'),
-                                   'pass_direction': event.get('pass_direction')})
-            effective = result.get('effective_utc')
-            if effective and start_utc <= datetime.fromisoformat(effective) < end_utc:
-                events.append({'index': None, 'instant_utc': effective})
+            # Page by original result, never split its physical and symbolic points.
+            events = points_in_period(row['technique'], result, start_utc, end_utc)
             entries.append({'id': row['id'], 'technique': row['technique'],
                             'method_version': row['method_version'],
                             'created_at': row['created_at'].isoformat(),
                             'status': result.get('status'),
                             'window_utc': result.get('window_utc'),
                             'parameters': {key: value for key, value in row['parameters'].items()
-                                           if key in ('body', 'branch', 'aspect', 'transit_body')},
+                                           if key in ('body', 'branch', 'aspect', 'transit_body', 'natal_target',
+                                                      'latitude', 'longitude', 'reference_place_id')},
+                            'reference_place_source': result.get('reference_place_source'),
                             'events': events})
         return {'person_id': person['id'], 'chart_id': chart_id,
                 'source_status': chart['source_status'],

@@ -273,7 +273,7 @@ class Store:
             selected_row = None
             if selected_result:
                 selected_row = self.db.execute('''
-                    SELECT r.chart_a_id,r.chart_b_id,r.result,c.person_id AS person_a,
+                    SELECT r.chart_a_id,r.chart_b_id,r.technique,r.result,c.person_id AS person_a,
                            cb.person_id AS person_b
                     FROM advanced_results r
                     JOIN charts c ON c.owner_id=r.owner_id AND c.id=r.chart_a_id
@@ -284,8 +284,9 @@ class Store:
                         person_id for person_id, _ in selection}:
                     raise KeyError('Selected result not found for these people')
                 index = selected_result['event_index']
-                if index is not None and index >= len(selected_row['result'].get('events', [])):
-                    raise ValueError('Selected crossing is not in the saved result')
+                if index is not None:
+                    from m2.saved_timing import source_event
+                    source_event(selected_row['technique'], selected_row['result'], index)
                 from m2.charts import Charts
                 from m2.people import People
                 chart_owner = People(self)

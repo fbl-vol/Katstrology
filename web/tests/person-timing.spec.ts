@@ -44,6 +44,67 @@ test('bundled wheel fonts obey isolated CSP in page and export', async ({ page }
   expect(await page.evaluate(() => (window as unknown as { katViolations: string[] }).katViolations)).toEqual([]);
 });
 
+test('saved cross-technique dates sort chronologically and open their actual calculations', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await expect(page.getByRole('navigation', { name: 'People' })).toBeVisible();
+  const session = await (await page.request.get('/api/session')).json();
+  const definitions = [
+    { id: 'timing-arc-producer', technique: 'true_solar_arc',
+      parameters: { effective_utc: '2024-03-25T00:00:00+00:00' } },
+    { id: 'timing-progression-producer', technique: 'secondary_progression',
+      parameters: { effective_utc: '2024-04-05T00:00:00+00:00' } },
+    { id: 'timing-sky-producer', technique: 'actual_lunations_eclipses',
+      parameters: { start_utc: '2024-03-01T00:00:00+00:00',
+        end_utc: '2024-06-01T00:00:00+00:00', natal_target: 'sun', aspect: 'conjunction' } },
+  ];
+  for (const item of definitions) {
+    const reply = await page.request.post('/api/advanced-results', {
+      headers: { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin },
+      data: { person_id: 'transit-person', ...item },
+    });
+    expect(reply.status(), `${item.technique}: ${JSON.stringify(await reply.json())}`).toBe(201);
+  }
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByText('Where am I now? · saved timing').click();
+  const timing = page.getByRole('region', { name: 'Where am I now' });
+  await timing.getByLabel('From (UTC)').fill('2024-01-01');
+  await timing.getByLabel('Explore').selectOption('year');
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  await expect(timing.locator('[data-result-id="timing-arc-producer"]')).toBeVisible();
+  await expect(timing.locator('[data-result-id="timing-progression-producer"]')).toBeVisible();
+  const maximum = timing.getByText('global maximum', { exact: false }).first();
+  await expect(maximum).toBeVisible();
+  await expect(timing.getByText('linked syzygy', { exact: false }).first()).toBeVisible();
+  const dates = await timing.locator('.timing-results > li > strong').allTextContents();
+  expect(dates.length).toBeGreaterThan(3);
+  expect(dates).toEqual([...dates].sort((a, b) => Date.parse(a) - Date.parse(b)));
+  await timing.locator('[data-result-id="timing-arc-producer"]').first()
+    .getByRole('button', { name: 'Open saved result' }).click();
+  await expect(timing.getByText('True forward solar arc', { exact: false }).last()).toBeVisible();
+  await expect(timing.locator('.timing-opened .natal-wheel')).toBeVisible();
+  await timing.locator('[data-result-id="timing-progression-producer"]').first()
+    .getByRole('button', { name: 'Open saved result' }).click();
+  await expect(timing.getByText('Secondary progression for age', { exact: false })).toBeVisible();
+  const sky = timing.locator('[data-result-id="timing-sky-producer"]').first();
+  await sky.getByRole('button', { name: 'Open saved result' }).click();
+  await expect(sky.getByText('Geocentric lunations and physically distinct', { exact: false })).toBeVisible();
+  await expect(sky.getByRole('table', { name: /global eclipse maximum/ })).toBeVisible();
+  for (const viewport of [
+    { name: 'desktop', width: 1440, height: 1024 },
+    { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 },
+    { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: resolve(renders, `corrected-${viewport.name}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+  }
+  expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
+});
+
 test('saved timing keeps the exact result selected for an editable draft', async ({ page }) => {
   mkdirSync(renders, { recursive: true });
   await page.goto('/');
@@ -86,7 +147,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await page.setViewportSize({ width: 390, height: 560 });
   await page.screenshot({ path: resolve(renders, 'timing-open-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2)).toBe(true);
-  await createdRow.getByRole('button', { name: 'Save this crossing' }).first().click();
+  await createdRow.getByRole('button', { name: 'Save for later' }).first().click();
   await expect(timing).toContainText('Saved for later. A due reminder is off');
   await page.getByText('Saved for later · in-app reminders').click();
   await expect(page.getByText('Reminder off.')).toBeVisible();
@@ -103,7 +164,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await glossary.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText('A calculated angle tied to the local meridian', { exact: false })).toBeVisible();
   expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
-  await createdRow.getByRole('button', { name: /Discuss this crossing/ }).first().click();
+  await createdRow.getByRole('button', { name: 'Discuss this point' }).first().click();
   await expect(page.getByLabel('Message Kat')).toHaveValue('My existing unsent thought');
   await expect(page.getByText('saved result, not recalculated')).toBeVisible();
   await page.getByRole('button', { name: 'Send message' }).click();

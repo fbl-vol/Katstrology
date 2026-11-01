@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 
 from m2.birth_flow import BirthFlow
+from m2.advanced import Advanced
 from m2.cli import DEFAULT_MODEL, model_at
 from m2.prompting import HOSTED, SUMMARY, identity
 from m2.recall import rebuild_pending
@@ -120,6 +121,48 @@ class ChatBudgetTests(DatabaseCase):
                           model_provider=provider, cancelled=cancelled,
                           model_slug=(model or self.model).slug if provider == 'chatgpt_plan' else None)
         return status, events
+
+    def test_synthetic_provider_sees_saturn_return_and_mc_defining_metadata(self):
+        result = Advanced(self.store).save(self.alice, 'saturn-source', self.person['id'],
+            'planetary_return', {'body': 'saturn',
+              'start_utc': '2029-01-01T00:00:00+00:00',
+              'end_utc': '2032-01-01T00:00:00+00:00',
+              'latitude': 51.5, 'longitude': -1 / 6})
+        self.assertEqual(result['status'], 'supported')
+        self.assertTrue(result['events'])
+        events = []
+        status = run_turn(self.store, self.alice, 'budget-thread', 'selected-saturn',
+            'What is this selected Saturn return?', self.model, events.append,
+            selected_people=self.selected, model_provider='chatgpt_plan',
+            model_slug=self.model.slug,
+            selected_result={'result_id': 'saturn-source', 'event_index': 0})
+        self.assertEqual(status, 'complete')
+        tool = next(event['payload'] for event in events
+                    if event['kind'] == 'tool_result' and event['payload'].get('name') == 'read_selected_result')
+        self.assertEqual(tool['facts']['body'], 'saturn')
+        self.assertEqual(tool['parameters']['body'], 'saturn')
+        self.assertEqual(tool['reference_place']['latitude'], 51.5)
+        submitted = json.dumps(self.bridge.requests[-1]['input'], ensure_ascii=False)
+        self.assertIn('saturn', submitted)
+        self.assertIn('planet-own-natal-longitude-all-passes-v1', submitted)
+        self.assertNotIn('fictional journal entry', submitted)
+
+        contact = Advanced(self.store).save(self.alice, 'mc-source', self.person['id'],
+            'mc_transit', {'start_utc': '2024-03-01T00:00:00+00:00',
+                           'end_utc': '2024-03-30T00:00:00+00:00',
+                           'transit_body': 'moon', 'aspect': 'conjunction'})
+        self.assertEqual(contact['status'], 'supported')
+        self.assertTrue(contact['events'])
+        status = run_turn(self.store, self.alice, 'budget-thread', 'selected-mc',
+            'What is this selected MC contact?', self.model, lambda _: None,
+            selected_people=self.selected, model_provider='chatgpt_plan',
+            model_slug=self.model.slug,
+            selected_result={'result_id': 'mc-source', 'event_index': 0})
+        self.assertEqual(status, 'complete')
+        model_input = self.bridge.requests[-1]['input'][-1]['content'][0]['text']
+        for marker in ('"transit_body_id": "moon"', '"natal_body_id": "midheaven"',
+                       '"aspect": "conjunction"', '"target_degrees"'):
+            self.assertIn(marker, model_input)
 
     def test_paragraph_with_selected_dense_natal_reaches_hosted_transport(self):
         text = ('I want a thoughtful overview of the pattern in this natal chart. '

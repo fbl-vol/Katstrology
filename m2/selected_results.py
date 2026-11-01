@@ -1,15 +1,33 @@
-"""Owner-fenced, small immutable saved-result evidence for a selected message.
-
-The archive keeps the exact source identity and crossing. Large wheel/point arrays
-stay in their original saved result, never silently dumped into model context.
-"""
+"""Owner-fenced bounded facts for one explicitly selected immutable saved result."""
 
 import json
 
+from m2.saved_timing import source_event
 
-FIELDS = ('instant_utc', 'effective_utc', 'phase', 'pass_direction', 'body',
-          'branch', 'aspect', 'transit_body', 'natal_target', 'longitude_degrees',
-          'natal_longitude_degrees', 'angular_residual_degrees')
+ROOT_FACTS = ('body', 'transit_body_id', 'natal_body_id', 'branch', 'branch_description', 'aspect',
+              'natal_target', 'natal_target_degrees', 'natal_longitude_degrees',
+              'natal_mc_longitude_degrees', 'target_source_degrees', 'effective_utc',
+              'mapped_ephemeris_utc', 'arc_degrees', 'natal_sun_degrees',
+              'progressed_sun_degrees', 'age_completed_years', 'mc_status',
+              'axis_status', 'phase_policy', 'arc_policy', 'pass_policy',
+              'syzygy_policy', 'eclipse_policy')
+EVENT_FACTS = ('instant_utc', 'maximum_utc', 'effective_utc', 'linked_syzygy_utc',
+               'phase', 'family', 'eclipse_type', 'visibility', 'pass_direction',
+               'longitude_degrees', 'target_degrees', 'angular_residual_degrees',
+               'separation_degrees', 'sun_degrees', 'moon_degrees',
+               'sun_degrees_at_maximum', 'moon_degrees_at_maximum',
+               'mapped_ephemeris_utc', 'progressed_sun_degrees',
+               'progressed_moon_degrees', 'natal_target', 'aspect', 'body')
+PARAMETERS = ('body', 'branch', 'aspect', 'transit_body', 'natal_target',
+              'latitude', 'longitude', 'reference_place_id')
+POSITION_FACTS = ('id', 'longitude_degrees', 'source_longitude_degrees',
+                  'speed_degrees_per_day', 'speed_degrees_per_symbolic_day')
+CONTACT_FACTS = ('sky_body', 'longitude_degrees', 'natal_target',
+                 'natal_longitude_degrees', 'aspect', 'orb_degrees', 'in_orb')
+
+
+def _scalars(source, fields):
+    return {key: source[key] for key in fields if isinstance(source.get(key), (str, int, float, bool))}
 
 
 def selected_evidence(store, session, conversation_id, turn_id):
@@ -25,19 +43,34 @@ def selected_evidence(store, session, conversation_id, turn_id):
     ''', (owner, conversation_id, turn_id)).fetchone()
     if not row:
         return None
-    result = row['result']
-    index = row['event_index']
-    event = result.get('events', [])[index] if index is not None else result
-    facts = {key: event[key] for key in FIELDS if key in event and
-             isinstance(event[key], (str, int, float))}
+
+    result, index = row['result'], row['event_index']
+    kind, event = source_event(row['technique'], result, index)
+    facts = {**_scalars(result, ROOT_FACTS), **_scalars(event, EVENT_FACTS)}
     selected = {'result_id': row['result_id'], 'event_index': index,
-                'technique': row['technique'], 'method_version': row['method_version'],
+                'point_kind': kind, 'technique': row['technique'],
+                'method_version': row['method_version'],
                 'source_chart_ids': [item for item in (row['chart_a_id'], row['chart_b_id']) if item],
                 'source_status_at_ack': row['source_status_at_ack'],
                 'window_utc': result.get('window_utc'), 'status': result.get('status'),
-                'facts': facts}
-    # Bounded model evidence, not a claim that the assistant's interpretation
-    # follows from these facts. Source text is lower trust than instructions.
+                'parameters': _scalars(row['parameters'], PARAMETERS), 'facts': facts}
+    place = result.get('reference_place')
+    if isinstance(place, dict):
+        selected['reference_place'] = _scalars(place, ('latitude', 'longitude'))
+    place_source = result.get('reference_place_source')
+    if isinstance(place_source, dict):
+        selected['reference_place_source'] = _scalars(place_source, ('kind', 'label'))
+    for name in ('contacts', 'contacts_at_maximum'):
+        if isinstance(event.get(name), list):
+            selected[name] = [_scalars(item, CONTACT_FACTS) for item in event[name][:2]]
+    positions = event.get('chart', result) if isinstance(event.get('chart'), dict) else result
+    if isinstance(positions.get('positions'), list):
+        selected['positions_total'] = len(positions['positions'])
+        selected['positions'] = [_scalars(item, POSITION_FACTS)
+                                 for item in positions['positions'][:12]]
+        selected['positions_complete'] = len(positions['positions']) <= 12
+
+    # Reuse the existing bounded tool/text budget; never drop defining facts to fit.
     if len(json.dumps(selected, ensure_ascii=False).encode('utf-8')) > 4096:
         raise ValueError('Selected saved result evidence exceeds bounded context')
     return selected

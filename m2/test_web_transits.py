@@ -15,7 +15,9 @@ from m2.birth_flow import BirthFlow
 from m2.deletion import Tombstones
 from m2.local_fixture import ROOT
 from m2.people import People
+from m2.periods import Periods
 from m2.selected_results import selected_evidence
+from m2.saved_timing import source_event
 from m2.revisions import correct
 from m2.store import Store
 from m2.test_support import test_fixture_dsn
@@ -124,6 +126,48 @@ class TransitHttpTests(unittest.TestCase):
                 **query, 'chart_id': self.legacy_id}).status_code, 404)
         with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
             self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
+
+    def test_persisted_lunations_maxima_and_symbolic_dates_keep_distinct_locators(self):
+        from m2.advanced import Advanced
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            alice = store.authenticate('alice', 'synthetic-password-alice')
+            advanced = Advanced(store)
+            sky = advanced.save(alice, 'saved-sky', 'one', 'actual_lunations_eclipses', {
+                'start_utc': '2024-03-01T00:00:00+00:00',
+                'end_utc': '2024-06-01T00:00:00+00:00',
+                'natal_target': 'sun', 'aspect': 'conjunction'})
+            arc = advanced.save(alice, 'saved-arc', 'one', 'true_solar_arc', {
+                'effective_utc': '2024-04-05T00:00:00+00:00'})
+            progression = advanced.save(alice, 'saved-progressed', 'one', 'secondary_progression', {
+                'effective_utc': '2024-04-05T00:00:00+00:00'})
+            self.assertEqual((sky['status'], arc['status'], progression['status']),
+                             ('supported', 'supported', 'supported'))
+            self.assertTrue(sky['lunations'])
+            self.assertTrue(sky['eclipses'])
+            period = Periods(store).read(
+                alice, 'one', self.chart_id, '2024-04-01', '2024-05-01')
+            entries = {row['id']: row for row in period['entries']}
+            sky_points = entries['saved-sky']['events']
+            self.assertEqual(len(sky_points), sum('2024-04-01' <= item['instant_utc'][:10] < '2024-05-01'
+                for item in sky['lunations']) + sum('2024-04-01' <= item['maximum_utc'][:10] < '2024-05-01'
+                for item in sky['eclipses']))
+            maxima = [item for item in sky_points if item['kind'] == 'eclipse']
+            self.assertTrue(maxima)
+            maximum = maxima[0]
+            self.assertEqual(source_event('actual_lunations_eclipses', sky, maximum['index'])[1]['maximum_utc'],
+                             maximum['instant_utc'])
+            self.assertNotEqual(maximum['instant_utc'], maximum['linked_syzygy_utc'])
+            self.assertEqual(entries['saved-arc']['events'][0]['index'], None)
+            self.assertEqual(entries['saved-progressed']['events'][0]['instant_utc'],
+                             '2024-04-05T00:00:00+00:00')
+            store.create_conversation(alice, 'sky-discussion')
+            self.assertTrue(store.begin(alice, 'sky-discussion', 'selected-maximum', 'What does this mean?',
+                selected_people=[{'person_id': 'one', 'chart_id': self.chart_id}],
+                selected_result={'result_id': 'saved-sky', 'event_index': maximum['index']}))
+            facts = selected_evidence(store, alice, 'sky-discussion', 'selected-maximum')
+            self.assertEqual(facts['point_kind'], 'eclipse')
+            self.assertEqual(facts['facts']['maximum_utc'], maximum['instant_utc'])
+            self.assertEqual(facts['facts']['natal_target'], 'sun')
 
     def test_selected_saved_crossing_is_owner_fenced_and_committed_exactly_at_ack(self):
         with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
