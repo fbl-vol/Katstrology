@@ -16,6 +16,7 @@ from m2.deletion import Tombstones
 from m2.local_fixture import ROOT
 from m2.people import People
 from m2.selected_results import selected_evidence
+from m2.revisions import correct
 from m2.store import Store
 from m2.test_support import test_fixture_dsn
 from m2.web_server import create_app
@@ -157,6 +158,34 @@ class TransitHttpTests(unittest.TestCase):
                               selected_result={**choice, 'event_index': None})
             self.assertRaises(KeyError, selected_evidence, store, bob,
                               'selected-thread', 'selected-turn')
+
+    def test_selected_result_rejects_invalidated_birth_source_before_ack(self):
+        from m2.advanced import Advanced
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            alice = store.authenticate('alice', 'synthetic-password-alice')
+            store.create_conversation(alice, 'birth-source')
+            store.begin(alice, 'birth-source', 'birth-details', 'Synthetic birth details')
+            store.append(alice, 'birth-source', 'birth-details', 'complete', {})
+            saved = Advanced(store).save(alice, 'saved-linked', 'one',
+                'solar_return', {'year': 2026, 'latitude': 55.68, 'longitude': 12.57})
+            self.assertEqual(saved['status'], 'supported')
+            # Simulate a legacy turn-sourced birth on an otherwise generated
+            # synthetic chart; its immutable calculation is never recomputed.
+            store.db.execute('''
+                UPDATE charts SET result=jsonb_set(jsonb_set(result,
+                    '{birth,source_conversation_id}',to_jsonb(%s::text)),
+                    '{birth,source_turn_id}',to_jsonb(%s::text))
+                WHERE owner_id=%s AND id=%s
+            ''', ('birth-source', 'birth-details', alice.owner_id, self.chart_id))
+            correct(store, alice, 'birth-source', 'corrected-birth', 'birth-details',
+                    'correct', 'This birth time is no longer reliable.')
+            store.create_conversation(alice, 'discussion')
+            with self.assertRaisesRegex(ValueError, 'invalidated source'):
+                store.begin(alice, 'discussion', 'not-acknowledged', 'Discuss this crossing',
+                    selected_people=[{'person_id': 'one', 'chart_id': self.chart_id}],
+                    selected_result={'result_id': 'saved-linked', 'event_index': 0})
+            self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns '
+                "WHERE id='not-acknowledged'").fetchone()['n'], 0)
 
     def test_clock_endpoint_is_authenticated_read_only_and_zone_qualified(self):
         instant = datetime(2026, 1, 1, 1, 15, 42, tzinfo=timezone.utc)

@@ -186,6 +186,8 @@ class CorrectionContinuityTests(DatabaseCase):
     def _remove_post_seven_schema(self):
         """Rebuild a real seven-migration snapshot without later reference state."""
         with psycopg.connect(self.dsn, autocommit=True) as db:
+            db.execute('DROP TABLE journal_actions, watch_actions, turn_selected_results, '
+                       'journal_entries, watch_items')
             db.execute('DROP TABLE advanced_results')
             db.execute('DROP TABLE personal_entry_actions')
             db.execute('ALTER TABLE personal_entries DROP CONSTRAINT personal_entries_epistemic_status_check')
@@ -234,7 +236,7 @@ class CorrectionContinuityTests(DatabaseCase):
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertIsNone(restored.read_turn(alice, 'thread', 'legacy')['parent_revision'])
             self.assertEqual(restored.db.execute('SELECT max(version) AS version FROM '
-                                                  'schema_migrations').fetchone()['version'], 19)
+                                                  'schema_migrations').fetchone()['version'], 21)
             correct(restored, alice, 'thread', 'withdrawn', 'root', 'withdraw')
             self.assertIsNone(current_text(restored, alice, 'thread', 'legacy',
                                            {'thread': {'root', 'legacy'}}))
