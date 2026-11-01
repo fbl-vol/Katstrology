@@ -1,4 +1,4 @@
-"""Local synthetic-only CLI. No HTTP listener, remote inference or private import."""
+"""Local authenticated CLI. No HTTP listener or remote inference."""
 
 import argparse
 import getpass
@@ -35,7 +35,8 @@ def main(argv=None):
                    'search-evidence', 'get-passage', 'personal-context', 'attach', 'download',
                    'branch', 'correct', 'withdraw', 'export',
                    'delete-conversation', 'delete-conversations', 'delete-attachment',
-                   'delete-person', 'delete-reference'):
+                   'delete-person', 'delete-reference', 'revoke-reference',
+                   'import-reference', 'select-reference'):
         sub.add_parser(action)
     sub.choices['chat'].add_argument('conversation')
     sub.choices['chat'].add_argument('--parent', default='@active')
@@ -53,6 +54,12 @@ def main(argv=None):
     sub.choices['search-evidence'].add_argument('--tradition')
     sub.choices['search-evidence'].add_argument('--technique')
     sub.choices['search-evidence'].add_argument('--person')
+    sub.choices['import-reference'].add_argument('manifest', type=Path)
+    sub.choices['import-reference'].add_argument('original', type=Path)
+    sub.choices['import-reference'].add_argument('--confirm-rights', action='store_true',
+        help='confirm the edition and processing rights in the manifest before import')
+    sub.choices['select-reference'].add_argument('source_id')
+    sub.choices['revoke-reference'].add_argument('source_id')
     sub.choices['get-passage'].add_argument('source_id')
     sub.choices['get-passage'].add_argument('passage_id')
     sub.choices['personal-context'].add_argument('person_id')
@@ -120,7 +127,17 @@ def main(argv=None):
                                        tradition=args.tradition, technique=args.technique,
                                        person_id=args.person))
             elif args.command == 'get-passage':
-                output(References(store).get_passage(session, args.source_id, args.passage_id))
+                output(References(store).readable_passage(session, args.source_id, args.passage_id))
+            elif args.command == 'import-reference':
+                if not args.confirm_rights:
+                    parser.error('Inspect the manifest and original; pass --confirm-rights for this import')
+                output(References(store).import_text_file(session, args.manifest, args.original))
+            elif args.command == 'select-reference':
+                References(store).select(session, args.source_id)
+                output({'selected': args.source_id, 'meaning': 'operator inclusion, not Kat endorsement'})
+            elif args.command == 'revoke-reference':
+                References(store).revoke(session, args.source_id)
+                output({'revoked': args.source_id})
             elif args.command == 'personal-context':
                 output(personal_context(store, session, args.person_id))
             elif args.command == 'attach':

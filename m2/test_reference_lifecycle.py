@@ -1,6 +1,7 @@
 """Isolated synthetic corpus revision, withdrawal, rights and evidence lifecycle."""
 
 import json
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +21,52 @@ from m2.test_support import DatabaseCase
 
 class ReferenceLifecycleTests(DatabaseCase):
     fixture_requires_fresh_migration = True
+
+    def test_permitted_text_original_import_is_idempotent_and_owner_scoped(self):
+        source_dir = Path(__file__).parent / 'data'
+        manifest = source_dir / 'openstax-seasons-manifest.json'
+        original = source_dir / 'openstax-seasons-excerpt.txt'
+        refs = References(self.store)
+        first = refs.import_text_file(self.alice, manifest, original)
+        self.assertFalse(first['already_imported'])
+        self.assertTrue(refs.import_text_file(self.alice, manifest, original)['already_imported'])
+        source_id = first['source_id']
+        row = refs.get_passage(self.alice, source_id, 'seasons-distance-axis')
+        self.assertEqual(row['source_status'], 'independent_attributed_edition')
+        self.assertEqual(row['section'], '4.2 The Seasons, paragraph 2 (distance versus axial tilt)')
+        self.assertEqual(row['approval'], 'not_kat_selected')
+        self.assertEqual(search_evidence(self.store, self.alice, 'seasons')['results'], [])
+        with self.assertRaises(PermissionError):
+            refs.readable_passage(self.alice, source_id, 'seasons-distance-axis')
+        with self.assertRaises(KeyError):
+            refs.readable_passage(self.bob, source_id, 'seasons-distance-axis')
+        stored = self.store.db.execute('''
+            SELECT original_text,content_sha256,extraction_note FROM reference_originals
+            WHERE owner_id='alice' AND source_id=%s
+        ''', (source_id,)).fetchone()
+        self.assertEqual(stored['original_text'].encode(), original.read_bytes())
+        self.assertEqual(stored['content_sha256'], sha256(original.read_bytes()).hexdigest())
+        self.assertIn('full page and figures NOT retained', stored['extraction_note'])
+        refs.select(self.alice, source_id)  # operator inclusion in owned fixture, NOT Kat approval
+        self.assertEqual(search_evidence(self.store, self.alice, 'seasons')['results'][0]
+                         ['source_id'], source_id)
+        self.assertEqual(refs.readable_passage(self.alice, source_id, 'seasons-distance-axis')
+                         ['rights_basis'], 'open_license')
+        altered = Path(self.directory.name) / 'changed.txt'
+        altered.write_text(original.read_text().replace('23.5°', '25°'))
+        with self.assertRaisesRegex(ValueError, 'different content'):
+            refs.import_text_file(self.alice, manifest, altered)
+        refs.revoke(self.alice, source_id)
+        with self.assertRaises(PermissionError):
+            refs.readable_passage(self.alice, source_id, 'seasons-distance-axis')
+        self.assertEqual(search_evidence(self.store, self.alice, 'seasons')['results'], [])
+        self.ledger.delete_reference(self.store, self.alice, source_id)
+        self.assertEqual(self.store.db.execute('''
+            SELECT count(*) AS n FROM reference_originals WHERE owner_id='alice'
+        ''').fetchone()['n'], 0)
+        with self.assertRaises(ValueError):
+            refs.import_text_file(self.alice, manifest, original)
+
     def metadata(self, source_id, edition, **options):
         return dict(source_id=source_id, author='Synthetic author',
             title='Original synthetic aspects note', edition=edition,
@@ -48,6 +95,8 @@ class ReferenceLifecycleTests(DatabaseCase):
                          ['results'][0]['source_id'], 'edition-v1')
         self.assertEqual(rebuild_vectors(self.store, self.alice, LocalEmbedder())
                          ['references_indexed'], 1)
+        self.assertFalse(search_evidence(self.store, self.alice, 'crossings')
+                         ['semantic_index_incomplete'])
 
         self.store.create_conversation(self.alice, 'reader')
         self.store.begin(self.alice, 'reader', 'read-v1', 'What does this crossing mean?')
@@ -64,6 +113,8 @@ class ReferenceLifecycleTests(DatabaseCase):
         refs.ingest_edition(self.alice, self.metadata('edition-v2', 'v2',
             supersedes_source_id='edition-v1'), revision,
             [{'id': 'a', 'section': 'page 2, revised crossing', 'content': revision}])
+        self.assertTrue(search_evidence(self.store, self.alice, 'crossings')
+                        ['semantic_index_incomplete'])
         refs.revoke(self.alice, 'edition-v1')
         self.assertFalse(current_turn_usable(self.store, self.alice, 'reader', 'read-v1'))
         self.assertEqual(self.store.db.execute('''
@@ -136,6 +187,7 @@ class ReferenceLifecycleTests(DatabaseCase):
         result = search_evidence(self.store, self.alice, 'constellation', limit=3)
         self.assertEqual(result['results'][0]['source_id'], 'embed-source')
         self.assertFalse(result['semantic_available'])
+        self.assertTrue(result['semantic_index_incomplete'])
 
     def test_invalid_chunk_rolls_back_whole_import_and_unselected_nonfixture_hidden(self):
         refs = References(self.store)

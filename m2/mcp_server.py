@@ -142,7 +142,7 @@ def chart_tools(store, session):
     @mcp.tool()
     def get_reference_passage(source_id: str, passage_id: str) -> dict:
         """Read an owned passage and its rights/provenance; not an approved authority."""
-        return references.get_passage(session, source_id, passage_id)
+        return references.readable_passage(session, source_id, passage_id)
 
     @mcp.tool()
     def get_personal_context(person_id: str, limit: int = 10) -> dict:

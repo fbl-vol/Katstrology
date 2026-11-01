@@ -1,10 +1,12 @@
-"""Synthetic rights-attributed passages and manually promoted personal statements.
+"""Owner-scoped, immutable rights-attributed editions and personal statements.
 
-Sources/notes are first-class originals in the owned PostgreSQL archive. Real
-books, scraped pages and private personal text are outside this local gate.
+Reference originals are retained text, not generated summaries or embedding indexes.
+Selection is an explicit local editorial act, never a model-issued permission.
 """
 
 from hashlib import sha256
+import json
+from pathlib import Path
 from urllib.parse import urlparse
 
 
@@ -108,7 +110,8 @@ class References:
         if not row:
             raise KeyError('Passage not found')
         conv_id, turn_id = row['source_conversation_id'], row['source_turn_id']
-        row['source_status'] = 'independent_synthetic_fixture'
+        row['source_status'] = ('independent_synthetic_fixture' if row['rights_basis'] == 'synthetic_fixture'
+                                else 'independent_attributed_edition')
         if conv_id:
             head = self.store.active_head(session, conv_id)
             ancestry = self.store.ancestry(session, conv_id, head) if head else []
@@ -146,6 +149,71 @@ class References:
     def revoke(self, session, source_id):
         """Exclude revoked content immediately, including after an older-backup restore."""
         self.store.ledger.revoke_reference(self.store, session, source_id)
+
+    def readable_passage(self, session, source_id, passage_id):
+        """Single eligibility boundary for CLI, MCP and model passage reads."""
+        row = self.get_passage(session, source_id, passage_id)
+        if row['approval'] == 'revoked' or (row['approval'] != 'selected' and
+                                            row['rights_basis'] != 'synthetic_fixture') or row['source_status'] in (
+                                                'superseded', 'abandoned_branch'):
+            raise PermissionError('Source edition is not eligible for retrieval')
+        return row
+
+    def import_text_file(self, session, manifest_path, original_path):
+        """Import a bounded UTF-8 original with exact located spans; no OCR or network I/O.
+
+        A same-ID retry is accepted only for the same original AND manifest. Revisions
+        require a new ID. File paths are explicit operator input, never model input.
+        """
+        with Path(original_path).open('rb') as source:
+            raw = source.read(128 * 1024 + 1)
+        if len(raw) > 128 * 1024:
+            raise ValueError('Source original exceeds 128 KiB')
+        text = raw.decode('utf-8')
+        if text.startswith('\ufeff'):
+            raise ValueError('UTF-8 BOM is not supported for exact original-byte identity')
+        with Path(manifest_path).open('rb') as source:
+            manifest_bytes = source.read(32 * 1024 + 1)
+        if len(manifest_bytes) > 32 * 1024:
+            raise ValueError('Source manifest exceeds 32 KiB')
+        manifest = json.loads(manifest_bytes)
+        if not isinstance(manifest, dict) or set(manifest) != {
+                'source_id', 'author', 'title', 'edition', 'tradition', 'technique',
+                'provenance', 'rights_evidence', 'rights_basis', 'language',
+                'source_url', 'extraction_note', 'passages'} and set(manifest) != {
+                'source_id', 'author', 'title', 'edition', 'tradition', 'technique',
+                'provenance', 'rights_evidence', 'rights_basis', 'language',
+                'source_url', 'extraction_note', 'supersedes_source_id', 'passages'}:
+            raise ValueError('Invalid source manifest fields')
+        passages = manifest.pop('passages')
+        if not isinstance(passages, list) or any(not isinstance(item, dict) or
+                set(item) != {'id', 'section', 'content'} for item in passages):
+            raise ValueError('Invalid located passages')
+        source_id = self.store._id(manifest['source_id'])
+        owner = self.store.owner(session)
+        existing = self.store.db.execute('''
+            SELECT s.author,s.title,s.edition,s.tradition,s.technique,s.provenance,
+                   s.rights_evidence,s.rights_basis,s.language,s.source_url,
+                   s.supersedes_source_id,o.extraction_note,o.original_text,o.content_sha256
+            FROM reference_sources s JOIN reference_originals o
+              ON (s.owner_id=o.owner_id AND s.id=o.source_id)
+            WHERE s.owner_id=%s AND s.id=%s
+        ''', (owner, source_id)).fetchone()
+        if existing:
+            fields = {key: value for key, value in manifest.items() if key != 'source_id'}
+            rows = self.store.db.execute('''
+                SELECT id,section,content FROM reference_passages
+                WHERE owner_id=%s AND source_id=%s ORDER BY id
+            ''', (owner, source_id)).fetchall()
+            if (all(existing[key] == value for key, value in fields.items()) and
+                    existing['original_text'] == text and
+                    existing['content_sha256'] == sha256(text.encode()).hexdigest() and
+                    sorted(passages, key=lambda item: item['id']) == [
+                        {key: row[key] for key in ('id', 'section', 'content')} for row in rows]):
+                return {'source_id': source_id, 'already_imported': True}
+            raise ValueError('Edition ID already exists with different content or metadata')
+        self.ingest_edition(session, manifest, text, passages)
+        return {'source_id': source_id, 'already_imported': False}
 
     def ingest_edition(self, session, metadata, original_text, passages):
         """Atomic small-source ingest; revisions use new immutable source IDs."""

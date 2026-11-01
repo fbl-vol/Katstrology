@@ -1,0 +1,21 @@
+{
+  "source_id": "openstax-astronomy-seasons-4-2-excerpt-v1",
+  "author": "OpenStax and Astronomy contributors",
+  "title": "Astronomy: 4.2 The Seasons (short excerpt)",
+  "edition": "OpenStax Astronomy, section 4.2, accessed 2026-11-01",
+  "tradition": "astronomy_not_astrological_interpretation",
+  "technique": "seasons",
+  "language": "en",
+  "source_url": "https://openstax.org/books/astronomy/pages/4-2-the-seasons",
+  "provenance": "OpenStax Astronomy section 4.2; verbatim paragraph, text-only manual extraction from published HTML; no diagrams",
+  "rights_basis": "open_license",
+  "rights_evidence": "CC BY 4.0 https://openstax.org/books/astronomy/pages/preface ; attribution OpenStax and contributors; no endorsement",
+  "extraction_note": "Text-only one-paragraph excerpt; manual extraction, original full page and figures NOT retained; no OCR. License and URL must accompany redistribution.",
+  "passages": [
+    {
+      "id": "seasons-distance-axis",
+      "section": "4.2 The Seasons, paragraph 2 (distance versus axial tilt)",
+      "content": "Many people have believed that the seasons were the result of the changing distance between Earth and the Sun. This sounds reasonable at first: it should be colder when Earth is farther from the Sun. But the facts don’t bear out this hypothesis. Although Earth’s orbit around the Sun is an ellipse, its distance from the Sun varies by only about 3%. That’s not enough to cause significant variations in the Sun’s heating. To make matters worse for people in North America who hold this hypothesis, Earth is actually closest to the Sun in January, when the Northern Hemisphere is in the middle of winter. And if distance were the governing factor, why would the two hemispheres have opposite seasons? As we shall show, the seasons are actually caused by the 23.5° tilt of Earth’s axis."
+    }
+  ]
+}
