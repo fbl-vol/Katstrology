@@ -80,12 +80,13 @@ test('saved timing keeps the exact result selected for an editable draft', async
     await page.screenshot({ path: resolve(renders, `timing-${viewport.name}.png`), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
   }
-  await timing.getByRole('button', { name: 'Open saved result' }).click();
+  const createdRow = timing.locator(`[data-result-id="${saved.id}"]`);
+  await createdRow.getByRole('button', { name: 'Open saved result' }).click();
   await expect(timing.locator('.natal-wheel')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 560 });
   await page.screenshot({ path: resolve(renders, 'timing-open-mobile.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2)).toBe(true);
-  await timing.getByRole('button', { name: 'Save this crossing' }).first().click();
+  await createdRow.getByRole('button', { name: 'Save this crossing' }).first().click();
   await expect(timing).toContainText('Saved for later. A due reminder is off');
   await page.getByText('Saved for later · in-app reminders').click();
   await expect(page.getByText('Reminder off.')).toBeVisible();
@@ -102,7 +103,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await glossary.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText('A calculated angle tied to the local meridian', { exact: false })).toBeVisible();
   expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
-  await timing.getByRole('button', { name: /Discuss this crossing/ }).first().click();
+  await createdRow.getByRole('button', { name: /Discuss this crossing/ }).first().click();
   await expect(page.getByLabel('Message Kat')).toHaveValue('My existing unsent thought');
   await expect(page.getByText('saved result, not recalculated')).toBeVisible();
   await page.getByRole('button', { name: 'Send message' }).click();

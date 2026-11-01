@@ -122,7 +122,7 @@ export function PersonTiming({ workspace, person, onDiscuss, onWatch }: {
         {period.coverage === 'no_saved_calculations' ? <p>No saved calculations cover these dates for this natal. This does not mean there are no sky events.</p> :
           <p>{eventCount ? `${eventCount} dated point${eventCount === 1 ? '' : 's'} in loaded saved results.` :
             'No dated points in the loaded saved results. Saved coverage is not a complete search of this period.'}</p>}
-        <ol className="timing-results">{visible.map(entry => <li key={entry.id}>
+        <ol className="timing-results">{visible.map(entry => <li key={entry.id} data-result-id={entry.id}>
           <strong>{labels[entry.technique] || 'Saved timing'}</strong> · {entry.parameters.body || entry.parameters.branch || 'saved method'}
           {entry.window_utc && <small> · saved window {dateTime(entry.window_utc[0])} to {dateTime(entry.window_utc[1])} UTC</small>}
           {entry.events.length ? <ul>{entry.events.map(event => <li key={`${event.index}-${event.instant_utc}`}>
