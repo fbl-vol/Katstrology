@@ -130,6 +130,70 @@ test('saved cross-technique dates sort chronologically and open their actual cal
   expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
 });
 
+test('opened progressed MC contact names its branch without inventing a planetary return or showing method slugs', async ({ page }) => {
+  mkdirSync(renders, { recursive: true });
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await expect(page.getByRole('navigation', { name: 'People' })).toBeVisible();
+  const session = await (await page.request.get('/api/session')).json();
+  const origin = new URL(page.url()).origin;
+  const parameters = { branch: 'mcp', body: 'mercury', aspect: 'square',
+    start_utc: '2025-07-01T00:00:00+00:00', end_utc: '2026-06-30T00:00:00+00:00' };
+  const id = `final-mcp-${crypto.randomUUID()}`;
+  const undatedId = `final-undated-${crypto.randomUUID()}`;
+  async function save(resultId: string, interval: typeof parameters) {
+    const response = await page.request.post('/api/advanced-results', {
+      headers: { Origin: origin, 'X-Kat-CSRF': session.csrf },
+      data: { id: resultId, person_id: 'transit-person', technique: 'progressed_mc_contacts', parameters: interval },
+    });
+    expect(response.status()).toBe(201);
+    return response.json();
+  }
+  const contact = await save(id, parameters);
+  expect(contact.status).toBe('supported');
+  expect(contact.method_version).toBe('secondary-utc-calendar-naibod-mc-v1');
+  expect(contact.events.length).toBeGreaterThan(0);
+  expect(contact.branch_description).toContain('MCp progressed astronomical MC to fixed natal planet');
+  const empty = await save(undatedId, { ...parameters, end_utc: '2025-07-02T00:00:00+00:00' });
+  expect(empty.status).toBe('supported');
+  expect(empty.events).toHaveLength(0);
+
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByText('Where am I now? · saved timing').click();
+  const timing = page.getByRole('region', { name: 'Where am I now' });
+  await timing.getByLabel('From (UTC)').fill('2025-07-01');
+  await timing.getByLabel('Explore').selectOption('year');
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  const row = timing.locator(`[data-result-id="${id}"]`).first();
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: 'Open saved result' }).click();
+  const opened = row.getByRole('region', { name: 'Opened saved calculation' });
+  await expect(opened).toContainText('MCp progressed astronomical MC to fixed natal planet · Mercury square');
+  await expect(opened.getByRole('table', { name: /progressed mc contacts points/ })).toBeVisible();
+  await expect(opened).not.toContainText('Mercury returns to its saved natal longitude');
+  await expect(opened).not.toContainText(contact.method_version);
+  const undated = timing.getByText('Saved calculations without dated points', { exact: false });
+  await undated.click();
+  await expect(timing.locator(`[data-result-id="${undatedId}"]`)).toBeVisible();
+  await expect(timing.locator(`[data-result-id="${undatedId}"]`)).not.toContainText(empty.method_version);
+  // The API still serves the unmodified source/version for reproducibility and export.
+  const original = await (await page.request.get(`/api/advanced-results/${id}`)).json();
+  expect(original.result.method_version).toBe(contact.method_version);
+  for (const viewport of [
+    { name: 'desktop', width: 1440, height: 1024 },
+    { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 },
+    { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: resolve(renders, `final-renderer-${viewport.name}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+  }
+  expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
+});
+
 test('saved timing keeps the exact result selected for an editable draft', async ({ page }) => {
   mkdirSync(renders, { recursive: true });
   await page.goto('/');

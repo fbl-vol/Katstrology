@@ -177,7 +177,10 @@ export function PersonTiming({ workspace, person, onDiscuss, onWatch }: {
         {undated.length > 0 && <details className="detail-section"><summary>Saved calculations without dated points · {undated.length}</summary>
           <p>These originals cover part of the interval but do not add a point to the loaded timeline.</p>
           <ul>{undated.map(entry => <li key={entry.id} data-result-id={entry.id}>
-            {labels[entry.technique] || 'Saved timing'} · {entry.method_version}
+            {labels[entry.technique] || 'Saved timing'}
+            {entry.technique === 'progressed_mc_contacts' &&
+              (entry.parameters.branch === 'mcp' || entry.parameters.branch === 'mcr') &&
+              ` · ${entry.parameters.branch === 'mcp' ? 'MCp' : 'MCr'}`}
             <button type="button" onClick={() => void open(entry, null)}>Open saved result</button>
             <button type="button" onClick={() => void saveForLater(entry, null)}>Save for later</button>
             <button type="button" onClick={() => onDiscuss({ result_id: entry.id, event_index: null },

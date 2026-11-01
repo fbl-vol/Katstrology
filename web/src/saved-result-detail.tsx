@@ -69,8 +69,8 @@ export function SavedResultDetail({ result, resultId, technique, sourceStatus }:
     <h3>{sourceStatus === 'current' ? 'Current source' : 'Historical source'} · original saved calculation</h3>
     <p>{result.window_utc ? `Saved interval ${format(result.window_utc[0])} to ${format(result.window_utc[1])} (end excluded).` :
       result.effective_utc ? `Effective ${format(result.effective_utc)}.` : 'Saved interval not recorded.'}
-      {' '}Method {result.method_version || 'not recorded'}. No values were recalculated.</p>
-    {result.body && <p>{bodyLabel(result.body)} returns to its saved natal longitude.
+      {' '}No values were recalculated.</p>
+    {technique === 'planetary_return' && result.body && <p>{bodyLabel(result.body)} returns to its saved natal longitude.
       {result.reference_place_source?.label && ` Reference place: ${result.reference_place_source.label}.`}</p>}
     {result.reference_place && !result.reference_place_source?.label && <p>Reference coordinates: {degree(result.reference_place.latitude)} latitude,
       {' '}{degree(result.reference_place.longitude)} longitude. This place does not change a geocentric crossing instant.</p>}
