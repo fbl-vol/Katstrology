@@ -1,15 +1,19 @@
-"""Single-process, loopback-only browser adapter for the owned synthetic archive."""
+"""Single-process browser adapter: loopback local mode or explicit HTTPS deployment."""
 
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import getpass
+from ipaddress import ip_address
 from hashlib import sha256
 import json
 import os
 from time import time
 from pathlib import Path
+from urllib.parse import urlsplit
+
+from psycopg.conninfo import make_conninfo
 
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -99,6 +103,50 @@ class BrowserRuntime:
             await asyncio.to_thread(self.executor.shutdown, True)
 
 
+def deployment_origin(value):
+    """Validate the public browser authority without trusting proxy headers."""
+    try:
+        parsed = urlsplit(value)
+        valid = (parsed.scheme == 'https' and parsed.hostname and
+                 parsed.hostname == parsed.hostname.lower() and
+                 '.' in parsed.hostname and parsed.port is None and
+                 not parsed.username and not parsed.password and
+                 not parsed.path and not parsed.query and not parsed.fragment and
+                 value == f'https://{parsed.hostname}' and
+                 not parsed.hostname.endswith('.') and
+                 all(part and part.isascii() and part.replace('-', '').isalnum()
+                     and not part.startswith('-') and not part.endswith('-')
+                     for part in parsed.hostname.split('.')))
+    except (TypeError, ValueError):
+        valid = False
+    if valid:
+        try:
+            ip_address(parsed.hostname)
+        except ValueError:
+            pass
+        else:
+            valid = False
+    if not valid:
+        raise ValueError('Deployment requires an exact HTTPS DNS origin without a port or path')
+    return value
+
+
+def deployment_dsn(password_file, host, database, user):
+    """Configuration-only resolution; never use fixture discovery in deployment."""
+    path = Path(password_file)
+    if (not path.is_absolute() or path.is_symlink() or not path.is_file()
+            or path.stat().st_mode & 0o077):
+        raise ValueError('Deployment database password file must be private and absolute')
+    Store._id(database)
+    Store._id(user)
+    if host != 'db':
+        raise ValueError('Deployment database must use the private Compose service')
+    secret = path.read_text(encoding='utf-8').rstrip('\n')
+    if not secret or '\n' in secret or '\r' in secret:
+        raise ValueError('Invalid deployment database password file')
+    return make_conninfo(host=host, port=5432, dbname=database, user=user, password=secret)
+
+
 def json_response(value, status=200):
     return JSONResponse(json.loads(json.dumps(value, default=str)), status_code=status)
 
@@ -143,7 +191,8 @@ async def session(request):
         lambda _store, auth: auth.resolve(token))
     request.app.state.runtime.remember(token, identity, csrf, expires)
     return json_response({'owner': identity.owner_id, 'csrf': csrf,
-                          'workspace': 'local synthetic', 'product': public_defaults()})
+                          'workspace': 'personal' if request.app.state.deployment else 'local synthetic',
+                          'product': public_defaults()})
 
 
 async def login(request):
@@ -152,9 +201,10 @@ async def login(request):
         lambda _store, auth: auth.login(values.get('username'), values.get('password')))
     request.app.state.runtime.remember(token, identity, csrf, expires)
     response = json_response({'owner': identity.owner_id, 'csrf': csrf,
-                              'workspace': 'local synthetic', 'product': public_defaults()})
+                              'workspace': 'personal' if request.app.state.deployment else 'local synthetic',
+                              'product': public_defaults()})
     response.set_cookie(COOKIE, token, max_age=SESSION_HOURS * 3600, httponly=True,
-                        samesite='strict', path='/')
+                        secure=request.app.state.deployment, samesite='strict', path='/')
     return response
 
 
@@ -164,15 +214,17 @@ async def logout(request):
     await request.app.state.runtime.call(lambda _store, auth: auth.logout(token))
     request.app.state.runtime.active_tokens.pop(sha256(token.encode()).hexdigest(), None)
     response = json_response({'status': 'signed_out'})
-    response.delete_cookie(COOKIE, path='/')
+    response.delete_cookie(COOKIE, path='/', secure=request.app.state.deployment,
+                           httponly=True, samesite='strict')
     return response
 
 
 class LocalBoundary(BaseHTTPMiddleware):
-    def __init__(self, app, origin):
+    def __init__(self, app, origin, deployment=False):
         super().__init__(app)
         self.origin = origin
-        self.host = origin.removeprefix('http://')
+        self.host = urlsplit(origin).netloc
+        self.deployment = deployment
 
     async def dispatch(self, request, call_next):
         # A loopback listener is not enough: DNS rebinding and cross-site
@@ -185,7 +237,8 @@ class LocalBoundary(BaseHTTPMiddleware):
                                and request.headers.get('sec-fetch-mode') == 'navigate'
                                and request.headers.get('sec-fetch-dest') == 'document'
                                and not request.headers.get('origin'))
-        callback = cross_site_document and request.url.path == '/auth/chatgpt/callback'
+        callback = (not self.deployment and cross_site_document and
+                    request.url.path == '/auth/chatgpt/callback')
         home = cross_site_document and request.url.path == '/'
         if (request.headers.get('host') != self.host
                 or request.headers.get('origin', self.origin) != self.origin
@@ -204,11 +257,13 @@ class LocalBoundary(BaseHTTPMiddleware):
                 response = json_response({'error': 'unavailable'}, 503)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
+        if self.deployment:
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000'
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; script-src 'self' 'sha256-KMBSMe9gJmMa/C3ahcFCoD5UGi47Jz2co6hC6tczP1s='; "
             "style-src 'self'; img-src 'self' data:; "
             "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
-            "form-action 'self' https://auth.openai.com")
+            "form-action 'self'" + ('' if self.deployment else ' https://auth.openai.com'))
         # Native same-origin sign-in forms need a real Origin header. Do not
         # forward a referrer to the provider or from the callback redirect.
         response.headers['Referrer-Policy'] = (
@@ -218,8 +273,13 @@ class LocalBoundary(BaseHTTPMiddleware):
 
 
 def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root=None,
-               clock=None):
-    """Testing may supply an owned isolated DB; supported serving uses fixture_dsn."""
+               clock=None, origin=None, deployment=False):
+    """Testing may supply an owned isolated DB; serving selects one explicit mode."""
+    if deployment:
+        origin = deployment_origin(origin)
+    else:
+        origin = f'http://127.0.0.1:{port}'
+
     dist = Path(dist)
     if not (dist / 'index.html').is_file():
         raise FileNotFoundError('Build web app first: npm --prefix web run build')
@@ -272,9 +332,10 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
                                         KeyError: on_error, ValueError: on_error,
                                         ReferencedPersonAttachment: on_error,
                                         RuntimeError: on_error, Exception: on_error})
-    app.add_middleware(LocalBoundary, origin=f'http://127.0.0.1:{port}')
+    app.add_middleware(LocalBoundary, origin=origin, deployment=deployment)
     app.state.runtime = runtime
     app.state.port = port
+    app.state.deployment = deployment
     return app
 
 
@@ -282,6 +343,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('serve', 'enroll'), nargs='?', default='serve')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--deployment-origin', help='Enable deployment at this exact HTTPS origin')
+    parser.add_argument('--db-password-file', type=Path)
+    parser.add_argument('--db-name', default='kat')
+    parser.add_argument('--db-user', default='kat')
+    parser.add_argument('--enable-siwc', action='store_true',
+                        help='Allow only offline-enrolled ChatGPT registration in deployment')
     parser.add_argument('--state-directory', type=Path, default=ROOT / '.local',
                         help='Absolute directory containing the existing owned fixture and browser-runtime')
     parser.add_argument('--served-dist', type=Path, default=ROOT / 'web/dist',
@@ -291,10 +358,24 @@ def main():
         parser.error('Port must be 1..65535')
     if not args.state_directory.is_absolute() or not args.served_dist.is_absolute():
         parser.error('State directory and served dist must be absolute paths')
+    deployment = args.deployment_origin is not None
+    if deployment:
+        # Reject incomplete deployment input before any Store or fixture access.
+        origin = deployment_origin(args.deployment_origin)
+        if (args.db_password_file is None or args.state_directory == ROOT / '.local'
+                or args.served_dist == ROOT / 'web/dist'
+                or not args.state_directory.is_absolute()):
+            parser.error('Deployment requires explicit private state, build and database password paths')
+        dsn = deployment_dsn(args.db_password_file, 'db', args.db_name, args.db_user)
+    else:
+        if args.db_password_file is not None:
+            parser.error('Database password file requires deployment origin')
+        origin = None
+        dsn = fixture_dsn(args.state_directory)
     state = args.state_directory
     files = state / 'browser-runtime/files'
-    ledger = state / 'browser-runtime/deletions.jsonl'
-    dsn = fixture_dsn(state)  # only the explicitly selected owned local fixture
+    ledger = (state / 'browser-runtime/deletions/deletions.jsonl' if deployment else
+              state / 'browser-runtime/deletions.jsonl')
     if args.action == 'enroll':
         username = input('Synthetic local username: ')
         password = getpass.getpass('Synthetic local password (12+ characters): ')
@@ -302,12 +383,13 @@ def main():
             store.register_local(username, password)
         return
     siwc_factory = None
-    if os.environ.get('KAT_ENABLE_SIWC') == '1':
+    if args.enable_siwc or (not deployment and os.environ.get('KAT_ENABLE_SIWC') == '1'):
         from m2.siwc import ProviderBridge
         siwc_factory = ProviderBridge
     app = create_app(dsn, files, ledger, args.served_dist, port=args.port,
-                     siwc_factory=siwc_factory)
-    uvicorn.run(app, host='127.0.0.1', port=args.port, access_log=False, log_level='warning')
+                     siwc_factory=siwc_factory, origin=origin, deployment=deployment)
+    uvicorn.run(app, host='0.0.0.0' if deployment else '127.0.0.1',
+                port=args.port, proxy_headers=False, access_log=False, log_level='warning')
 
 
 if __name__ == '__main__':

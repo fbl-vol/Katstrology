@@ -4,8 +4,8 @@ Only synthetic transport fixtures may exercise this module in this assignment.
 A real sign-in/request needs a separate explicit user authorization and opt-in.
 """
 
-from base64 import urlsafe_b64encode
-from hashlib import sha256
+from base64 import b64decode, b64encode, urlsafe_b64encode
+from hashlib import scrypt, sha256
 import hmac
 import json
 import os
@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 ISSUER = 'https://auth.openai.com'
@@ -191,6 +192,67 @@ class CredentialFiles:
 
     def host_id(self):
         return self._read(self.host, {})['ext_agent_host_id']
+
+    @staticmethod
+    def _handoff_key(passphrase, salt):
+        if not isinstance(passphrase, str) or len(passphrase) < 16:
+            raise ValueError('A handoff passphrase of at least 16 characters is required')
+        return scrypt(passphrase.encode(), salt=salt, n=2**15, r=8, p=1,
+                      dklen=32, maxmem=64 * 1024 * 1024)
+
+    def export_selected(self, owner, destination, passphrase):
+        """Encrypt only the selected registration; never include this host's ID."""
+        record = self.load(owner)
+        selected = record['selected']
+        account = record['accounts'].get(selected) if selected else None
+        if (not account or not isinstance(selected, str) or
+                'chatgpt.tokens.use.direct' not in account.get('scopes', ()) or
+                not account.get('refresh_token')):
+            raise ValueError('No renewable selected registration for this account')
+        salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
+        plaintext = json.dumps({'owner': owner, 'selected': selected,
+                                'account': account}).encode('utf-8')
+        ciphertext = AESGCM(self._handoff_key(passphrase, salt)).encrypt(nonce, plaintext, None)
+        envelope = {'format': 1, 'salt': b64encode(salt).decode(),
+                    'nonce': b64encode(nonce).decode(),
+                    'ciphertext': b64encode(ciphertext).decode()}
+        target = Path(destination)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as output:
+            json.dump(envelope, output)
+            output.write('\n')
+            output.flush()
+            os.fsync(output.fileno())
+
+    def import_selected(self, owner, source, passphrase):
+        """Fresh destination only; its own host ID survives and it owns first refresh."""
+        path = Path(source)
+        if (path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077
+                or path.stat().st_size > 65536):
+            raise ValueError('Private handoff file required')
+        envelope = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(envelope, dict) or set(envelope) != {'format', 'salt', 'nonce', 'ciphertext'} or envelope['format'] != 1:
+            raise ValueError('Unsupported handoff file')
+        salt, nonce = b64decode(envelope['salt'], validate=True), b64decode(envelope['nonce'], validate=True)
+        if len(salt) != 16 or len(nonce) != 12:
+            raise ValueError('Invalid handoff file')
+        payload = AESGCM(self._handoff_key(passphrase, salt)).decrypt(
+            nonce, b64decode(envelope['ciphertext'], validate=True), None)
+        incoming = json.loads(payload)
+        selected, account = incoming['selected'], incoming['account']
+        if (incoming['owner'] != owner or not isinstance(selected, str) or
+                not isinstance(account, dict) or account.get('client_id') != selected or
+                not isinstance(account.get('subject'), str) or not account['subject'] or
+                not isinstance(account.get('refresh_token'), str) or
+                not account['refresh_token'] or
+                'chatgpt.tokens.use.direct' not in account.get('scopes', ())):
+            raise ValueError('Selected registration does not match authenticated owner')
+        record = self.load(owner)
+        if record['selected'] is not None or record['accounts']:
+            raise ValueError('Destination already has a registration; no overwrite')
+        record['selected'] = selected
+        record['accounts'] = {selected: {**account, 'access_token': None, 'expires_at': 0}}
+        self.save(owner, record)
 
 
 class ProviderBridge:

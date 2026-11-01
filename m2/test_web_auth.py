@@ -46,6 +46,60 @@ class BrowserAuthTests(unittest.TestCase):
         return TestClient(create_app(self.dsn, self.files, self.ledger,
                                      self.dist), base_url=ORIGIN)
 
+    def test_https_deployment_keeps_exact_browser_boundary_and_offline_enrollment(self):
+        origin = 'https://katstrology.dk'
+        app = create_app(self.dsn, self.files, self.ledger, self.dist,
+                         origin=origin, deployment=True)
+        with TestClient(app, base_url=origin) as client:
+            self.assertEqual(client.get('/api/session').status_code, 401)
+            self.assertEqual(client.get('/', headers={'Host': 'attacker.test'}).status_code, 403)
+            self.assertEqual(client.get('/api/session', headers={'Sec-Fetch-Site': 'cross-site'}).status_code, 403)
+            self.assertEqual(client.post('/api/login', json={'username': 'alice',
+                'password': 'synthetic-password-alice'}).status_code, 403)
+            self.assertEqual(client.post('/api/login', headers={'Origin': 'http://katstrology.dk'},
+                json={'username': 'alice', 'password': 'synthetic-password-alice'}).status_code, 403)
+            response = client.post('/api/login', headers={'Origin': origin},
+                json={'username': 'alice', 'password': 'synthetic-password-alice'})
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('Secure', response.headers['set-cookie'])
+            self.assertIn('SameSite=strict', response.headers['set-cookie'])
+            self.assertEqual(client.get('/api/siwc/status').json()['registration'], 'offline')
+            self.assertFalse(client.get('/api/siwc/status').json()['available'])
+            self.assertEqual(client.post('/auth/chatgpt/start', headers={'Origin': origin},
+                data={'csrf': response.json()['csrf']}).status_code, 404)
+            self.assertEqual(client.get('/auth/chatgpt/callback', params={'state': 'fake'},
+                headers={'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate',
+                         'Sec-Fetch-Dest': 'document'}).status_code, 403)
+            self.assertEqual(client.post('/api/logout', headers={'Origin': origin}).status_code, 403)
+            logout_response = client.post('/api/logout', headers={'Origin': origin,
+                'X-Kat-CSRF': response.json()['csrf']})
+            self.assertEqual(logout_response.status_code, 200)
+            self.assertIn('Secure', logout_response.headers['set-cookie'])
+            home = client.get('/')
+            self.assertEqual(home.headers['strict-transport-security'], 'max-age=31536000')
+            self.assertNotIn('auth.openai.com', home.headers['content-security-policy'])
+
+    def test_offline_enrolled_bridge_has_status_but_no_browser_registration(self):
+        class SyntheticBridge:
+            def status(self, owner):
+                return {'available': True, 'connected': owner == 'alice', 'accounts': [],
+                        'selected': None}
+
+            def close(self):
+                pass
+
+        origin = 'https://katstrology.dk'
+        app = create_app(self.dsn, self.files, self.ledger, self.dist, origin=origin,
+                         deployment=True, siwc_factory=lambda _root: SyntheticBridge())
+        with TestClient(app, base_url=origin) as client:
+            login = client.post('/api/login', headers={'Origin': origin}, json={
+                'username': 'alice', 'password': 'synthetic-password-alice'})
+            self.assertEqual(login.status_code, 200)
+            status = client.get('/api/siwc/status').json()
+            self.assertEqual((status['registration'], status['available'], status['connected']),
+                             ('offline', True, True))
+            self.assertEqual(client.post('/auth/chatgpt/start', headers={'Origin': origin}).status_code, 404)
+
     def test_workspace_login_requires_origin_and_csrf_and_can_reconnect(self):
         with self.client() as client:
             self.assertEqual(client.get('/api/session').status_code, 401)

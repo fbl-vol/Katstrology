@@ -8,7 +8,7 @@ from unittest.mock import patch
 from psycopg.conninfo import conninfo_to_dict
 
 from m2.local_fixture import ROOT, fixture_dsn
-from m2.web_server import main
+from m2.web_server import deployment_origin, main
 
 
 class RuntimePathTests(TestCase):
@@ -45,6 +45,37 @@ class RuntimePathTests(TestCase):
                                                    state / 'browser-runtime/deletions.jsonl', dist))
             self.assertEqual(app.call_args.kwargs['port'], 9234)
             run.assert_called_once()
+
+    def test_deployment_rejects_bad_configuration_before_fixture_or_store(self):
+        for origin in ('http://katstrology.dk', 'https://127.0.0.1',
+                       'https://katstrology.dk:8443', 'https://katstrology.dk/path',
+                       'https://user@katstrology.dk'):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                deployment_origin(origin)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            secret = root / 'db-password'
+            secret.write_text('synthetic-only-password\n')
+            secret.chmod(0o600)
+            argv = ['kat-web', '--deployment-origin', 'https://katstrology.dk',
+                    '--state-directory', str(root / 'state'), '--served-dist', str(root / 'dist'),
+                    '--db-password-file', str(secret)]
+            with patch('sys.argv', argv), patch('m2.web_server.fixture_dsn') as fixture, \
+                 patch('m2.web_server.create_app', return_value=object()) as app, \
+                 patch('m2.web_server.uvicorn.run') as run:
+                main()
+            fixture.assert_not_called()
+            self.assertEqual(app.call_args.kwargs['origin'], 'https://katstrology.dk')
+            self.assertTrue(app.call_args.kwargs['deployment'])
+            self.assertEqual(run.call_args.kwargs['host'], '0.0.0.0')
+            self.assertFalse(run.call_args.kwargs['proxy_headers'])
+            secret.chmod(0o644)
+            with patch('sys.argv', argv), patch('m2.web_server.fixture_dsn') as fixture, \
+                 patch('m2.web_server.create_app') as app:
+                with self.assertRaises(ValueError):
+                    main()
+            fixture.assert_not_called()
+            app.assert_not_called()
 
     def test_old_defaults_and_absolute_only_cli_contract(self):
         with patch('sys.argv', ['kat-web']), \

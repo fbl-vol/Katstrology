@@ -18,11 +18,15 @@ STATE_COOKIE = 'kat_siwc_state'
 async def status(request):
     session = await authorized(request, fast=True)
     bridge = request.app.state.runtime.siwc
-    return json_response(bridge.status(session.owner_id) if bridge else {
-        'available': False, 'connected': False, 'accounts': [], 'selected': None})
+    result = bridge.status(session.owner_id) if bridge else {
+        'available': False, 'connected': False, 'accounts': [], 'selected': None}
+    return json_response({**result, 'registration':
+                          'offline' if request.app.state.deployment else 'local'})
 
 
 async def begin(request):
+    if request.app.state.deployment:
+        return json_response({'error': 'offline_registration_required'}, 404)
     runtime = request.app.state.runtime
     bridge = runtime.siwc
     if not bridge:
@@ -49,6 +53,8 @@ async def begin(request):
 
 
 async def callback(request):
+    if request.app.state.deployment:
+        return json_response({'error': 'offline_registration_required'}, 404)
     runtime = request.app.state.runtime
     result = 'failed'
     if runtime.siwc:

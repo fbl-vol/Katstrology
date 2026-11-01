@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Workspace } from './api';
 
 type Account = { client_id: string; email: string | null; plan_enabled: boolean; selected: boolean };
-type Status = { available: boolean; connected: boolean; selected: string | null; accounts: Account[] };
-const empty: Status = { available: false, connected: false, selected: null, accounts: [] };
+type Status = { available: boolean; connected: boolean; selected: string | null; accounts: Account[]; registration: 'local' | 'offline' };
+const empty: Status = { available: false, connected: false, selected: null, accounts: [], registration: 'local' };
 
 export function useProvider(workspace: Workspace | null) {
   const [status, setStatus] = useState<Status>(empty);
@@ -82,17 +82,22 @@ export function ProviderSettings({ provider, workspace }: { provider: Provider; 
     <h2 id="provider-title">Model connection <ProviderHelp /></h2>
     {!provider.status.available ? <p className="provider-disabled">{provider.error ?
       'Connection status is unavailable. No chat message will be sent until it can be checked.' :
+      provider.status.registration === 'offline' ?
+      'Chat is not connected. This personal workspace needs an offline ChatGPT registration before chat can be used.' :
       'ChatGPT plan connection is disabled for this local build. No model or billing route will be substituted.'}</p> : <>
       {selected && <p>{provider.status.connected && <strong>Connected · </strong>}Selected account: {selected.email || selected.client_id} · {selected.plan_enabled ? 'Plan permission granted' : 'Identity only; plan use not permitted'}</p>}
       {provider.status.accounts.length > 1 && <label>Saved account<select value={provider.status.selected || ''} onChange={event => void provider.choose(event.target.value)}>
         {provider.status.accounts.map(account => <option key={account.client_id} value={account.client_id}>{account.email || account.client_id} · {account.plan_enabled ? 'plan enabled' : 'identity only'}</option>)}
       </select></label>}
+      {provider.status.registration === 'offline' ?
+        <p>{provider.status.connected ? 'This connection was set up privately on this server.' :
+          'Connect the account offline on the dedicated computer before using chat. Browser sign-in is not available here.'}</p> :
       <form method="post" action="/auth/chatgpt/start" className="provider-form">
         <input type="hidden" name="csrf" value={workspace.csrf} />
         <input type="hidden" name="client_id" value={provider.status.selected || ''} />
         <button className={provider.status.connected ? 'quiet-action' : 'primary'} type="submit">{provider.status.connected ? 'Reconnect ChatGPT account' : 'Connect ChatGPT plan'}</button>
         {!provider.status.connected && <small>Sign-in does not import your ChatGPT history or send a message.</small>}
-      </form>
+      </form>}
       {selected && <button className="quiet-action" onClick={() => void provider.disconnect()}>Disconnect ChatGPT plan</button>}
       <p><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">Manage usage in ChatGPT settings</a></p>
     </>}

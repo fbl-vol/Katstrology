@@ -570,11 +570,12 @@ function App() {
           {nextConversationOffset !== null && <button onClick={() => void loadThreads(nextConversationOffset)}>Load older conversations</button>}</div>
       </nav>
       <div className="side-bottom"><button ref={settingsButton} type="button" onClick={openSettings}>Settings</button>
-        <div className="account"><span className="initial">{workspace.owner.charAt(0).toUpperCase()}</span><span>{workspace.owner}<small>Local workspace</small></span></div><button type="button" onClick={signOut}>Sign out</button></div>
+        <div className="account"><span className="initial">{workspace.owner.charAt(0).toUpperCase()}</span><span>{workspace.owner}<small>{workspace.workspace === 'personal' ? 'Personal workspace' : 'Local workspace'}</small></span></div><button type="button" onClick={signOut}>Sign out</button></div>
     </aside>
     <main className={`main${settingsOpen ? ' settings-main' : !person && !skyOpen && !chartHub ? ' chat-scroll-page' : ''}`} inert={drawer}>
       <header className="header"><div className="header-left"><button ref={menuButton} className="mobile-menu" aria-label="Open navigation" aria-expanded={drawer} onClick={() => setDrawer(true)}>☰</button><span className="header-title">{settingsOpen ? 'Settings' : chartHub ? 'Create chart' : skyOpen ? 'Sky at a date' : person ? person.name : conversation?.title || 'New conversation'}</span></div><span className="model-label">{provider.error.startsWith('Connection status could not') ? 'ChatGPT connection unavailable' :
-          provider.status.connected ? 'ChatGPT connected' : 'Connect ChatGPT plan to send'}</span></header>
+          provider.status.connected ? 'ChatGPT connected' :
+          provider.status.registration === 'offline' ? 'Chat not connected' : 'Connect ChatGPT plan to send'}</span></header>
       {settingsOpen && <SettingsView workspace={workspace} provider={provider} onClose={closeSettings} />}
       <div className={settingsOpen ? 'settings-hidden' : 'settings-visible'} inert={settingsOpen}>
       {chartHub === 'synastry' && <SynastryView workspace={workspace} people={people}
