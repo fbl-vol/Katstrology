@@ -23,6 +23,7 @@ GIT_ID = re.compile(r'[0-9a-f]{40}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
 ALIAS = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,79}\Z')
 PROJECT = re.compile(r'[a-z][a-z0-9_-]{1,62}\Z')
+ATTEMPT = re.compile(r'[0-9a-f]{32}\Z')
 UPLOAD_TIMEOUT = 600
 PHASE_TIMEOUT = 180
 
@@ -93,15 +94,15 @@ def artifact(receipt_path):
 
 def target_config(path):
     target = json.loads(path.read_text())
-    if set(target) != {'ssh_alias', 'project', 'stage', 'password_file', 'ephemeris_dir', 'snapshot_dir', 'origin', 'loopback_port', 'db_image'}:
+    if set(target) != {'ssh_alias', 'project', 'stage_root', 'password_file', 'ephemeris_dir', 'snapshot_dir', 'origin', 'loopback_port', 'db_image'}:
         raise ValueError('Target fields differ from release contract')
     if not ALIAS.fullmatch(target['ssh_alias']) or not PROJECT.fullmatch(target['project']):
         raise ValueError('SSH alias/project invalid')
-    for field in ('stage', 'password_file', 'ephemeris_dir', 'snapshot_dir'):
+    for field in ('stage_root', 'password_file', 'ephemeris_dir', 'snapshot_dir'):
         value = target[field]
         if not isinstance(value, str) or not Path(value).is_absolute() or '..' in Path(value).parts or not value.startswith('/srv/'):
             raise ValueError('Target path must be an absolute /srv path without traversal')
-    if target['stage'] == target['snapshot_dir'] or target['stage'].startswith(target['snapshot_dir'] + '/') or target['snapshot_dir'].startswith(target['stage'] + '/'):
+    if target['stage_root'] == target['snapshot_dir'] or target['stage_root'].startswith(target['snapshot_dir'] + '/') or target['snapshot_dir'].startswith(target['stage_root'] + '/'):
         raise ValueError('Snapshot must be independent of release staging')
     if not IMAGE.fullmatch(target['db_image']):
         raise ValueError('Installed DB image must be an immutable runtime config ID')
@@ -110,14 +111,19 @@ def target_config(path):
     return target
 
 
-def plan(receipt, target, schema, compose):
+def plan(receipt, target, schema, compose, attempt, archive_bytes):
+    if not ATTEMPT.fullmatch(attempt):
+        raise ValueError('Attempt must be a fresh 32-character lowercase hex ID')
+    if not isinstance(archive_bytes, int) or isinstance(archive_bytes, bool) or not 0 < archive_bytes <= 2 * 1024**3:
+        raise ValueError('Archive size exceeds release bound')
     # No credential paths in the portable approval/receipt; target file remains private.
     scope = {'project': target['project'],
              'origin': target['origin'], 'loopback_port': target['loopback_port'],
              'target_sha256': sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()}
     identity = {key: receipt[key] for key in ('commit', 'tree', 'image_id', 'config_digest',
                 'image_archive_sha256', 'source_offer_sha256')}
-    content = {'contract': 2, 'target': scope, 'artifact': identity, 'schema_version': schema,
+    content = {'contract': 3, 'attempt': attempt, 'archive_bytes': archive_bytes,
+               'target': scope, 'artifact': identity, 'schema_version': schema,
                'compose_sha256': sha256(compose).hexdigest(),
                'runner_sha256': digest(Path(__file__)),
                'remote_runner_sha256': digest(Path(__file__).with_name('release_remote.py')),
@@ -197,11 +203,16 @@ def verify_public(origin, assets, opener=None):
             raise ValueError('Public HTTPS asset differs from packaged image')
 
 
-def execute(receipt, archive, compose, target, planned, approval, receipt_path):
-    if approval != {'approved_action': 'release', 'plan_sha256': planned['plan_sha256']}:
+def execute(receipt, archive, compose, target, planned, approval, signature, receipt_path):
+    if approval != {'approved_action': 'release', 'attempt': planned['attempt'],
+                    'plan_sha256': planned['plan_sha256']}:
         raise ValueError('Exact-target release approval missing or mismatched')
+    if not signature.startswith('-----BEGIN SSH SIGNATURE-----\n') or len(signature) > 8192:
+        raise ValueError('Signed per-release approval missing or exceeds bound')
     if receipt_path.exists():
         raise ValueError('Receipt already exists; never replay an ambiguous attempt')
+    if archive.stat().st_size != planned['archive_bytes']:
+        raise ValueError('Approved archive length changed')
     # Durable guard precedes the first network action. Never overwrite on retry.
     with receipt_path.open('x') as output:
         json.dump({'plan_sha256': planned['plan_sha256'], 'status': 'started; inspect before retry'}, output)
@@ -214,13 +225,14 @@ def execute(receipt, archive, compose, target, planned, approval, receipt_path):
     finally:
         os.close(directory)
     alias = target['ssh_alias']
+    signed = {'plan': planned, 'approval': approval, 'signature': signature}
     try:
-        remote(alias, {'action': 'stage', 'plan': planned})
-        remote(alias, {'action': 'upload', 'plan': planned, 'bytes': archive.stat().st_size}, upload=archive)
+        remote(alias, {'action': 'stage', **signed})
+        remote(alias, {'action': 'upload', 'bytes': archive.stat().st_size, **signed}, upload=archive)
         # Installed root-protected template, never client-supplied Compose or Python.
-        remote(alias, {'action': 'compose', 'plan': planned})
+        remote(alias, {'action': 'compose', **signed})
         for phase in ('preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'):
-            observed = remote(alias, {'action': phase, 'plan': planned})
+            observed = remote(alias, {'action': phase, **signed})
             if observed['status'] == 'recovered_old_app':
                 receipt_path.write_text(json.dumps({'plan_sha256': planned['plan_sha256'],
                     'status': 'recovered_old_app; release not activated'}) + '\n')
@@ -247,21 +259,24 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact-receipt', type=Path, required=True)
     parser.add_argument('--target', type=Path, required=True)
+    parser.add_argument('--attempt', required=True, help='fresh 32-character hex attempt ID; retain for execution')
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--approval', type=Path)
+    parser.add_argument('--signature', type=Path)
     parser.add_argument('--result', type=Path)
     args = parser.parse_args(argv)
     receipt, archive, compose, schema = artifact(args.artifact_receipt)
     target = target_config(args.target)
-    planned = plan(receipt, target, schema, compose)
+    planned = plan(receipt, target, schema, compose, args.attempt, archive.stat().st_size)
     if not args.execute:
-        if args.approval or args.result:
+        if args.approval or args.signature or args.result:
             parser.error('Approval and result apply only to --execute')
         print(json.dumps(planned, indent=2))
         return
-    if not args.approval or not args.result:
-        parser.error('--execute requires --approval and --result')
-    execute(receipt, archive, compose, target, planned, json.loads(args.approval.read_text()), args.result)
+    if not args.approval or not args.signature or not args.result:
+        parser.error('--execute requires --approval, --signature and --result')
+    execute(receipt, archive, compose, target, planned, json.loads(args.approval.read_text()),
+            args.signature.read_text(), args.result)
     print(json.dumps({'status': 'verified', 'plan_sha256': planned['plan_sha256']}))
 
 

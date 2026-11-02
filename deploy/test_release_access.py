@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import os
 import subprocess
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 from time import monotonic
 import unittest
@@ -18,17 +19,38 @@ from deploy.test_release_pipeline import synthetic_target
 
 
 def fixture(directory):
-    target = synthetic_target() | {'stage': str(Path(directory) / 'stage')}
-    compose = Path(directory) / 'compose.yaml'
+    root = Path(directory)
+    target = synthetic_target() | {'stage_root': str(root / 'stages')}
+    Path(target['stage_root']).mkdir()
+    compose = root / 'compose.yaml'
     compose.write_text('synthetic protected compose')
+    key = root / 'approval-key'
+    subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)],
+                   check=True, stdout=subprocess.DEVNULL)
+    allowed = root / 'allowed-signers'
+    allowed.write_text('kat-approver ' + ' '.join(key.with_suffix('.pub').read_text().split()[:2]) + '\n')
     receipt = {'commit': 'a' * 40, 'tree': 'b' * 40,
                'image_id': 'sha256:' + 'c' * 64, 'config_digest': 'sha256:' + 'd' * 64,
                'image_archive_sha256': sha256(b'archive').hexdigest(),
                'source_offer_sha256': 'f' * 64}
-    plan = pipeline.plan(receipt, target, 22, compose.read_bytes())
-    policy = {'target': target, 'approved_plan_sha256': plan['plan_sha256'],
-              'compose_file': str(compose), 'schema_version': 22, 'max_archive_bytes': 1024}
+    plan = pipeline.plan(receipt, target, 22, compose.read_bytes(), '1' * 32, 7)
+    policy = {'target': target, 'compose_file': str(compose), 'schema_version': 22,
+              'max_archive_bytes': 1024, 'approval_principal': 'kat-approver',
+              'approval_namespace': access.APPROVAL_NAMESPACE,
+              'allowed_signers_file': str(allowed),
+              'allowed_signers_sha256': pipeline.digest(allowed)}
     return plan, policy
+
+
+def signed_request(plan, directory, action, *, key_name='approval-key', namespace=None, **extra):
+    approval = {'approved_action': 'release', 'attempt': plan['attempt'],
+                'plan_sha256': plan['plan_sha256']}
+    payload = (json.dumps(approval, sort_keys=True, separators=(',', ':')) + '\n').encode()
+    result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'sign',
+            '-f', str(Path(directory) / key_name), '-n', namespace or access.APPROVAL_NAMESPACE],
+            input=payload, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
+    return {'action': action, 'plan': plan, 'approval': approval,
+            'signature': result.stdout.decode(), **extra}
 
 
 class AppScopedAccessTests(unittest.TestCase):
@@ -69,18 +91,20 @@ class AppScopedAccessTests(unittest.TestCase):
             plan, policy = fixture(directory)
             with patch.object(access, 'protected', side_effect=lambda path: Path(path)), \
                  patch.object(release_remote, 'main', return_value={'phase': 'stage', 'status': 'ok'}) as phase:
-                result = access.dispatch({'action': 'stage', 'plan': plan}, policy, BytesIO())
+                request = signed_request(plan, directory, 'stage')
+                result = access.dispatch(request, policy, BytesIO())
                 self.assertEqual(result, {'phase': 'stage', 'status': 'ok'})
-                self.assertEqual(release_remote.REQUEST['target'], policy['target'])
+                self.assertEqual(release_remote.REQUEST['target'], policy['target'] | {
+                    'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])})
                 phase.assert_called_once_with()
                 for bad in (
-                    {'action': 'stage', 'plan': plan, 'command': 'docker ps'},
-                    {'action': 'stage', 'plan': plan, 'target': {'stage': '/etc'}},
-                    {'action': 'stage', 'plan': plan, 'compose': 'services: {evil: {privileged: true}}'},
-                    {'action': 'stage', 'plan': plan, 'mounts': ['/var/run/docker.sock:/docker.sock']},
-                    {'action': 'upload', 'plan': plan, 'bytes': 1025},
-                    {'action': 'upload', 'plan': plan, 'bytes': -1},
-                    {'action': 'exec', 'plan': plan},
+                    request | {'command': 'docker ps'},
+                    request | {'target': {'stage': '/etc'}},
+                    request | {'compose': 'services: {evil: {privileged: true}}'},
+                    request | {'mounts': ['/var/run/docker.sock:/docker.sock']},
+                    request | {'action': 'upload', 'bytes': 1025},
+                    request | {'action': 'upload', 'bytes': -1},
+                    request | {'action': 'exec'},
                 ):
                     with self.subTest(bad=list(bad)):
                         with self.assertRaises(ValueError):
@@ -89,27 +113,28 @@ class AppScopedAccessTests(unittest.TestCase):
                 changed = json.loads(json.dumps(plan))
                 changed['target']['target_sha256'] = '0' * 64
                 with self.assertRaisesRegex(ValueError, 'Protected approval'):
-                    access.dispatch({'action': 'stage', 'plan': changed}, policy, BytesIO())
+                    access.dispatch(request | {'plan': changed}, policy, BytesIO())
                 changed = json.loads(json.dumps(plan))
                 changed['artifact']['config_digest'] = 'sha256:' + 'e' * 64
                 with self.assertRaisesRegex(ValueError, 'Protected approval'):
-                    access.dispatch({'action': 'stage', 'plan': changed}, policy, BytesIO())
-                policy['approved_plan_sha256'] = '0' * 64
-                with self.assertRaisesRegex(ValueError, 'Protected approval'):
-                    access.dispatch({'action': 'stage', 'plan': plan}, policy, BytesIO())
+                    access.dispatch(request | {'plan': changed}, policy, BytesIO())
+                policy['approval_principal'] = 'wrong-approver'
+                with self.assertRaisesRegex(ValueError, 'signature differs'):
+                    access.dispatch(request, policy, BytesIO())
 
     def test_upload_is_exclusive_bounded_hash_checked_and_never_a_path(self):
         with TemporaryDirectory() as directory:
             plan, policy = fixture(directory)
-            stage = Path(policy['target']['stage'])
+            stage = Path(policy['target']['stage_root']) / plan['attempt']
             stage.mkdir()
             (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
             with patch.object(access, 'protected', side_effect=lambda path: Path(path)), \
                  patch.object(release_remote, 'main') as phase:
-                request = {'action': 'upload', 'plan': plan, 'bytes': 7}
+                request = signed_request(plan, directory, 'upload', bytes=7)
                 self.assertEqual(access.dispatch(request, policy, BytesIO(b'archive'))['status'], 'ok')
                 self.assertEqual((stage / 'image.tar').read_bytes(), b'archive')
-                with self.assertRaises(FileExistsError):
+                self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'uploaded')
+                with self.assertRaisesRegex(ValueError, 'exclusive fresh stage'):
                     access.dispatch(request, policy, BytesIO(b'archive'))
                 phase.assert_not_called()
             for body in (b'arch', b'archivexx'):
@@ -175,6 +200,82 @@ class AppScopedAccessTests(unittest.TestCase):
                         with self.assertRaisesRegex(RuntimeError, 'phase failed'):
                             pipeline.remote('synthetic-alias', request, upload=archive)
                     self.assertLess(monotonic() - start, 3)
+
+    def test_native_signed_exact_approvals_gate_effects_and_support_next_attempt(self):
+        with TemporaryDirectory() as directory:
+            plan, policy = fixture(directory)
+            stage_root = Path(policy['target']['stage_root'])
+            other_key = Path(directory) / 'deployment-key'
+            subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(other_key)],
+                           check=True, stdout=subprocess.DEVNULL)
+            with patch.object(access, 'protected', side_effect=lambda path: Path(path)):
+                valid = signed_request(plan, directory, 'stage')
+                invalid = (
+                    valid | {'signature': ''},
+                    signed_request(plan, directory, 'stage', key_name='deployment-key'),
+                    signed_request(plan, directory, 'stage', namespace='wrong-namespace'),
+                    valid | {'approval': valid['approval'] | {'attempt': '2' * 32}},
+                    valid | {'plan': plan | {'attempt': '2' * 32}},
+                    valid | {'plan': plan | {'artifact': plan['artifact'] | {
+                        'config_digest': 'sha256:' + 'e' * 64}}},
+                    valid | {'plan': plan | {'target': plan['target'] | {'project': 'other'}}},
+                    valid | {'bytes': 100},
+                )
+                other_target = policy['target'] | {'password_file': '/srv/unrelated-secret'}
+                other_plan = pipeline.plan(plan['artifact'], other_target, 22,
+                    Path(policy['compose_file']).read_bytes(), '3' * 32, 7)
+                invalid += (signed_request(other_plan, directory, 'stage'),)
+                for request in invalid:
+                    with self.subTest(request=list(request), signature=request.get('signature', '')[:35]):
+                        with self.assertRaises(ValueError):
+                            access.dispatch(request, policy, BytesIO())
+                        self.assertEqual(list(stage_root.iterdir()), [])
+                self.assertEqual(access.dispatch(valid, policy, BytesIO())['status'], 'ok')
+                first = stage_root / plan['attempt']
+                self.assertTrue(first.is_dir())
+                with self.assertRaisesRegex(ValueError, 'no retry'):
+                    access.dispatch(valid, policy, BytesIO())
+                later = pipeline.plan(plan['artifact'], policy['target'], 22,
+                                      Path(policy['compose_file']).read_bytes(), '2' * 32, 7)
+                stale = valid | {'plan': later}
+                with self.assertRaises(ValueError):
+                    access.dispatch(stale, policy, BytesIO())
+                self.assertFalse((stage_root / later['attempt']).exists())
+                self.assertEqual(access.dispatch(signed_request(later, directory, 'stage'),
+                                                 policy, BytesIO())['status'], 'ok')
+                self.assertTrue((stage_root / later['attempt']).is_dir())
+
+    def test_protected_policy_pins_signer_file_and_existing_stage_root(self):
+        with TemporaryDirectory() as directory:
+            _, policy = fixture(directory)
+            policy['target']['stage_root'] = '/srv/synthetic-protected-kat-stages'
+            path = Path(directory) / 'policy.json'
+            path.write_text(json.dumps(policy))
+            original_lstat = Path.lstat
+            def synthetic_root(path, *args, **kwargs):
+                if str(path) == '/srv/synthetic-protected-kat-stages':
+                    return SimpleNamespace(st_mode=0o40700, st_uid=0)
+                info = original_lstat(path, *args, **kwargs)
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=0)
+            with patch.object(access, 'protected', side_effect=lambda path: Path(path)), \
+                 patch.object(Path, 'lstat', synthetic_root):
+                self.assertEqual(access.read_policy(path), policy)
+                signer = Path(policy['allowed_signers_file'])
+                signer.write_text('kat-approver ssh-ed25519 AAAA\n')
+                with self.assertRaisesRegex(ValueError, 'signer identity changed'):
+                    access.read_policy(path)
+                policy['allowed_signers_sha256'] = pipeline.digest(signer)
+                signer.write_text(signer.read_text() + 'other ssh-ed25519 AAAA\n')
+                policy['allowed_signers_sha256'] = pipeline.digest(signer)
+                path.write_text(json.dumps(policy))
+                with self.assertRaisesRegex(ValueError, 'signer entry differs'):
+                    access.read_policy(path)
+                signer.write_text('kat-approver ssh-ed25519 AAAA\n')
+                policy['allowed_signers_sha256'] = pipeline.digest(signer)
+                policy['target']['stage_root'] = '/srv/synthetic-absent-kat-stages'
+                path.write_text(json.dumps(policy))
+                with self.assertRaises(FileNotFoundError):
+                    access.read_policy(path)
 
     def test_policy_rejects_symlink_and_nonroot_writable_ancestors(self):
         with TemporaryDirectory() as directory:

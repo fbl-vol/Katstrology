@@ -69,7 +69,7 @@ are checked again at plan time. A green smoke is not a server readiness receipt.
 
 Keep a private, untracked JSON target file (mode 0600) with exactly these keys:
 `ssh_alias` (configured OpenSSH key alias, no user@host), `project` (the existing
-Compose project), `stage` (a **new**, absent `/srv/...` directory per attempt),
+Compose project), `stage_root` (pre-existing root-owned, symlink-free `/srv/...` Kat-only directory),
 `password_file` (existing app-owned 0400 path), `ephemeris_dir` (existing licensed
 read-only directory), `db_image` (the **inspected installed immutable DB runtime
 config ID**, `sha256:...`, supplied under the exact approval; not a registry tag
@@ -86,27 +86,43 @@ in the target file. The target's *paths* stay private and are represented by a
 hash in the plan and final sanitized receipt.
 
 ```
-python3 deploy/release_pipeline.py --artifact-receipt <ignored-package-receipt> --target <private-target.json> > <private-plan.json>
+python3 deploy/release_pipeline.py --artifact-receipt <ignored-package-receipt> --target <private-target.json> --attempt <fresh-32-lowercase-hex> > <private-plan.json>
 ```
 
-Check the plan's immutable identities and exact target **and obtain a fresh,
-separately scoped approval for this particular release**. Only then create a
-private approval file `{"approved_action":"release","plan_sha256":"<from-plan>"}`.
+Use a fresh cryptographically random 16-byte attempt ID for each plan (for example
+`python3 -c 'import secrets; print(secrets.token_hex(16))'`); retain it for
+execution. The protected server derives one absent stage as
+`<stage_root>/<attempt>`; neither client nor signature can select an arbitrary path.
+Check the plan's immutable identities, target, schema, bounds and attempt, then
+obtain a fresh, separately scoped human approval for **that exact release**.
+Create a private approval file with precisely this canonical, newline-terminated
+UTF-8 content (keys in this order, no spaces):
+`{"approved_action":"release","attempt":"<from-plan>","plan_sha256":"<from-plan>"}`.
+Only the separate user-custodied approval key signs that file with native OpenSSH:
+`ssh-keygen -Y sign -n kat-release-approval-v1 -f <approval-private-key> <private-approval.json>`.
+The output is `<private-approval.json>.sig`. A deployment SSH key is **not** a
+signer, and client-provided approval JSON alone has no authority. Keep the
+signing private key off the server and out of Git; managing/generating any real
+key or installing its public verifier needs separate exact-scope permission.
 Execution is a separate deliberate invocation:
 
 ```
-python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <same-target.json> --execute --approval <private-approval.json> --result <new-private-receipt.json>
+python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <same-target.json> --attempt <same-attempt> --execute --approval <private-approval.json> --signature <private-approval.json.sig> --result <new-private-receipt.json>
 ```
 
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
-receipt refuses replay. Its only SSH command is `kat-release-v1` with `-T`,
+receipt refuses replay. The server verifies the exact signed plan/attempt through
+its pinned OpenSSH allowed-signers identity and namespace **before every phase**;
+a stale, unsigned, wrongly signed or modified plan cannot stage or upload. Each
+phase advances an exclusive attempt marker; a reused attempt cannot restage,
+reupload, recompose or reactivate. Its only SSH command is `kat-release-v1` with `-T`,
 BatchMode and strict host-key checking. Stdin is one bounded JSON request line,
 with the archive bytes framed only for `upload`. The client prepares an unlinked,
 local owned input file before SSH; `subprocess.run` bounds the **whole** child
 operation even if the peer stops reading its input. No SCP, SFTP, supplied Python,
 remote command string, client-selected path, environment or Compose is sent.
-The installed helper stages the archive only at the **root-protected policy's**
-fixed absent stage path and uses the root-owned protected Compose template. It
+The installed helper stages the archive only under the **root-protected policy's**
+fixed staging root at a fresh signed attempt ID and uses the root-owned protected Compose template. It
 writes a stage-local DB-image-only override from the installed policy's immutable
 `db_image`, without pulling/retagging/recreating the DB. A source template registry
 alias may not exist after archive import; the installed config ID must exist and
@@ -139,22 +155,32 @@ services, a general root shell, Docker commands or credential browsing**.
 `release_access.py` is a **root-owned installed** forced-command entry point; it
 loads `/etc/kat-release/policy.json` (see generic
 `release_access_policy.example.json`) and a root-owned Compose template, checking
-all ancestor ownership/modes. The protected target fixes the exact Kat project,
-absent attempt stage, snapshot destination, secret/ephemeris references, immutable
-installed DB image, origin and loopback port. The policy also fixes the exact
-approved plan SHA-256, schema and maximum image archive size; it must be updated
-under a new scoped approval for a new release. Its target fields must match the
+all ancestor ownership/modes. The protected target fixes the exact Kat project, root-owned stage root,
+snapshot destination, secret/ephemeris references, immutable installed DB image,
+origin and loopback port. The policy fixes the schema and maximum image archive
+size, plus one root-owned pinned OpenSSH `allowed-signers` entry, exact approval
+principal and `kat-release-approval-v1` namespace. The stage is derived from the
+signed fresh 32-hex attempt, not edited in policy for each release. Each approval
+signature authenticates the canonical action `release`, attempt ID and exact plan
+hash, which binds commit/tree, OCI image/config, archive/source digests and exact
+archive byte count (also limited by the stable protected maximum), schema,
+target scope, protected helper/template hashes and phase list. The server recomputes
+that hash and independently verifies the signature before any effect. Its target fields must match the
 local target file byte-for-byte in the plan hash; the SSH alias is merely a local
 connection name, never a server command. The protected template SHA and the installed helper/phase-code SHA must equal
 the approved plan's pinned source bytes, or the forced command refuses before
-loading/stopping. Protocol contract 2 deliberately cannot replay a contract-1 plan.
-Policy and code must be root-owned and not writable through group, others or any
-symlink ancestor. **Routine new-version workflow remains unresolved:** the present
-policy pins one approved plan and absent stage, so every new version would require
-a privileged policy update. Do not install this as a repeatable release solution
-until the server-approved per-release authorization model is selected and reviewed;
-removing the pin or treating a client approval claim as server approval is not a fix. The fixed stage parent must be root-owned; the attempt stage is
-created exclusively and upload refuses replay/symlink/truncated/extra bytes.
+loading/stopping. Protocol contract 3 deliberately cannot replay contract-1/2 plans.
+Policy, verifier key and code must be root-owned and not writable through group,
+others or any symlink ancestor. Only an independently approved signed plan can
+advance a release; routine new Kat versions and attempts need no privileged policy
+edit while their fixed Kat resource scope, installed helper/template bytes and
+schema remain compatible. A helper/template or target-scope change is **not** a
+routine release: it needs separate protected installation review. The stage root
+must already exist root-owned; the attempt stage is created exclusively and upload
+refuses replay/symlink/truncated/extra bytes. Signature verification is native
+`ssh-keygen -Y verify`, not client assertion, custom crypto or an SSH-agent
+side channel. A signed approval lets its holder deploy approved Kat code with
+access to Kat data and Kat credentials, never unrelated host services.
 
 For a *future separately approved* installation, use native OpenSSH
 `authorized_keys` key options of this exact shape, with a separately generated
@@ -164,8 +190,11 @@ public key replacing the placeholder and executable root-owned helper files:
 restrict,command="/usr/bin/python3 -I /usr/local/libexec/kat-release/deploy/release_access.py" ssh-ed25519 <APP-RELEASE-PUBLIC-KEY> kat-app-release
 ```
 
-Keep the full helper tree `/usr/local/libexec/kat-release/deploy/` and `/etc/kat-release/`
-root-owned, non-writable to the key holder and symlink-free. Under Python `-I`,
+Keep the full helper tree `/usr/local/libexec/kat-release/deploy/`,
+`/etc/kat-release/` including the one-entry `allowed-signers` file, and the fixed
+Kat stage root root-owned, non-writable to the key holder and symlink-free. Pin
+the exact SHA-256 of that public verifier file in the policy; never install the
+signing private key on the server. Under Python `-I`,
 the helper checks the fixed adjacent phase file and loads it explicitly; it never
 uses CWD or client PYTHONPATH. `restrict` denies PTY,
 agent/X11/port forwarding and user rc; the forced command rejects every original

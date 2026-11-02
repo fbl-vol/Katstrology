@@ -13,7 +13,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
+from tempfile import NamedTemporaryFile
 
 if __package__:
     from deploy import release_remote
@@ -24,9 +26,11 @@ POLICY = Path('/etc/kat-release/policy.json')
 REQUEST_LIMIT = 16 * 1024
 HEX = re.compile(r'[0-9a-f]{64}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
+ATTEMPT = re.compile(r'[0-9a-f]{32}\Z')
+APPROVAL_NAMESPACE = 'kat-release-approval-v1'
 ACTIONS = {'stage', 'upload', 'compose', 'preflight', 'quiesce_and_snapshot',
            'activate_app_only', 'verify_serving_path'}
-PLAN_FIELDS = {'contract', 'target', 'artifact', 'schema_version', 'compose_sha256',
+PLAN_FIELDS = {'contract', 'attempt', 'archive_bytes', 'target', 'artifact', 'schema_version', 'compose_sha256',
                'runner_sha256', 'remote_runner_sha256', 'access_helper_sha256',
                'steps', 'on_ambiguity', 'plan_sha256'}
 ARTIFACT_FIELDS = {'commit', 'tree', 'image_id', 'config_digest',
@@ -62,34 +66,51 @@ def protected(path):
 
 def read_policy(path=POLICY):
     policy = json.loads(protected(path).read_text())
-    if set(policy) != {'target', 'approved_plan_sha256', 'schema_version',
-                       'compose_file', 'max_archive_bytes'}:
+    if set(policy) != {'target', 'schema_version', 'compose_file', 'max_archive_bytes',
+                       'approval_principal', 'approval_namespace', 'allowed_signers_file',
+                       'allowed_signers_sha256'}:
         raise ValueError('Policy fields differ')
     target = policy['target']
-    if set(target) != {'ssh_alias', 'project', 'stage', 'password_file', 'ephemeris_dir',
+    if set(target) != {'ssh_alias', 'project', 'stage_root', 'password_file', 'ephemeris_dir',
                        'snapshot_dir', 'origin', 'loopback_port', 'db_image'}:
         raise ValueError('Protected target fields differ')
-    for key in ('stage', 'password_file', 'ephemeris_dir', 'snapshot_dir'):
+    for key in ('stage_root', 'password_file', 'ephemeris_dir', 'snapshot_dir'):
         path_value = target[key]
         if (not isinstance(path_value, str) or not path_value.startswith('/srv/')
                 or '..' in Path(path_value).parts or os.path.realpath(path_value) != path_value):
             raise ValueError('Protected target path invalid')
-    if (not IMAGE.fullmatch(target['db_image']) or not HEX.fullmatch(policy['approved_plan_sha256'])
+    if (not IMAGE.fullmatch(target['db_image'])
             or not isinstance(policy['schema_version'], int) or policy['schema_version'] < 1
-            or not isinstance(policy['max_archive_bytes'], int)
-            or not 0 < policy['max_archive_bytes'] <= 2 * 1024**3):
+            or not isinstance(policy['max_archive_bytes'], int) or isinstance(policy['max_archive_bytes'], bool)
+            or not 0 < policy['max_archive_bytes'] <= 2 * 1024**3
+            or policy['approval_namespace'] != APPROVAL_NAMESPACE
+            or not re.fullmatch(r'[a-z][a-z0-9-]{1,63}', policy['approval_principal'])
+            or not HEX.fullmatch(policy['allowed_signers_sha256'])):
         raise ValueError('Protected identity or archive bound invalid')
     protected(policy['compose_file'])
-    stage_parent = Path(target['stage']).parent
-    for parent in (stage_parent, *stage_parent.parents):
+    signers = protected(policy['allowed_signers_file'])
+    if sha256(signers.read_bytes()).hexdigest() != policy['allowed_signers_sha256']:
+        raise ValueError('Protected signer identity changed')
+    lines = signers.read_text().splitlines()
+    if (len(lines) != 1 or not re.fullmatch(
+            re.escape(policy['approval_principal']) + r' ssh-ed25519 [A-Za-z0-9+/]+={0,2}', lines[0])):
+        raise ValueError('Protected signer entry differs')
+    stage_root = Path(target['stage_root'])
+    for parent in (stage_root, *stage_root.parents):
         info = parent.lstat()
-        if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-            raise ValueError('Stage parent must be root protected')
+        if (stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022
+                or (parent == stage_root and not stat.S_ISDIR(info.st_mode))):
+            raise ValueError('Stage root must be root protected')
+    snapshot = Path(target['snapshot_dir'])
+    if stage_root == snapshot or stage_root in snapshot.parents or snapshot in stage_root.parents:
+        raise ValueError('Staging and snapshot must be independent')
     return policy
 
 
 def validate(request, policy):
-    if not isinstance(request, dict) or set(request) not in ({'action', 'plan'}, {'action', 'plan', 'bytes'}):
+    if not isinstance(request, dict) or set(request) not in (
+            {'action', 'plan', 'approval', 'signature'},
+            {'action', 'plan', 'approval', 'signature', 'bytes'}):
         raise ValueError('Unsupported request fields')
     action, plan = request['action'], request['plan']
     if action not in ACTIONS or ('bytes' in request) != (action == 'upload'):
@@ -108,17 +129,45 @@ def validate(request, policy):
                     'target_sha256': sha256(json.dumps(expected_target, sort_keys=True).encode()).hexdigest()}
     content = {key: value for key, value in plan.items() if key != 'plan_sha256'}
     digest = sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    if (plan['contract'] != 2 or plan['target'] != target_scope
+    if (plan['contract'] != 3 or not ATTEMPT.fullmatch(plan['attempt'])
+            or not isinstance(plan['archive_bytes'], int) or isinstance(plan['archive_bytes'], bool)
+            or not 0 < plan['archive_bytes'] <= policy['max_archive_bytes']
+            or plan['target'] != target_scope
             or plan['schema_version'] != policy['schema_version']
-            or digest != plan['plan_sha256'] or digest != policy['approved_plan_sha256']
+            or digest != plan['plan_sha256']
             or sha256(protected(__file__).read_bytes()).hexdigest() != plan['access_helper_sha256']
             or sha256(protected(phase_module().__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
             or sha256(protected(policy['compose_file']).read_bytes()).hexdigest() != plan['compose_sha256']):
         raise ValueError('Protected approval, target or template differs')
     if action == 'upload' and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
-            or not 0 < request['bytes'] <= policy['max_archive_bytes']):
+            or request['bytes'] != plan['archive_bytes']):
         raise ValueError('Archive length exceeds policy')
+    approval = request['approval']
+    if (not isinstance(approval, dict) or approval != {'approved_action': 'release',
+            'attempt': plan['attempt'], 'plan_sha256': digest}):
+        raise ValueError('Unsigned, stale or mismatched release approval')
+    verify_signature(approval, request['signature'], policy)
     return action, plan
+
+
+def verify_signature(approval, signature, policy):
+    if (not isinstance(signature, str) or len(signature) > 8192
+            or not signature.startswith('-----BEGIN SSH SIGNATURE-----\n')
+            or not signature.rstrip().endswith('-----END SSH SIGNATURE-----')):
+        raise ValueError('Signed release approval missing or malformed')
+    payload = (json.dumps(approval, sort_keys=True, separators=(',', ':')) + '\n').encode()
+    # OpenSSH verifies the pinned signer, principal and namespace, not the client.
+    with NamedTemporaryFile(mode='w', encoding='ascii', prefix='kat-approval-', suffix='.sig') as file:
+        file.write(signature)
+        file.flush()
+        result = subprocess.run(['/usr/bin/ssh-keygen', '-Y', 'verify',
+                '-f', str(protected(policy['allowed_signers_file'])),
+                '-I', policy['approval_principal'], '-n', policy['approval_namespace'],
+                '-s', file.name], input=payload, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=10,
+                env={'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LANG': 'C'})
+    if result.returncode:
+        raise ValueError('Release approval signature differs')
 
 
 def upload(stage, plan, size, input_stream):
@@ -143,11 +192,18 @@ def upload(stage, plan, size, input_stream):
         from hashlib import file_digest
         if file_digest(archive, 'sha256').hexdigest() != plan['artifact']['image_archive_sha256']:
             raise ValueError('Archive differs from approved hash')
+    temporary = stage / 'phase.next'
+    with temporary.open('x') as marker:
+        json.dump({'plan_sha256': plan['plan_sha256'], 'phase': 'uploaded'}, marker)
+        marker.write('\n')
+        marker.flush()
+        os.fsync(marker.fileno())
+    os.replace(temporary, stage / 'phase.json')
 
 
 def dispatch(request, policy, input_stream):
     action, plan = validate(request, policy)
-    target = policy['target']
+    target = policy['target'] | {'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])}
     stage = Path(target['stage'])
     if action == 'upload':
         upload(stage, plan, request['bytes'], input_stream)

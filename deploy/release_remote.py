@@ -129,14 +129,17 @@ def main():
         marker.write_text(json.dumps({'plan_sha256': planned['plan_sha256'], 'phase': 'staged'}) + '\n')
         marker.chmod(0o600)
     elif action == 'compose':
-        if json.loads(marker.read_text())['phase'] != 'staged':
-            raise ValueError('Unexpected stage')
-        (stage / 'compose.yaml').write_text(REQUEST['compose'])
+        if json.loads(marker.read_text()) != {'plan_sha256': planned['plan_sha256'], 'phase': 'uploaded'}:
+            raise ValueError('Unexpected stage; no retry')
+        with (stage / 'compose.yaml').open('x') as output:
+            output.write(REQUEST['compose'])
         (stage / 'compose.yaml').chmod(0o600)
-        (stage / 'runtime.yaml').write_text(installed_db_override(target))
+        with (stage / 'runtime.yaml').open('x') as output:
+            output.write(installed_db_override(target))
         (stage / 'runtime.yaml').chmod(0o600)
+        advance('uploaded', 'composed')
     elif action == 'preflight':
-        if json.loads(marker.read_text()) != {'plan_sha256': planned['plan_sha256'], 'phase': 'staged'}:
+        if json.loads(marker.read_text()) != {'plan_sha256': planned['plan_sha256'], 'phase': 'composed'}:
             raise ValueError('Unexpected stage')
         archive = stage / 'image.tar'
         with archive.open('rb') as source:
@@ -182,7 +185,7 @@ def main():
         loaded = json.loads(run('docker', 'image', 'inspect', image))[0]
         if loaded['Id'] != image or loaded['Config']['Labels'].get('org.opencontainers.image.revision') != planned['artifact']['commit']:
             raise ValueError('Loaded image identity mismatch')
-        advance('staged', 'preflight_ok')
+        advance('composed', 'preflight_ok')
     elif action == 'quiesce_and_snapshot':
         app_id = (stage / 'previous-container').read_text().strip()
         db_id = (stage / 'previous-db-container').read_text().strip()

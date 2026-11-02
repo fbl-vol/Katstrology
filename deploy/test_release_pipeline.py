@@ -113,7 +113,7 @@ def runtime_inspect(config, target, *, app=True):
 
 def synthetic_target():
     return {'ssh_alias': 'synthetic-alias', 'project': 'kat-synthetic',
-            'stage': '/srv/synthetic-release', 'password_file': '/srv/synthetic-secret',
+            'stage_root': '/srv/synthetic-release', 'password_file': '/srv/synthetic-secret',
             'ephemeris_dir': '/srv/synthetic-ephe', 'snapshot_dir': '/srv/synthetic-snapshot',
             'origin': 'https://example.invalid', 'loopback_port': 28765,
             'db_image': 'sha256:' + 'e' * 64}
@@ -128,7 +128,7 @@ class ReleasePlanTests(unittest.TestCase):
             target = Path(directory) / 'target.json'
             target.write_text(json.dumps(synthetic_target()))
             with patch('deploy.release_pipeline.remote') as remote:
-                planned = pipeline.plan(receipt, pipeline.target_config(target), schema, compose)
+                planned = pipeline.plan(receipt, pipeline.target_config(target), schema, compose, '1' * 32, archive.stat().st_size)
             remote.assert_not_called()
             self.assertEqual(planned['artifact']['commit'], receipt['commit'])
             self.assertNotIn('/srv/', json.dumps(planned))
@@ -148,16 +148,16 @@ class ReleasePlanTests(unittest.TestCase):
         receipt = {key: 'a' * 64 for key in ('commit', 'tree', 'image_archive_sha256', 'source_offer_sha256')}
         receipt.update(image_id='sha256:' + 'b' * 64, config_digest='sha256:' + 'c' * 64)
         target = synthetic_target()
-        approved = pipeline.plan(receipt, target, 22, b'compose')
+        approved = pipeline.plan(receipt, target, 22, b'compose', '1' * 32, 7)
         target['password_file'] = '/srv/other-secret'
-        changed = pipeline.plan(receipt, target, 22, b'compose')
+        changed = pipeline.plan(receipt, target, 22, b'compose', '1' * 32, 7)
         self.assertNotEqual(approved['plan_sha256'], changed['plan_sha256'])
         with TemporaryDirectory() as directory:
             result = Path(directory) / 'receipt.json'
             with patch('deploy.release_pipeline.remote') as remote:
                 with self.assertRaisesRegex(ValueError, 'approval'):
                     pipeline.execute(receipt, Path('/nonexistent'), b'compose', target, changed,
-                                     {'approved_action': 'release', 'plan_sha256': approved['plan_sha256']}, result)
+                                     {'approved_action': 'release', 'attempt': approved['attempt'], 'plan_sha256': approved['plan_sha256']}, 'synthetic', result)
             remote.assert_not_called()
             self.assertFalse(result.exists())
 
@@ -165,16 +165,18 @@ class ReleasePlanTests(unittest.TestCase):
         receipt = {key: 'a' * 64 for key in ('commit', 'tree', 'image_archive_sha256', 'source_offer_sha256')}
         receipt.update(image_id='sha256:' + 'b' * 64, config_digest='sha256:' + 'c' * 64)
         target = synthetic_target()
-        planned = pipeline.plan(receipt, target, 22, b'compose')
-        approval = {'approved_action': 'release', 'plan_sha256': planned['plan_sha256']}
+        planned = pipeline.plan(receipt, target, 22, b'compose', '1' * 32, 7)
+        approval = {'approved_action': 'release', 'attempt': planned['attempt'], 'plan_sha256': planned['plan_sha256']}
         with TemporaryDirectory() as directory:
             result = Path(directory) / 'receipt.json'
+            archive = Path(directory) / 'image.tar'
+            archive.write_bytes(b'archive')
             with patch('deploy.release_pipeline.remote', side_effect=RuntimeError('synthetic failure')) as remote:
                 with self.assertRaisesRegex(RuntimeError, 'halted'):
-                    pipeline.execute(receipt, Path('/nonexistent'), b'compose', target, planned, approval, result)
+                    pipeline.execute(receipt, archive, b'compose', target, planned, approval, '-----BEGIN SSH SIGNATURE-----\nsynthetic\n-----END SSH SIGNATURE-----', result)
                 self.assertEqual(remote.call_count, 1)
                 with self.assertRaisesRegex(ValueError, 'already exists'):
-                    pipeline.execute(receipt, Path('/nonexistent'), b'compose', target, planned, approval, result)
+                    pipeline.execute(receipt, archive, b'compose', target, planned, approval, '-----BEGIN SSH SIGNATURE-----\nsynthetic\n-----END SSH SIGNATURE-----', result)
                 self.assertEqual(remote.call_count, 1)
             self.assertIn('started', result.read_text())
 
@@ -206,7 +208,7 @@ class ReleasePlanTests(unittest.TestCase):
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
                     'artifact': {'config_digest': 'sha256:' + 'b' * 64,
                                  'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
-            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'composed'}))
             config = effective_config(target, plan['artifact']['config_digest'])
             for mismatch in ('state-volume', 'port', 'db-volume'):
                 with self.subTest(mismatch=mismatch):
@@ -237,7 +239,7 @@ class ReleasePlanTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, 'serving|mount|binding|runtime'):
                             release_remote.main()
                     self.assertFalse(any('load' in call or 'stop' in call for call in calls))
-                    self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
+                    self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'composed')
 
     def test_installed_db_override_resolves_in_real_compose_config(self):
         with TemporaryDirectory() as directory:
@@ -266,7 +268,7 @@ class ReleasePlanTests(unittest.TestCase):
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
                     'artifact': {'config_digest': image, 'image_archive_sha256': sha256(payload).hexdigest(),
                                  'commit': 'c' * 40}}
-            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'uploaded'}))
             (stage / 'image.tar').write_bytes(payload)
             config = effective_config(target, image)
             commands = []
@@ -312,7 +314,7 @@ class ReleasePlanTests(unittest.TestCase):
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
                     'artifact': {'config_digest': 'sha256:' + 'b' * 64,
                                  'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
-            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'composed'}))
             config = effective_config(target, plan['artifact']['config_digest'])
             calls = []
 
@@ -333,7 +335,7 @@ class ReleasePlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'snapshot'):
                     release_remote.main()
             self.assertFalse(any('stop' in call for call in calls))
-            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
+            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'composed')
 
     def test_snapshot_prerequisite_rejects_owner_and_existing_target_but_accepts_empty(self):
         with TemporaryDirectory() as directory:
@@ -448,8 +450,8 @@ class ReleasePlanTests(unittest.TestCase):
         receipt = {'commit': 'a' * 40, 'tree': 'b' * 40, 'image_id': 'sha256:' + 'c' * 64,
                    'config_digest': 'sha256:' + 'd' * 64, 'image_archive_sha256': 'e' * 64,
                    'source_offer_sha256': 'f' * 64}
-        planned = pipeline.plan(receipt, target, 22, b'compose')
-        approval = {'approved_action': 'release', 'plan_sha256': planned['plan_sha256']}
+        planned = pipeline.plan(receipt, target, 22, b'compose', '1' * 32, 15)
+        approval = {'approved_action': 'release', 'attempt': planned['attempt'], 'plan_sha256': planned['plan_sha256']}
         assets = {'index.html': sha256(b'home').hexdigest(),
                   'manifest.webmanifest': sha256(b'manifest').hexdigest()}
         with TemporaryDirectory() as directory:
@@ -458,7 +460,7 @@ class ReleasePlanTests(unittest.TestCase):
             result = Path(directory) / 'result.json'
             steps = []
             def fake_remote(_alias, request, upload=None):
-                self.assertEqual(set(request), {'action', 'plan'} | ({'bytes'} if upload else set()))
+                self.assertEqual(set(request), {'action', 'plan', 'approval', 'signature'} | ({'bytes'} if upload else set()))
                 if upload:
                     self.assertEqual(upload, archive)
                     self.assertEqual(request['bytes'], archive.stat().st_size)
@@ -466,7 +468,7 @@ class ReleasePlanTests(unittest.TestCase):
                 return {'status': 'ok', **({'assets': assets} if request['action'] == 'verify_serving_path' else {})}
             with patch.object(pipeline, 'remote', side_effect=fake_remote), \
                  patch.object(pipeline, 'verify_public') as public:
-                pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
+                pipeline.execute(receipt, archive, b'compose', target, planned, approval, '-----BEGIN SSH SIGNATURE-----\nsynthetic\n-----END SSH SIGNATURE-----', result)
                 public.assert_called_once_with(target['origin'], assets)
             self.assertEqual(steps, ['stage', 'upload', 'compose', 'preflight', 'quiesce_and_snapshot',
                                      'activate_app_only', 'verify_serving_path'])
@@ -475,24 +477,26 @@ class ReleasePlanTests(unittest.TestCase):
             with patch.object(pipeline, 'remote', side_effect=fake_remote), \
                  patch.object(pipeline, 'verify_public', side_effect=ValueError('synthetic bad TLS')):
                 with self.assertRaisesRegex(RuntimeError, 'halted'):
-                    pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
+                    pipeline.execute(receipt, archive, b'compose', target, planned, approval, '-----BEGIN SSH SIGNATURE-----\nsynthetic\n-----END SSH SIGNATURE-----', result)
             self.assertEqual(json.loads(result.read_text())['status'],
                              'app_activated_local_verified_public_incomplete')
 
     def test_remote_fake_docker_runs_full_owned_app_only_lifecycle(self):
         with TemporaryDirectory() as directory:
-            stage, snapshot = Path(directory) / 'stage', Path(directory) / 'snapshot'
+            stage_root, snapshot = Path(directory) / 'stages', Path(directory) / 'snapshot'
+            stage_root.mkdir()
             snapshot.mkdir()
-            target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': str(snapshot)}
+            target = synthetic_target() | {'stage_root': str(stage_root), 'snapshot_dir': str(snapshot)}
             compose_file = Path(directory) / 'protected-compose.yaml'
             compose_file.write_text('synthetic compose')
             receipt = {'commit': 'c' * 40, 'tree': 'd' * 40, 'image_id': 'sha256:' + 'f' * 64,
                        'config_digest': 'sha256:' + 'b' * 64,
                        'image_archive_sha256': sha256(b'image').hexdigest(),
                        'source_offer_sha256': 'e' * 64}
-            plan = pipeline.plan(receipt, target, 22, compose_file.read_bytes())
-            policy = {'target': target, 'approved_plan_sha256': plan['plan_sha256'],
-                      'schema_version': 22, 'compose_file': str(compose_file), 'max_archive_bytes': 1024}
+            plan = pipeline.plan(receipt, target, 22, compose_file.read_bytes(), '1' * 32, 5)
+            stage = stage_root / plan['attempt']
+            policy = {'target': target, 'schema_version': 22,
+                      'compose_file': str(compose_file), 'max_archive_bytes': 1024}
             config = effective_config(target, plan['artifact']['config_digest'])
             running = True
             image = 'sha256:' + 'd' * 64
@@ -555,9 +559,13 @@ class ReleasePlanTests(unittest.TestCase):
                 return SimpleNamespace(st_mode=info.st_mode, st_uid=10001) if path == snapshot else info
             with patch.object(Path, 'stat', app_owned), patch.object(release_remote, 'run', side_effect=docker), \
                  patch.object(release_remote, 'build_opener', return_value=Opener()), \
-                 patch.object(release_access, 'protected', side_effect=lambda path: Path(path)):
+                 patch.object(release_access, 'protected', side_effect=lambda path: Path(path)), \
+                 patch.object(release_access, 'verify_signature'):
                 def phase(action, **extra):
-                    return release_access.dispatch({'action': action, 'plan': plan, **extra},
+                    approval = {'approved_action': 'release', 'attempt': plan['attempt'],
+                                'plan_sha256': plan['plan_sha256']}
+                    return release_access.dispatch({'action': action, 'plan': plan,
+                        'approval': approval, 'signature': 'synthetic', **extra},
                                                    policy, BytesIO(b'image' if action == 'upload' else b''))
                 phase('stage')
                 phase('upload', bytes=5)
@@ -574,7 +582,7 @@ class ReleasePlanTests(unittest.TestCase):
     def test_invalid_target_never_calls_ssh(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'target.json'
-            for field, value in [('ssh_alias', 'user@host'), ('stage', '/srv/../etc'),
+            for field, value in [('ssh_alias', 'user@host'), ('stage_root', '/srv/../etc'),
                                  ('snapshot_dir', '/srv/synthetic-release')]:
                 target = synthetic_target()
                 target[field] = value
