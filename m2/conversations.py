@@ -74,7 +74,7 @@ class Conversations:
             if not self.store.db.execute('SELECT 1 FROM people WHERE owner_id=%s AND id=%s',
                                          (owner, person_id)).fetchone():
                 raise KeyError('Person not found')
-        if query is not None and (not isinstance(query, str) or not 1 <= len(query) <= 80):
+        if query is not None and (not isinstance(query, str) or not 1 <= len(query) <= 256):
             raise ValueError('Invalid conversation search')
         rows = self.store.db.execute('''
             SELECT c.id,c.title,c.title_origin,c.title_status,c.created_at,c.active_head,

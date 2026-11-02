@@ -61,6 +61,18 @@ class LunationTests(DatabaseCase):
             self.assertTrue(start <= datetime.fromisoformat(phase['instant_utc']) < end)
         self.assertNotEqual(result['technique'], 'progressed_lunar_phases')
 
+    def test_two_year_sky_window_preserves_multiple_global_eclipses_and_syzygies(self):
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = start + timedelta(days=732)
+        result = Lunations(self.store).calculate(self.alice, self.chart['id'], start, end,
+                                                  'sun', 'conjunction')
+        self.assertEqual(result['status'], 'supported')
+        self.assertGreater(len(result['lunations']), 40)
+        self.assertGreaterEqual(len(result['eclipses']), 6)
+        self.assertTrue(all(row['linked_syzygy_utc'] in
+                            {event['instant_utc'] for event in result['lunations']}
+                            for row in result['eclipses']))
+
     def test_partial_lunar_september_event_and_half_open_search(self):
         start = datetime(2024, 9, 1, tzinfo=UTC)
         end = datetime(2024, 10, 15, tzinfo=UTC)
@@ -74,7 +86,7 @@ class LunationTests(DatabaseCase):
                             for event in found['lunations'] for item in event['contacts']))
         with self.assertRaises(ValueError):
             Lunations(self.store).calculate(self.alice, self.chart['id'],
-                                             start, start + timedelta(days=121), 'sun', 'conjunction')
+                                             start, start + timedelta(days=733), 'sun', 'conjunction')
         with self.assertRaises(PermissionError):
             execute(self.store, self.alice, 'find_actual_lunations_eclipses',
                 {'chart_id': self.chart['id'], 'start_utc': start.isoformat(),

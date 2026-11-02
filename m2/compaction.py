@@ -36,7 +36,7 @@ def turn_text(store, session, conv_id, turn_id, chains, resolved, turn=None):
     current = projected['text']
     if not projected['full_evidence']:
         return current  # Historical user intent and refreshed interpretation, never old tools.
-    turn = turn if turn is not None else store.read_turn(session, conv_id, turn_id)
+    turn = turn if turn is not None else next(store.read_complete_turns(session, conv_id, [turn_id]))
     if turn['corrections']:
         return current  # Never summarize superseded assistant/tool content.
     events = turn['events']
@@ -58,7 +58,7 @@ def _history(store, session, conv_id, chain):
     chains, resolved = {conv_id: set(chain)}, {}
     history = []
     for start in range(0, len(chain), 20):
-        for turn in store.read_turns(session, conv_id, chain[start:start + 20]):
+        for turn in store.read_complete_turns(session, conv_id, chain[start:start + 20]):
             text = turn_text(store, session, conv_id, turn['id'], chains, resolved, turn=turn)
             if text is not None:
                 history.append((turn['id'], text))
@@ -164,13 +164,12 @@ def _summary(model, previous, retired, cancelled, defer_provider=False):
 def _last_usage(store, session, conv_id, head_id, model, selected_sha, revision, checkpoint_id):
     if not head_id:
         return None
-    turn = store.read_turn(session, conv_id, head_id)
-    if turn['next_event_offset'] is not None:
-        return None
-    context = next((event['payload'] for event in turn['events']
-                    if event['kind'] == 'context'), None)
-    usage = next((event['payload'] for event in turn['events']
-                  if event['kind'] == 'usage'), None)
+    events = store.db.execute('''
+        SELECT kind,payload FROM events WHERE owner_id=%s AND conversation_id=%s
+          AND turn_id=%s AND kind IN ('context', 'usage') ORDER BY sequence
+    ''', (store.owner(session), conv_id, head_id)).fetchall()
+    context = next((event['payload'] for event in events if event['kind'] == 'context'), None)
+    usage = next((event['payload'] for event in events if event['kind'] == 'usage'), None)
     tokens = usage.get('input_tokens') if usage else None
     if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0:
         return None

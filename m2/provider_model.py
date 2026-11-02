@@ -8,6 +8,9 @@ from m2.prompting import HOSTED
 from m2.provider_media import VISION_MODELS, chart_content
 from m2.siwc import ProviderFailure
 
+MAX_RESPONSE_TEXT_BYTES = 512 * 1024
+MAX_RESPONSE_FOOTER_BYTES = 2 * 1024 * 1024
+
 
 class _OutputItems:
     """Hold only bounded completed native SSE items until a successful terminal response."""
@@ -75,7 +78,7 @@ class _OutputItems:
             if kind == 'response.output_item.done':
                 if item.get('status') not in (None, 'completed'):
                     self.conflict = True
-                if len(json.dumps(item).encode('utf-8')) > 64 * 1024:
+                if len(json.dumps(item).encode('utf-8')) > MAX_RESPONSE_FOOTER_BYTES:
                     raise ProviderFailure('invalid_provider_output', request_id=request_id)
                 if state['type'] == 'function_call':
                     arguments = item.get('arguments')
@@ -283,7 +286,7 @@ class ResponsesModel:
         self.last_usage = None  # last *response* input matters to the next compaction
         completed = False
         count = 0
-        streamed_text = ''
+        streamed_parts = []
         announced = _OutputItems()
         for item, request_id in self.bridge.transport.response_events(token, body):
             if not isinstance(item, dict):
@@ -301,8 +304,8 @@ class ResponsesModel:
                 if not isinstance(delta, str):
                     raise ProviderFailure('invalid_provider_delta', request_id=request_id)
                 count += len(delta.encode('utf-8'))
-                streamed_text += delta
-                if count > 32 * 1024:
+                streamed_parts.append(delta)
+                if count > MAX_RESPONSE_TEXT_BYTES:
                     raise ProviderFailure('provider_output_exceeds_local_bound',
                                           request_id=request_id)
                 if delta:
@@ -323,7 +326,7 @@ class ResponsesModel:
                 if not summary:
                     final_output = response.get('output', [])
                     if (not isinstance(final_output, list) or len(final_output) > 8 or
-                            len(json.dumps(final_output).encode()) > 64 * 1024):
+                            len(json.dumps(final_output).encode()) > MAX_RESPONSE_FOOTER_BYTES):
                         raise ProviderFailure('invalid_provider_output', request_id=request_id)
                     output, output_error = announced.assemble(final_output)
                     diagnostic_output = final_output if output is None else output
@@ -356,7 +359,7 @@ class ResponsesModel:
                     ids = [entry.get('id') for entry in output if isinstance(entry.get('id'), str)]
                     if len(ids) != len(set(ids)):
                         reject('identifier_mismatch')
-                    if len(json.dumps(output).encode('utf-8')) > 64 * 1024:
+                    if len(json.dumps(output).encode('utf-8')) > MAX_RESPONSE_FOOTER_BYTES:
                         raise ProviderFailure('invalid_provider_output', request_id=request_id)
                     if any(entry.get('type') == 'message' and 'content' in entry and (
                            not isinstance(entry['content'], list) or
@@ -366,13 +369,14 @@ class ResponsesModel:
                         reject('unsupported_content_part')
                     completed_text = ''.join(part.get('text', '') for entry in output
                         if entry.get('type') == 'message' for part in entry.get('content', []))
+                    streamed_text = ''.join(streamed_parts)
                     if not isinstance(completed_text, str) or (
                             completed_text and not completed_text.startswith(streamed_text)):
                         reject('text_mismatch')
                     if not calls and not (streamed_text or completed_text):
                         raise ProviderFailure('invalid_provider_output', request_id=request_id)
                     suffix = completed_text[len(streamed_text):] if completed_text else ''
-                    if count + len(suffix.encode('utf-8')) > 32 * 1024:
+                    if count + len(suffix.encode('utf-8')) > MAX_RESPONSE_TEXT_BYTES:
                         raise ProviderFailure('provider_output_exceeds_local_bound',
                                               request_id=request_id)
                     if suffix:

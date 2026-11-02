@@ -61,6 +61,19 @@ class ReturnTests(DatabaseCase):
         self.assertLess(abs(first - datetime.fromisoformat(
             self.chart['result']['natal_sun']['instant_utc'])), timedelta(seconds=1))
 
+    def test_two_year_lunar_returns_include_every_crossing_and_chart(self):
+        start = datetime.fromisoformat(self.chart['result']['natal_sun']['instant_utc'])
+        result = self.returns.calculate(self.alice, self.chart['id'], 'lunar_return',
+            start=start, end=start + timedelta(days=732), latitude=55.68, longitude=12.57)
+        self.assertEqual(result['status'], 'supported')
+        self.assertGreater(len(result['events']), 24)
+        self.assertLessEqual(len(result['events']), 32)
+        self.assertTrue(all(event['chart']['positions'] for event in result['events']))
+        instants = [datetime.fromisoformat(item['instant_utc']) for item in result['events']]
+        self.assertEqual(instants, sorted(instants))
+        self.assertTrue(all(timedelta(days=26) < later - earlier < timedelta(days=29)
+                            for earlier, later in zip(instants, instants[1:])))
+
     def test_exact_start_crossing_belongs_to_current_cycle(self):
         birth = datetime.fromisoformat(self.chart['result']['natal_sun']['instant_utc'])
         lunar = self.returns.calculate(self.alice, self.chart['id'], 'lunar_return',
@@ -180,9 +193,9 @@ class ReturnTests(DatabaseCase):
         with self.assertRaises(KeyError):
             self.returns.calculate(self.bob, self.chart['id'], 'solar_return',
                                    year=2025, latitude=55, longitude=12)
-        with self.assertRaisesRegex(ValueError, '60 days'):
+        with self.assertRaisesRegex(ValueError, '732 days'):
             self.returns.calculate(self.alice, self.chart['id'], 'lunar_return',
-                start=datetime(2025, 1, 1, tzinfo=UTC), end=datetime(2025, 3, 3, tzinfo=UTC),
+                start=datetime(2025, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 4, tzinfo=UTC),
                 latitude=55, longitude=12)
         with self.assertRaisesRegex(ValueError, 'reference latitude'):
             self.returns.calculate(self.alice, self.chart['id'], 'solar_return', year=2025)

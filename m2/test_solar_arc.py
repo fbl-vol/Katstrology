@@ -107,7 +107,7 @@ class SolarArcTests(DatabaseCase):
             model_provider='chatgpt_plan', model_slug='synthetic-response-model'), 'complete')
         projected = json.loads(transport.calls[1]['input'][-1]['output'])
         self.assertEqual(projected['method_version'], 'true-progressed-sun-forward-solar-arc-v1')
-        self.assertLessEqual(len(projected['directed_natal_aspects']), 12)
+        self.assertEqual(len(projected['directed_natal_aspects']), projected['directed_natal_aspects_total'])
         self.assertIn('mapped_ephemeris_utc', projected)
         archived = next(event['payload'] for event in self.store.read_turn(
             self.alice, 'arc-conversation', 'arc-turn')['events']

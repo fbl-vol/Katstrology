@@ -151,13 +151,13 @@ def json_response(value, status=200):
     return JSONResponse(json.loads(json.dumps(value, default=str)), status_code=status)
 
 
-async def json_body(request):
+async def json_body(request, max_bytes=MAX_JSON):
     if request.headers.get('content-type', '').split(';', 1)[0] != 'application/json':
         raise ValueError('Expected JSON')
     content = bytearray()
     async for part in request.stream():
         content.extend(part)
-        if len(content) > MAX_JSON:
+        if len(content) > max_bytes:
             raise ValueError('Request too large')
     try:
         value = json.loads(content)

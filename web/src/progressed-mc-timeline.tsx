@@ -76,7 +76,7 @@ export function ProgressedMcTimeline({ workspace, personId }: { workspace: Works
     } catch (cause) { if (current === version.current) {
       if (cause instanceof ApiError && cause.status === 400) {
         request.current = null;
-        setError('Choose a positive effective UTC interval after birth, at most 366 days long. No MC timeline was saved.');
+        setError('Choose a positive effective UTC interval after birth, at most 732 days long. No MC timeline was saved.');
       } else setError('Saving was not confirmed. Retry the same request or check saved MC searches before starting another.');
     } }
     finally { if (current === version.current) setBusy(false); }

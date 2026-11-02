@@ -30,6 +30,19 @@ DEFAULT_PARENT = '@active'
 HOSTED_REPLY_TOKENS = 384
 
 
+def _event_text_chunks(text, max_bytes=8192):
+    """Keep each durable reply event under the independent generic event limit."""
+    start, used = 0, 0
+    for index, char in enumerate(text):
+        size = len(char.encode('utf-8'))
+        if used + size > max_bytes:
+            yield text[start:index]
+            start, used = index, 0
+        used += size
+    if start < len(text):
+        yield text[start:]
+
+
 def turn_steps(store, session, conversation_id, turn_id, request, model, deliver,
              parent_id=DEFAULT_PARENT, attachment_ids=(), cancel_after=None,
              revision_kind='normal', replaces_turn_id=None, acknowledge=None,
@@ -187,7 +200,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
             return
         elif interpret_commands and request.startswith(REFERENCE_PREFIX):
             query = request[len(REFERENCE_PREFIX):]
-            if not 1 <= len(query) <= 80:
+            if not 1 <= len(query) <= 256:
                 yield 'error', {'reason': 'invalid bounded reference query'}
                 return
             name = 'search_reference_and_history'
@@ -299,7 +312,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                 pending_text, pending_bytes = '', 0
                 if text.strip():
                     first_text = True
-                yield 'assistant_chunk', {'content': text}
+                for chunk in _event_text_chunks(text):
+                    yield 'assistant_chunk', {'content': chunk}
 
         while True:
             current_stream = stream

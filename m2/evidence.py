@@ -14,8 +14,8 @@ from m2.recall import search as search_history
 
 
 MODEL_ID = 'BAAI/bge-small-en-v1.5:fastembed-0.9.1'
-CANDIDATE_LIMIT = 120
-MAX_REFERENCE_SCAN = 1200  # bound work when many newer sources are stale
+CANDIDATE_LIMIT = 240
+MAX_REFERENCE_SCAN = 2400  # bound work when many newer sources are stale
 
 
 class LocalEmbedder:
@@ -127,7 +127,7 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                     technique=None, person_id=None, include_history=True,
                     author=None, language=None):
     owner = store.owner(session)
-    if not isinstance(query, str) or not 1 <= len(query) <= 80 or not 1 <= limit <= 10:
+    if not isinstance(query, str) or not 1 <= len(query) <= 256 or not 1 <= limit <= 32:
         raise ValueError('Invalid bounded evidence query')
     for value in (tradition, technique, person_id):
         if value is not None:
@@ -203,7 +203,7 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
             score += float(np.dot(query_vec, np.array(row['embedding'], dtype=np.float32)))
         if score > 0:
             scored.append((score, {'kind': 'reference_passage', 'source_id': row['source_id'],
-                'passage_id': row['passage_id'], 'excerpt': row['content'][:280],
+                'passage_id': row['passage_id'], 'excerpt': row['content'][:600],
                 'author': row['author'], 'title': row['title'], 'edition': row['edition'],
                 'tradition': row['tradition'], 'technique': row['technique'],
                 'language': row['language'], 'source_url': row['source_url'],
@@ -217,7 +217,7 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
         if score > 0:
             scored.append((score, {'kind': 'conversation', 'conversation_id': row['conversation_id'],
                 'source_id': row['source_id'], 'speaker': row['speaker'],
-                'excerpt': row['content'][:280], 'keyword_match': row['keyword'],
+                'excerpt': row['content'][:600], 'keyword_match': row['keyword'],
                 'source_kind': 'prior_statement_not_independent_evidence'}))
     scored.sort(key=lambda item: item[0], reverse=True)
     count = store.db.execute('''

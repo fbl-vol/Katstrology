@@ -73,8 +73,8 @@ class Progressions:
     def mc_events(self, session, chart_id, start, end, branch, body, aspect):
         """Bounded effective-date exact contacts for one independently named MC branch."""
         start, end = _utc(start), _utc(end)
-        if not start < end <= start + timedelta(days=366):
-            raise ValueError('Choose a positive progressed MC window of at most 366 days')
+        if not start < end <= start + timedelta(days=2 * 366):
+            raise ValueError('Choose a positive progressed MC window of at most 732 days')
         if branch not in ('mcp', 'mcr'):
             raise ValueError('Choose progressed MC or progressed planets to natal MC')
         chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
@@ -240,8 +240,8 @@ class Progressions:
             'positions': positions,
             'natal_positions': [{'id': point['id'], 'longitude_degrees': point['longitude_degrees']}
                                 for point in natal_points],
-            'natal_aspects': natal_aspects[:24],
-            'natal_aspects_total': len(natal_aspects), 'natal_aspects_truncated': len(natal_aspects) > 24,
+            'natal_aspects': natal_aspects,
+            'natal_aspects_total': len(natal_aspects), 'natal_aspects_truncated': False,
             'mc_status': mc_status, 'natal_mc_degrees': natal_mc,
             'mcp_degrees': mcp, 'mcp_contacts': mcp_contacts,
             'mcr_contacts': mcr_contacts, 'mc_branch_policy': (

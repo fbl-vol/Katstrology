@@ -78,8 +78,8 @@ class SynastryTests(DatabaseCase):
         self.assertEqual(result['house_overlays']['status'], 'supported')
         self.assertEqual(len(result['house_overlays']['a_in_b']['placements']), 10)
         self.assertEqual(len(result['house_overlays']['b_in_a']['placements']), 10)
-        self.assertLessEqual(len(result['aspects']), 12)
-        self.assertEqual(result['truncated'], result['total_aspects'] > 12)
+        self.assertEqual(len(result['aspects']), result['total_aspects'])
+        self.assertFalse(result['truncated'])
         self.assertTrue(result['a_angles'] and result['b_angles'])
         swapped = Synastry(self.store).compare(self.alice, self.chart_b['id'],
                                                self.chart_a['id'], self.selected)

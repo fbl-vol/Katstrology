@@ -366,6 +366,10 @@ function App() {
   async function sendText(submittedMessage: string, revision?: Edit & { selected: Selection[] },
     clearComposer = true): Promise<boolean> {
     if (archive.hasPending || submissionInFlight.current || !submittedMessage.trim() || archive.busy || headNotLoaded) return false;
+    if (new TextEncoder().encode(submittedMessage).length > 64 * 1024) {
+      setNotice('This message is longer than 64 KiB. Shorten it before sending; your draft is still here.');
+      return false;
+    }
     submissionInFlight.current = true; setPreparingSend(true);
     const submission = ++submissionVersion.current;
     if (!conversation && !pendingConversationId.current)

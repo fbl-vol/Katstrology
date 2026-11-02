@@ -144,8 +144,9 @@ class RecallTests(DatabaseCase):
         self.assertIn('archiveword4', rich_prompt)
         self.assertNotIn('archiveword0', rich_prompt)
         self.assertEqual(len(search(self.store, self.alice, 'history', limit=3)['results']), 3)
+        self.assertEqual(len(search(self.store, self.alice, 'history', limit=21)['results']), 20)
         with self.assertRaises(ValueError):
-            search(self.store, self.alice, 'history', limit=21)
+            search(self.store, self.alice, 'history', limit=51)
         self.assertEqual(search(self.store, self.bob, 'history')['results'], [])
         self.assertEqual(self.store.db.execute('SELECT COUNT(*) AS n FROM summaries').fetchone()['n'], 1)
 

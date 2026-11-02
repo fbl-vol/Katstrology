@@ -7,10 +7,11 @@ from m2.returns import _place
 from m2.transits import Transits, _angle, _position_at, _utc
 
 METHOD = 'planet-own-natal-longitude-all-passes-v1'
-MAX_DAYS = {'venus': 730, 'mars': 1460, 'jupiter': 15 * 366, 'saturn': 32 * 366}
+MAX_DAYS = {'venus': 5 * 366, 'mars': 5 * 366,
+            'jupiter': 15 * 366, 'saturn': 32 * 366}
 STEP = timedelta(days=1)
 TOLERANCE = timedelta(seconds=1)
-MAX_EVENTS = 12
+MAX_EVENTS = 64  # finite event guard, not a three-pass/one-cycle limit
 
 
 class PlanetaryReturns:
@@ -95,10 +96,8 @@ class PlanetaryReturns:
             # The reference place changes house geometry only, not the
             # geocentric longitude crossing itself.
             calculated = calculate_natal(instant, latitude, longitude, settings)
-            count = len(calculated['aspects'])
-            calculated['aspects'] = calculated['aspects'][:8]
-            calculated['aspects_total'] = count
-            calculated['aspects_truncated'] = count > 8
+            calculated['aspects_total'] = len(calculated['aspects'])
+            calculated['aspects_truncated'] = False
             degree, speed = _position_at(body, instant)
             events.append({'instant_utc': instant.isoformat(),
                            'longitude_degrees': degree % 360,

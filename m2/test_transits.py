@@ -54,6 +54,20 @@ class TransitTests(DatabaseCase):
             self.assertLess(snapshot['orb_degrees'], 0.03)
             self.assertEqual(snapshot['ephemeris_sha256'], self.chart['result']['natal']['ephemeris_sha256'])
 
+    def test_two_year_moon_contacts_match_adjacent_windows_without_an_event_cap(self):
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        midpoint = start + timedelta(days=366)
+        end = start + timedelta(days=732)
+        def contacts(begin, finish):
+            result = self.transits.events(self.alice, self.chart['id'], begin, finish,
+                                          'moon', 'sun', 'square')
+            self.assertEqual(result['status'], 'supported')
+            return [item['instant_utc'] for item in result['events']]
+        whole = contacts(start, end)
+        halves = contacts(start, midpoint) + contacts(midpoint, end)
+        self.assertGreater(len(whole), 40)
+        self.assertEqual(whole, halves)
+
     def test_ingress_and_station_have_expected_synthetic_calendar_anchor(self):
         ingress = self.transits.sky_events(self.alice, self.chart['id'],
             datetime(2024, 3, 19, tzinfo=UTC), datetime(2024, 3, 22, tzinfo=UTC),
@@ -133,9 +147,9 @@ class TransitTests(DatabaseCase):
                                    datetime(2024, 4, 1, tzinfo=UTC), 'sun', 'sun', 'conjunction')
         response = execute(self.store, self.alice, 'get_transit_snapshot', args, self.selected)
         self.assertEqual(response['chart_id'], self.chart['id'])
-        with self.assertRaisesRegex(ValueError, 'at most 30 days'):
+        with self.assertRaisesRegex(ValueError, 'at most 732 days'):
             self.transits.events(self.alice, self.chart['id'],
-                datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 2, 1, tzinfo=UTC),
+                datetime(2024, 1, 1, tzinfo=UTC), datetime(2026, 1, 4, tzinfo=UTC),
                 'sun', 'sun', 'conjunction')
         with self.assertRaisesRegex(ValueError, '1900–2099'):
             self.transits.snapshot(self.alice, self.chart['id'],

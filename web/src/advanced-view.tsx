@@ -107,8 +107,8 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
       : { start_utc: `${start}T00:00:00+00:00`, end_utc: `${end}T00:00:00+00:00`, ...place };
     if (technique === 'lunar_return') {
       const days = (Date.parse(end) - Date.parse(start)) / 86400_000;
-      if (!Number.isFinite(days) || days <= 0 || days > 60) {
-        setError('Choose an end date after the start, within 60 UTC days. Your dates are still here.'); return;
+      if (!Number.isFinite(days) || days <= 0 || days > 732) {
+        setError('Choose an end date after the start, within 732 UTC days. Your dates are still here.'); return;
       }
     }
     intent.revealResult();
@@ -135,7 +135,7 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
     <div className="chart-hub-heading"><div><span className="eyebrow">PERSONAL TIMING</span>
       <h1 ref={intent.viewHeading} tabIndex={-1}>{label}</h1><p>{technique === 'solar_return'
         ? 'Find the Sun’s return to the saved natal longitude in a UTC anniversary cycle.'
-        : 'Find every Moon return in a selected UTC interval of up to 60 days, not a calendar month.'}</p></div>
+        : 'Find every Moon return in a selected UTC interval of up to two years, not a calendar month.'}</p></div>
       <button type="button" onClick={onClose}>Back to chart choices</button></div>
     <form className="advanced-form" onSubmit={event => void calculate(event)}>
       <label>Person with a current natal <select ref={personInput} required value={personId} onChange={event => choosePerson(event.target.value)}>

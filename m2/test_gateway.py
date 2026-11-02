@@ -183,9 +183,26 @@ with Store(os.environ['KAT_FIXTURE_DSN'], os.environ['KAT_FIXTURE_FILES'],
         self.assertEqual(delivered[-1]['kind'], 'complete')
         self.assertEqual(model.invocations, 0)
         from m2.recall import rebuild_pending
-        with self.assertRaisesRegex(ValueError, 'derivative event window'):
-            rebuild_pending(self.store, self.alice)
+        self.assertEqual(rebuild_pending(self.store, self.alice), 1)
+        from m2.recall import current_text
+        text = current_text(self.store, self.alice, 'long', 'many')
+        self.assertIn('part-259', text)
         self.assertEqual(self.store.read_turn(self.alice, 'long', 'many')['event_count'], 262)
+
+    def test_large_single_output_delta_archives_contiguous_utf8_chunks(self):
+        class LargeDelta(TinySource):
+            def create_completion(self, prompt, **kwargs):
+                self.invocations += 1
+                yield {'choices': [{'text': 'ø' * 12000, 'finish_reason': None}]}
+                yield {'choices': [{'text': '', 'finish_reason': 'stop'}]}
+        self.store.create_conversation(self.alice, 'large-output')
+        model = LargeDelta()
+        self.assertEqual(run_turn(self.store, self.alice, 'large-output', 'answer', 'Synthetic',
+                                  model, lambda _: None, parent_id='@root'), 'complete')
+        chunks = [event['payload']['content'] for event in self.store.read_turn(
+            self.alice, 'large-output', 'answer')['events'] if event['kind'] == 'assistant_chunk']
+        self.assertEqual(''.join(chunks), 'ø' * 12000)
+        self.assertTrue(all(len(chunk.encode('utf-8')) <= 8192 for chunk in chunks))
 
     def test_cancel_restart_storage_refusal_and_no_reexecution(self):
         self.store.create_conversation(self.alice, 'thread')

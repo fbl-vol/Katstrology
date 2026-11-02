@@ -47,7 +47,7 @@ export function McTransitsView({ workspace, people, onClose }: {
         ? 'The saved natal has no qualified astronomical Midheaven. No tenth-house cusp was substituted.'
         : status === 'no_active_natal' ? 'Choose a person with a current generated natal.'
         : 'The selected natal source cannot provide an exact-time Midheaven. No contact was calculated.',
-      invalid: 'Check the UTC interval (up to 30 days), body and aspect, then correct the form. No timeline was saved.',
+      invalid: 'Check the UTC interval (up to 732 days), body and aspect, then correct the form. No timeline was saved.',
       uncertain: 'Saving was not confirmed. Retry the same request or check saved timelines before starting another.',
     });
   }

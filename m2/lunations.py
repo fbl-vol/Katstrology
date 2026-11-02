@@ -10,7 +10,8 @@ from m2.core_calc import aspect_separation
 
 METHOD = 'actual-geocentric-lunations-global-eclipses-v1'
 STEP = timedelta(hours=6)
-MAX_WINDOW = timedelta(days=120)
+MAX_WINDOW = timedelta(days=2 * 366)
+MAX_ECLIPSES_PER_FAMILY = 32
 PHASE_ANGLES = {'new': 0, 'full': 180}
 
 
@@ -46,7 +47,7 @@ class Lunations:
     def calculate(self, session, chart_id, start, end, natal_target, aspect):
         start, end = _utc(start), _utc(end)
         if not start < end <= start + MAX_WINDOW:
-            raise ValueError('Choose a positive real-sky lunation window of at most 120 days')
+            raise ValueError(f'Choose a positive real-sky lunation window of at most {MAX_WINDOW.days} days')
         chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
@@ -116,7 +117,7 @@ class Lunations:
                       else swe.lun_eclipse_when)
             jd = _jd(max(datetime(1900, 1, 1, tzinfo=timezone.utc),
                          start - timedelta(days=1)))
-            for _ in range(8):  # > supported 120-day eclipse density; no silent truncation
+            for _ in range(MAX_ECLIPSES_PER_FAMILY):  # fail closed if scan coverage is exhausted
                 flags, times = finder(jd, swe.FLG_SWIEPH, 0, False)
                 maximum = _utc_from_jdut(times[0])
                 if maximum >= end:

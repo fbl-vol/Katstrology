@@ -67,8 +67,8 @@ export function LunationsView({ workspace, people, onClose }: {
   async function calculate(event: FormEvent) {
     event.preventDefault();
     const duration = (Date.parse(end) - Date.parse(start)) / 86400_000;
-    if (!Number.isFinite(duration) || duration <= 0 || duration > 120) {
-      setError('Choose an end date after the start, within 120 days. Your dates are still here.'); return;
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 732) {
+      setError('Choose an end date after the start, within 732 days. Your dates are still here.'); return;
     }
     intent.revealResult();
     await saveResult(personId, 'actual_lunations_eclipses', {
@@ -79,7 +79,7 @@ export function LunationsView({ workspace, people, onClose }: {
       firstRow: (data, id) => ({ id, first_utc: data.lunations[0]?.instant_utc,
         created_at: new Date().toISOString() }),
       unavailable: status => unavailableCalculation('Selected natal contact', status),
-      invalid: 'Choose a positive UTC interval of at most 120 days and a supported natal target. No sky search was saved.',
+      invalid: 'Choose a positive UTC interval of at most 732 days and a supported natal target. No sky search was saved.',
       uncertain: 'Saving was not confirmed. Retry the same request or check saved sky searches before starting another.',
     });
   }

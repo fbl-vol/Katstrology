@@ -185,7 +185,7 @@ class SelectedReviewFixes(DatabaseCase):
                          [('current', 'p')])
         self.assertFalse(result['reference_scan_truncated'])
 
-        for index in range(121, 1201):
+        for index in range(121, 2401):
             refs.add_passage(self.alice, 'stale', f'old-{index:04}', 'one',
                              'A rareword synthetic claim now withdrawn.')
         bounded = search_evidence(self.store, self.alice, 'rareword')

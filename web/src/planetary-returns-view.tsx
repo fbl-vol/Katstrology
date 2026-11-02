@@ -21,7 +21,7 @@ type ReturnResult = { id?: string; status: string; method_version: string; perso
   reference_place_source?: { kind: string; label?: string };
   window_utc: string[]; events: ReturnEvent[] };
 const names: Record<Body, string> = { venus: 'Venus', mars: 'Mars', jupiter: 'Jupiter', saturn: 'Saturn' };
-const days: Record<Body, number> = { venus: 730, mars: 1460, jupiter: 5490, saturn: 11712 };
+const days: Record<Body, number> = { venus: 1830, mars: 1830, jupiter: 5490, saturn: 11712 };
 const utcLabel = (instant: string) => `${new Date(instant).toLocaleString('en-GB', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC',
 })} UTC`;

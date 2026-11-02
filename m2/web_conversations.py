@@ -84,7 +84,7 @@ async def branch(request):
 
 async def correction(request):
     session = await authorized(request, mutate=True)
-    payload = await json_body(request)
+    payload = await json_body(request, max_bytes=128 * 1024)
     if set(payload) != {'id', 'source_turn', 'action', 'replacement'}:
         raise ValueError('Invalid correction')
     created = await request.app.state.runtime.call(lambda store, _: correct(

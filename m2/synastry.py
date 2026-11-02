@@ -9,7 +9,7 @@ from m2.charts import Charts
 from m2.natal import BODY_IDS, EPHE_FILES, _ephemeris, _position
 from m2.core_calc import ASPECTS, aspect_separation
 
-MAX_ASPECTS = 12
+MAX_ASPECTS = 2048  # above the finite selected-body pair geometry
 OVERLAY_METHOD = 'synastry-recipient-ecliptic-house-v1'
 
 

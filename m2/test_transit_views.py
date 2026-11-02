@@ -101,7 +101,7 @@ class TransitViewTests(DatabaseCase):
         self.assertEqual(result['profile_revision'], chart['profile_revision'])
         self.assertTrue(result['transit_to_natal_total'])
         self.assertTrue(result['same_sky_total'])
-        self.assertLessEqual(len(result['transit_to_natal_aspects']), 12)
+        self.assertEqual(len(result['transit_to_natal_aspects']), result['transit_to_natal_total'])
         self.assertTrue(all(row['a_body_id'] in {item['id'] for item in result['positions']}
                             and row['b_body_id'] in {item['id'] for item in result['natal_positions']}
                             for row in result['transit_to_natal_aspects']))

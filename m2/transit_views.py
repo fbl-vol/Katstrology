@@ -14,7 +14,7 @@ from m2.natal import BODY_IDS, DEFAULT_ORBS, LILITH_IDS, _aspects, _ephemeris
 from m2.synastry import pair_aspects
 from m2.transits import Transits, _position_at, _utc
 
-MAX_ASPECTS = 12
+MAX_ASPECTS = 2048  # above the finite supported body-pair geometry
 SKY_SETTINGS = {'zodiac': 'tropical', 'aspects': list(DEFAULT_ORBS), 'orbs': DEFAULT_ORBS}
 
 

@@ -62,15 +62,15 @@ def selected_evidence(store, session, conversation_id, turn_id):
         selected['reference_place_source'] = _scalars(place_source, ('kind', 'label'))
     for name in ('contacts', 'contacts_at_maximum'):
         if isinstance(event.get(name), list):
-            selected[name] = [_scalars(item, CONTACT_FACTS) for item in event[name][:2]]
+            selected[name] = [_scalars(item, CONTACT_FACTS) for item in event[name]]
     positions = event.get('chart', result) if isinstance(event.get('chart'), dict) else result
     if isinstance(positions.get('positions'), list):
         selected['positions_total'] = len(positions['positions'])
         selected['positions'] = [_scalars(item, POSITION_FACTS)
-                                 for item in positions['positions'][:12]]
-        selected['positions_complete'] = len(positions['positions']) <= 12
+                                 for item in positions['positions']]
+        selected['positions_complete'] = True
 
     # Reuse the existing bounded tool/text budget; never drop defining facts to fit.
-    if len(json.dumps(selected, ensure_ascii=False).encode('utf-8')) > 4096:
+    if len(json.dumps(selected, ensure_ascii=False).encode('utf-8')) > 64 * 1024:
         raise ValueError('Selected saved result evidence exceeds bounded context')
     return selected

@@ -15,6 +15,8 @@ from m2.transits import Transits, _utc
 METHOD = 'solar-return-utc-anniversary-v1'
 LUNAR_METHOD = 'lunar-return-utc-interval-v1'
 ROOT_SECONDS = 1
+MAX_LUNAR_DAYS = 2 * 366
+MAX_LUNAR_RETURNS = 32  # > two years of lunar cycles, while bounding chart generation
 
 
 def _jd(instant):
@@ -97,8 +99,8 @@ class Returns:
             if year is not None or start is None or end is None:
                 raise ValueError('Choose an explicit lunar return interval')
             start, end = _utc(start), _utc(end)
-            if end <= start or end - start > timedelta(days=60):
-                raise ValueError('Lunar return interval must be positive and at most 60 days')
+            if end <= start or end - start > timedelta(days=MAX_LUNAR_DAYS):
+                raise ValueError(f'Lunar return interval must be positive and at most {MAX_LUNAR_DAYS} days')
         body = 'sun' if technique == 'solar_return' else 'moon'
         target = next(point['longitude_degrees'] for point in natal['positions'] if point['id'] == body)
         finder = swe.solcross_ut if body == 'sun' else swe.mooncross_ut
@@ -108,7 +110,7 @@ class Returns:
         if start_residual < 1e-8:
             roots.append((lower, start_residual))
         cursor = lower + (1 / 86400 if roots else 0)
-        while cursor < upper and len(roots) <= 3:
+        while cursor < upper and len(roots) <= MAX_LUNAR_RETURNS:
             candidate = finder(target, cursor, swe.FLG_SWIEPH)
             if not isfinite(candidate) or candidate < cursor - 1e-8:
                 raise ValueError('Swiss return crossing unavailable')
@@ -117,7 +119,7 @@ class Returns:
                     not roots or root - roots[-1][0] > 1 / 86400):
                 roots.append((root, residual))
             cursor = max(candidate, root) + 1 / 86400  # no second copy at a boundary
-        if len(roots) > 3:
+        if len(roots) > MAX_LUNAR_RETURNS:
             raise ValueError('Return interval exceeded bounded coverage')
         settings = chart['result']['profile']['settings']
         events = []

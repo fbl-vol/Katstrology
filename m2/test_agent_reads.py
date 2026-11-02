@@ -39,8 +39,8 @@ class FakeBridge:
 
 class AgentReadTests(DatabaseCase):
     def test_passage_offset_protocol_schema_rejects_bool_float_and_out_of_range(self):
-        for offset, expected in ((0, True), (1800, True), (4095, True),
-                                 (4096, False), (-1, False), (True, False), (1.5, False)):
+        for offset, expected in ((0, True), (4096, True), (65535, True),
+                                 (65536, False), (-1, False), (True, False), (1.5, False)):
             with self.subTest(offset=offset):
                 self.assertEqual(_valid_read_arguments('get_reference_passage', json.dumps({
                     'source_id': 'source', 'passage_id': 'passage', 'offset': offset})), expected)
@@ -116,9 +116,33 @@ class AgentReadTests(DatabaseCase):
             execute(self.store, self.alice, 'get_chart', {'chart_id': 'not-selected'}, set())
         for args in ({'query': 'abc', 'owner_id': 'bob'},
                      {'query': '', 'person_id': None},
-                     {'query': 'x' * 81, 'person_id': None}):
+                     {'query': 'x' * 257, 'person_id': None}):
             with self.assertRaises(ValueError):
                 execute(self.store, self.alice, 'search_conversations', args, set())
+
+    def test_long_current_message_pages_preserve_ending_and_owner_fence(self):
+        self.store.create_conversation(self.alice, 'long-history')
+        message = 'Synthetic report: ' + 'bounded-detail-' * 420 + ' LAST_MARKER'
+        self.assertEqual(run_turn(self.store, self.alice, 'long-history', 'original', message,
+                                   TinySource(), lambda _: None, parent_id='@root'), 'complete',
+                         self.store.read_turn(self.alice, 'long-history', 'original')['events'][-1]['payload'])
+        first = execute(self.store, self.alice, 'get_conversation_messages', {
+            'conversation_id': 'long-history', 'around_turn_id': 'original'}, set())['turns'][0]
+        self.assertTrue(first['truncated'])
+        self.assertEqual(first['next_offset'], 4096)
+        pages = []
+        offset = 0
+        while offset is not None:
+            page = execute(self.store, self.alice, 'get_conversation_message_page', {
+                'conversation_id': 'long-history', 'turn_id': 'original', 'offset': offset}, set())
+            self.assertEqual(page['text_sha256'], first['text_sha256'])
+            pages.append(page['text'])
+            offset = page['next_offset']
+        self.assertIn('LAST_MARKER', ''.join(pages))
+        self.assertEqual(first['text'], pages[0])
+        with self.assertRaises(KeyError):
+            execute(self.store, self.bob, 'get_conversation_message_page', {
+                'conversation_id': 'long-history', 'turn_id': 'original', 'offset': 0}, set())
 
     def test_person_scoped_history_does_not_mix_selected_turns_and_honors_correction(self):
         people = People(self.store)
@@ -165,13 +189,13 @@ class AgentReadTests(DatabaseCase):
                         {'source_id': 'source', 'passage_id': 'passage'}, set())
         self.assertEqual(value['author'], 'Fixture Author')
         self.assertEqual(value['source_status'], 'independent_synthetic_fixture')
-        self.assertTrue(value['truncated'])
-        self.assertEqual(len(value['content']), 1800)
-        self.assertEqual(value['next_offset'], 1800)
+        self.assertFalse(value['truncated'])
+        self.assertEqual(value['content'], 'Synthetic motif ' * 190)
+        self.assertIsNone(value['next_offset'])
         tail = execute(self.store, self.alice, 'get_reference_passage',
                        {'source_id': 'source', 'passage_id': 'passage', 'offset': 1800}, set())
         self.assertIsNone(tail['next_offset'])
-        self.assertEqual(value['content'] + tail['content'], 'Synthetic motif ' * 190)
+        self.assertEqual(value['content'][1800:], tail['content'])
         self.assertEqual(value['content_sha256'], tail['content_sha256'])
         with self.assertRaises(ValueError):
             execute(self.store, self.alice, 'get_reference_passage',

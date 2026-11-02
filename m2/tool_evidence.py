@@ -1,23 +1,21 @@
 """Finite model evidence and separately bounded authoritative tool-result events.
 
 Model-directed reads have no conversational count ceiling. Distinct byte and
-context bounds still apply: 32 KiB of aggregate model evidence, 16 KiB per read,
-and a separately bounded authoritative archive. Other archive events retain
-their existing 16-KiB ceiling.
+actual model-context bounds still apply: 2 MiB aggregate model evidence,
+256 KiB per projection, and a separately bounded authoritative archive.
+Other archive events retain their independent 16-KiB ceiling.
 """
 
 import json
 from hashlib import sha256
 
 from m2.agent_reads import project_transit_view
-from m2.store import MAX_EVENT_BYTES, MAX_TOOL_RESULT_BYTES
+from m2.store import MAX_TOOL_RESULT_BYTES
 
-MAX_MODEL_RESULT_BYTES = MAX_EVENT_BYTES
-# At most two full projections per operation; later reads receive an explicit
-# incomplete result when the evidence budget cannot fit their content.
-MAX_MODEL_EVIDENCE_BYTES = MAX_MODEL_RESULT_BYTES * 2
+MAX_MODEL_RESULT_BYTES = 256 * 1024
+MAX_MODEL_EVIDENCE_BYTES = 2 * 1024 * 1024
 MAX_TOOL_ARCHIVE_BYTES = MAX_TOOL_RESULT_BYTES
-ARCHIVE_ENVELOPE_RESERVE = 2048  # hashes, pointer links and projection labels
+ARCHIVE_ENVELOPE_RESERVE = 16 * 1024  # hashes, pointer links and projection labels
 LIMIT_RESPONSE_RESERVE = 512  # one honest limit result must fit after earlier reads
 
 
@@ -32,9 +30,9 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
                       ('positions', 'natal_positions', 'directed_natal_aspects')}
         projection['positions'] = result['positions']
         projection['natal_positions'] = result['natal_positions']
-        projection['directed_natal_aspects'] = result['directed_natal_aspects'][:12]
+        projection['directed_natal_aspects'] = result['directed_natal_aspects']
         projection['directed_natal_aspects_shown'] = len(projection['directed_natal_aspects'])
-        projection['model_projection_note'] = 'First 12 aspects and total count; complete saved solar-arc geometry remains archived.'
+        projection['model_projection_note'] = 'All calculated aspects shown; full saved solar-arc geometry remains archived.'
         return projection, True
     if name == 'get_uncorrected_davison' and result.get('status') == 'supported':
         natal = result['derived_natal']
@@ -42,13 +40,13 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
             'status': natal['status'], 'instant_utc': natal['instant_utc'],
             'positions': [{'id': item['id'], 'longitude_degrees': round(item['longitude_degrees'], 5),
                            'house': item['house']} for item in natal['positions']],
-            'houses': natal['houses'], 'aspects': natal['aspects'][:12],
-            'aspects_total': len(natal['aspects']), 'aspects_shown': min(12, len(natal['aspects'])),
+            'houses': natal['houses'], 'aspects': natal['aspects'],
+            'aspects_total': len(natal['aspects']), 'aspects_shown': len(natal['aspects']),
             'ephemeris_sha256': natal['ephemeris_sha256'],
             'method_version': natal['method_version'],
             **({'lilith_convention': natal['lilith_convention'],
                 'lilith_method': natal['lilith_method']} if natal.get('lilith_convention') else {})},
-            'model_projection_note': 'Rounded derived positions and first 12 aspects; full qualified synthetic chart is archived.'}
+            'model_projection_note': 'Rounded derived positions and all calculated aspects; full qualified chart is archived.'}
         return projected, True
     if name == 'get_secondary_progression' and result.get('status') == 'supported':
         projected = {key: value for key, value in result.items()
@@ -59,11 +57,11 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
             for point in result['positions']]
         projected['natal_positions'] = result['natal_positions']
         for key in ('natal_aspects', 'mcp_contacts', 'mcr_contacts'):
-            projected[key] = result[key][:12]
+            projected[key] = result[key]
             projected[f'{key}_shown'] = len(projected[key])
             projected[f'{key}_total'] = (result['natal_aspects_total'] if key == 'natal_aspects'
                                          else len(result[key]))
-        projected['model_projection_note'] = 'Positions rounded for model; contact lists capped at 12 per branch with totals. Full qualified result is archived.'
+        projected['model_projection_note'] = 'Positions rounded for model; all calculated contacts are shown with totals. Full qualified result is archived.'
         return projected, True
     if name in ('get_solar_return', 'get_lunar_returns', 'get_planetary_returns') and result.get('status') == 'supported':
         projected = {key: value for key, value in result.items() if key != 'events'}
@@ -77,10 +75,10 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
                           for point in event['chart']['positions'] if point['id'] != 'south_node'],
             'house_status': event['chart']['houses']['status'],
             'angles': event['chart']['houses']['angles'],
-        } for event in result['events'][:4]]
+        } for event in result['events']]
         projected['events_total'] = len(result['events'])
         projected['events_shown'] = len(projected['events'])
-        projected['model_projection_note'] = 'Rounded positions and selected angles; at most four passes shown with total. The archived charts retain all bodies and houses; planetary-return aspects are explicitly truncated to eight with a total.'
+        projected['model_projection_note'] = 'Every calculated pass shown with rounded positions and selected angles; archived charts retain all bodies, aspects and houses.'
         return projected, True
     if name == 'get_transit_view' and 'error' not in result:
         projected = project_transit_view(result)

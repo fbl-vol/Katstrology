@@ -23,9 +23,7 @@ def current_text(store, session, conv_id, turn_id, chains=None, resolved=None, t
     """Corrections replace selected context, but originals remain in the archive."""
     if stale_tool_evidence(store, session, conv_id, turn_id, chains, resolved):
         return None
-    turn = turn if turn is not None else store.read_turn(session, conv_id, turn_id)
-    if turn['next_event_offset'] is not None:
-        raise ValueError('Turn exceeds supported derivative event window; originals retained')
+    turn = turn if turn is not None else next(store.read_complete_turns(session, conv_id, [turn_id]))
     corrections = turn['corrections']
     if corrections:
         current = corrections[-1]
@@ -68,9 +66,7 @@ def dialogue_projection(store, session, conv_id, turn_id, chains=None, resolved=
         return {'text': text, 'full_evidence': True, 'assistant_safe': True} if text else None
     if not dialogue_turn_usable(store, session, conv_id, turn_id, chains, resolved):
         return None
-    turn = turn if turn is not None else store.read_turn(session, conv_id, turn_id)
-    if turn['next_event_offset'] is not None:
-        raise ValueError('Turn exceeds supported derivative event window; originals retained')
+    turn = turn if turn is not None else next(store.read_complete_turns(session, conv_id, [turn_id]))
     if turn['corrections'] or any(person['attachment_id'] for person in turn['selected_people']):
         return None
     user = turn['events'][0]['payload']['content']
@@ -148,13 +144,11 @@ def rebuild_one(store, session, conv_id, expected_epoch):
     entries = []
     chains, resolved = {conv_id: set(chain)}, {}
     for start in range(0, len(chain), 20):
-        for turn in store.read_turns(session, conv_id, chain[start:start + 20]):
+        for turn in store.read_complete_turns(session, conv_id, chain[start:start + 20]):
             projected = dialogue_projection(store, session, conv_id, turn['id'],
                                             chains, resolved, turn)
             if projected is None:
                 continue
-            if turn['next_event_offset'] is not None:
-                raise ValueError('Turn exceeds supported derivative event window; originals retained')
             if turn['corrections']:
                 correction = turn['corrections'][-1]
                 if correction['action'] == 'correct':
@@ -236,9 +230,9 @@ def repair_stale_draft_derivatives(store, session, after='', limit=10):
             ''', (owner,)).fetchone()['n']}
 
 
-def search(store, session, query, limit=10, person_id=None):
+def search(store, session, query, limit=16, person_id=None):
     owner = store.owner(session)
-    if not isinstance(query, str) or not 1 <= len(query) <= 80 or not 1 <= limit <= 20:
+    if not isinstance(query, str) or not 1 <= len(query) <= 256 or not 1 <= limit <= 50:
         raise ValueError('Invalid search scope')
     if person_id is not None:
         store._id(person_id)
@@ -248,7 +242,7 @@ def search(store, session, query, limit=10, person_id=None):
             raise KeyError('Person not found')
     # No stale epoch is returned even when a rebuild fails or is still queued.
     rows = store.db.execute('''
-        SELECT e.conversation_id, e.source_id, e.speaker, left(e.content, 200) AS excerpt
+        SELECT e.conversation_id, e.source_id, e.speaker, left(e.content, 500) AS excerpt
         FROM search_entries e JOIN conversations c
           ON c.owner_id=e.owner_id AND c.id=e.conversation_id AND c.epoch=e.epoch
         WHERE e.owner_id=%s AND to_tsvector('simple', e.content) @@ plainto_tsquery('simple', %s)

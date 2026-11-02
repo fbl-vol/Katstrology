@@ -105,9 +105,9 @@ class ProgressionArchiveTests(DatabaseCase):
                     if point['id'] == 'midheaven'))
                 self.assertTrue(all(start <= datetime.fromisoformat(item['instant_utc']) < end
                                     for item in found['events']))
-        with self.assertRaisesRegex(ValueError, 'at most 366'):
+        with self.assertRaisesRegex(ValueError, 'at most 732'):
             progression.mc_events(self.alice, self.chart['id'], start,
-                                  end + timedelta(seconds=1), 'mcp', 'sun', 'conjunction')
+                                  end + timedelta(days=366, seconds=1), 'mcp', 'sun', 'conjunction')
         with self.assertRaises(PermissionError):
             execute(self.store, self.alice, 'find_progressed_mc_contacts', {
                 'chart_id': self.chart['id'], 'start_utc': start.isoformat(),
@@ -196,7 +196,7 @@ class ProgressionArchiveTests(DatabaseCase):
         self.assertIn('MCp', projection['mc_branch_policy'])
         self.assertIn('MCr', projection['mc_branch_policy'])
         self.assertTrue(projection['positions'])
-        self.assertLessEqual(len(projection['natal_aspects']), 12)
+        self.assertEqual(len(projection['natal_aspects']), projection['natal_aspects_total'])
         archived = next(event['payload'] for event in self.store.read_turn(
             self.alice, 'progressed-discussion', 'progressed-request')['events']
             if event['kind'] == 'tool_result' and event['payload'].get('name') == 'get_secondary_progression')

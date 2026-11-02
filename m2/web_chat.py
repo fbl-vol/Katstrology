@@ -26,7 +26,7 @@ def _cursor(value):
 
 async def send(request):
     session = await authorized(request, mutate=True, fast=True)
-    payload = await json_body(request)
+    payload = await json_body(request, max_bytes=128 * 1024)
     required = {'id', 'text', 'selected_people', 'parent', 'revision_kind', 'replaces_turn_id'}
     legacy = {'mode', 'model_slug', 'chart_file', 'reporting_zone'}
     optional = {'selected_result'}

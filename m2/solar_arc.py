@@ -56,8 +56,8 @@ class SolarArc:
                 'axis_status': natal['houses']['status'], 'positions': directions,
                 'natal_positions': [{'id': item['id'], 'longitude_degrees': item['longitude_degrees']}
                                     for item in original],
-                'directed_natal_aspects': natal_aspects[:24],
+                'directed_natal_aspects': natal_aspects,
                 'directed_natal_aspects_total': len(natal_aspects),
-                'directed_natal_aspects_truncated': len(natal_aspects) > 24,
+                'directed_natal_aspects_truncated': False,
                 'physical_sky': 'not_defined', 'speed': 'not_defined',
                 'houses': 'not_defined', 'retrograde': 'not_defined'}

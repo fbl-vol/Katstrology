@@ -437,14 +437,14 @@ class ChatBudgetTests(DatabaseCase):
                 self.assertEqual([e['payload'] for e in replay], [e['payload'] for e in events])
 
     def test_checkpoint_identity_branch_correction_person_and_usage_fences(self):
-        self.bridge.catalog.append({'slug': 'synthetic-compact', 'context_window': 16384,
+        self.bridge.catalog.append({'slug': 'synthetic-compact', 'context_window': 24576,
                                     'max_output_tokens': 2048})
         compact = ResponsesModel(self.bridge, 'alice', 'synthetic-compact')
         for index in range(9):
             status, _ = self.turn(f'fenced-{index}',
                                   f'Original synthetic report {index}: ' + 'reflective theme. ' * 115,
                                   model=compact)
-            self.assertEqual(status, 'complete')
+            self.assertEqual(status, 'complete', _)
         owner, conv = 'alice', 'budget-thread'
         checkpoint = self.store.db.execute('''
             SELECT * FROM compaction_checkpoints WHERE owner_id=%s AND conversation_id=%s

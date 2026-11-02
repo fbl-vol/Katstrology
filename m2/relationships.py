@@ -84,8 +84,8 @@ class Relationships:
             return {**base, 'positions': positions,
                 'position_status': 'partial_ambiguous_midpoints' if len(available) != len(ids)
                                    else 'supported',
-                'aspects': aspects[:24], 'aspects_total': len(aspects),
-                'aspects_truncated': len(aspects) > 24,
+                'aspects': aspects, 'aspects_total': len(aspects),
+                'aspects_truncated': False,
                 'frame': 'shortest circular ecliptic longitude, except exactly opposite points',
                 'houses': 'not_defined', 'angles': 'not_defined',
                 'physical_instant': None, 'speed': 'not_defined'}

@@ -6,6 +6,7 @@ DB/file access is trusted code, not a production identity or sandbox boundary.
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import re
 
 from argon2 import PasswordHasher
@@ -20,11 +21,11 @@ ID = re.compile(r'[A-Za-z0-9_-]{1,80}\Z')
 EVENT_KINDS = {'assistant_chunk', 'tool_call', 'tool_result', 'context',
                'compaction', 'usage', 'complete', 'interrupted', 'error'}
 TERMINAL = {'complete', 'interrupted', 'error'}
-MAX_MESSAGE = 4096
+MAX_MESSAGE = 64 * 1024
 MAX_EVENT_BYTES = 16384
 # Four bounded source matches can carry more UTF-8 metadata than their concise
 # model projection. Keep exact read results; all other event kinds stay at 16 KiB.
-MAX_TOOL_RESULT_BYTES = 64 * 1024
+MAX_TOOL_RESULT_BYTES = 1024 * 1024
 MAX_ANCESTORS = 2000
 UNCHANGED = object()
 
@@ -550,6 +551,27 @@ class Store:
             by_id[correction['source_turn_id']]['corrections'].append({key: value for key, value in correction.items()
                                                                        if key != 'source_turn_id'})
         return rows
+
+    def read_complete_turns(self, session, conv_id, turn_ids, max_bytes=16 * 1024 * 1024):
+        """Page bounded archive events for derivatives; never mistake page one for history."""
+        for turn in self.read_turns(session, conv_id, turn_ids, event_limit=8):
+            consumed = sum(len(json.dumps(event['payload'], ensure_ascii=False, default=str).encode('utf-8'))
+                           for event in turn['events'])
+            if consumed > max_bytes:
+                raise ValueError('Turn exceeds bounded derivative memory; originals remain pageable')
+            offset = turn['next_event_offset']
+            while offset is not None:
+                page = self.read_turn(session, conv_id, turn['id'], event_offset=offset, event_limit=8)
+                if page['event_count'] != turn['event_count']:
+                    raise ValueError('Archive changed during derivative read; retry after completion')
+                consumed += sum(len(json.dumps(event['payload'], ensure_ascii=False, default=str).encode('utf-8'))
+                                for event in page['events'])
+                if consumed > max_bytes:
+                    raise ValueError('Turn exceeds bounded derivative memory; originals remain pageable')
+                turn['events'].extend(page['events'])
+                offset = page['next_event_offset']
+            turn['next_event_offset'] = None
+            yield turn
 
     def read_turn(self, session, conv_id, turn_id, event_offset=0, event_limit=256):
         owner = self.owner(session)

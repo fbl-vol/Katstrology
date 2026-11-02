@@ -168,12 +168,12 @@ class ToolEvidenceBudgetTests(DatabaseCase):
             events = self.store.read_turn(self.alice, 'budget-thread', 'large-passage')['events']
             result = next(e['payload']['result'] for e in events if e['kind'] == 'tool_result')
             projected = json.loads(bridge.requests[1]['input'][-1]['output'])
-            self.assertEqual(result['content'], original[:1800])
+            self.assertEqual(result['content'], original)
             self.assertEqual(projected['content'], result['content'])
             self.assertEqual(projected['author'], result['author'])
             self.assertEqual(projected['approval'], result['approval'])
             self.assertEqual(projected['source_status'], result['source_status'])
-            self.assertLessEqual(len(bridge.requests[1]['input'][-1]['output'].encode()), MAX_EVENT_BYTES)
+            self.assertLessEqual(len(bridge.requests[1]['input'][-1]['output'].encode()), 256 * 1024)
             self.assertLess(len(str(events[-3]['payload']).encode()), MAX_TOOL_RESULT_BYTES)
         finally:
             bridge.close()
@@ -192,11 +192,33 @@ class ToolEvidenceBudgetTests(DatabaseCase):
                          self.store.db.execute('''
                              SELECT content FROM reference_passages
                              WHERE owner_id='alice' AND source_id='source-danish'
-                         ''').fetchone()['content'][:projected['next_offset'] + 1800])
+                         ''').fetchone()['content'][:projected['next_offset'] + 4096])
         self.assertEqual(projected['content_sha256'], continuation['content_sha256'])
 
+    def test_four_calculated_reads_above_old_aggregate_allowance_finish_in_native_order(self):
+        calls = [native_call(i, 'get_chart', {'chart_id': self.chart_id}) for i in range(1, 5)]
+        model, bridge = model_for(*calls, [text('Four calculated reads inspected.'), slim_footer([])])
+        try:
+            with patch('m2.gateway.execute_read', return_value={
+                    'chart_id': self.chart_id, 'content': 'X' * 13_000}):
+                status = run_turn(self.store, self.alice, 'budget-thread', 'larger-evidence',
+                    'Inspect four distinct synthetic calculated results.', model, lambda _: None,
+                    model_provider='chatgpt_plan', model_slug='gpt-6.1-sol')
+            self.assertEqual(status, 'complete')
+            saved = self.store.read_turn(self.alice, 'budget-thread', 'larger-evidence')['events']
+            results = [event['payload'] for event in saved if event['kind'] == 'tool_result']
+            self.assertEqual([row['id'] for row in results], [f'call-{i}' for i in range(1, 5)])
+            self.assertGreater(sum(row['model_projection_bytes'] for row in results), 32 * 1024)
+            self.assertTrue(all(row['model_projection_status'] == 'full' for row in results))
+            self.assertEqual([row['call_id'] for row in bridge.requests[-1]['input']
+                              if row.get('type') == 'function_call_output'],
+                             [f'call-{i}' for i in range(1, 5)])
+            self.assertEqual(len(bridge.requests), 5)
+        finally:
+            bridge.close()
+
     def test_excessive_read_returns_structured_limit_not_success_shaped_evidence(self):
-        for size, scope in ((20_000, 'per_call'), (75_000, 'archive')):
+        for size, scope in ((300_000, 'per_call'), (1_100_000, 'archive')):
             with self.subTest(scope=scope):
                 model, bridge = model_for(
                     native_call(1, 'get_chart', {'chart_id': self.chart_id}),
@@ -244,12 +266,12 @@ class ToolEvidenceBudgetTests(DatabaseCase):
             self.assertEqual(status, 'error')
             events = self.store.read_turn(self.alice, 'budget-thread', 'byte-ceiling',
                                           event_limit=100)['events']
-            self.assertEqual(events[-1]['payload']['code'], 'tool_result_capacity')
+            self.assertEqual(events[-1]['payload']['code'], 'tool_round_capacity_exceeded')
             self.assertGreater(events[-1]['payload']['read_count'], 3)
             self.assertEqual(len(bridge.requests), events[-1]['payload']['read_count'])
             final_result = events[-2]['payload']
-            self.assertEqual(final_result['model_projection_status'], 'unavailable')
-            self.assertEqual(final_result['model_projection_limit']['scope'], 'cumulative')
+            self.assertEqual(final_result['model_projection_status'], 'limit')
+            self.assertEqual(final_result['model_projection_limit']['scope'], 'model_context')
             self.assertEqual(len(final_result['result']['content']), 15_400)
             self.assertNotIn('complete', [event['kind'] for event in events])
         finally:
@@ -307,7 +329,7 @@ class ToolEvidenceBudgetTests(DatabaseCase):
         finally:
             bridge.close()
 
-    def test_three_multibyte_history_windows_shorten_only_model_projection(self):
+    def test_three_multibyte_history_windows_preserve_full_model_projection(self):
         self.create_history_windows()
         script = [native_call(index + 1, 'get_conversation_messages', {
             'conversation_id': 'history-window', 'around_turn_id': f'history-{center}'})
@@ -324,14 +346,14 @@ class ToolEvidenceBudgetTests(DatabaseCase):
                 self.alice, 'budget-thread', 'aggregate')['events'] if e['kind'] == 'tool_result']
             self.assertEqual(len(results), 3)
             self.assertEqual([r['model_projection_status'] for r in results],
-                             ['full', 'full', 'bounded'])
-            self.assertEqual(len(results[-1]['result']['turns']), 3)  # exact archive retained
+                             ['full', 'full', 'full'])
+            self.assertEqual(len(results[-1]['result']['turns']), 4)  # five-turn window at chain edge
             projected = json.loads(bridge.requests[-1]['input'][-1]['output'])
-            self.assertEqual(len(projected['turns']), 3)
-            self.assertTrue(any(row.get('model_text_shortened') for row in projected['turns']))
-            self.assertGreater(len(results[-1]['result']['turns'][0]['text']),
-                               len(projected['turns'][0]['text']))
-            self.assertLess(sum(row['model_projection_bytes'] for row in results), 32 * 1024 + 1)
+            self.assertEqual(len(projected['turns']), 4)
+            self.assertFalse(any(row.get('model_text_shortened') for row in projected['turns']))
+            self.assertEqual(results[-1]['result']['turns'][0]['text'],
+                             projected['turns'][0]['text'])
+            self.assertLess(sum(row['model_projection_bytes'] for row in results), 2 * 1024 * 1024)
             self.assertEqual(len(bridge.requests), 4)
         finally:
             bridge.close()

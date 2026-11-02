@@ -14,6 +14,7 @@ from m2.core_calc import ASPECTS, START_YEAR, END_YEAR, aspect_separation
 
 STEP = timedelta(hours=1)
 TOLERANCE = timedelta(seconds=60)
+MAX_SCAN_DAYS = 2 * 366  # same hourly sampling and refinement as shorter windows
 
 
 def _utc(value):
@@ -91,8 +92,8 @@ class Transits:
         if transit_body in LILITH_BODY_IDS:
             raise ValueError('Lunar-apogee event scans are unsupported; use a dated snapshot')
         start, end = _utc(start), _utc(end)
-        if end <= start or end - start > timedelta(days=30):
-            raise ValueError('Transit event window must be positive and at most 30 days')
+        if end <= start or end - start > timedelta(days=MAX_SCAN_DAYS):
+            raise ValueError(f'Transit event window must be positive and at most {MAX_SCAN_DAYS} days')
         chart, natal, unsupported = self.selected_natal(session, chart_id)
         if unsupported:
             return {'status': unsupported, 'chart_id': chart_id}
@@ -143,8 +144,8 @@ class Transits:
     def sky_events(self, session, chart_id, start, end, transit_body, kind):
         """Planet sign ingress or longitude-speed station; no house or natal claim."""
         start, end = _utc(start), _utc(end)
-        if end <= start or end - start > timedelta(days=30):
-            raise ValueError('Sky event window must be positive and at most 30 days')
+        if end <= start or end - start > timedelta(days=MAX_SCAN_DAYS):
+            raise ValueError(f'Sky event window must be positive and at most {MAX_SCAN_DAYS} days')
         chart = self.charts.get_chart(session, chart_id)
         if chart['source_status'] != 'current':
             return {'status': 'unsupported_stale_birth_source', 'chart_id': chart_id}
