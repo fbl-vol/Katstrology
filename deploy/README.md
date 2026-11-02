@@ -51,6 +51,71 @@ It checks effective mounts, image-served assets, unauthenticated Host behavior,
 empty schema and restart, then removes only that project's containers and volumes.
 The default without `--execute` is a plan. This is not host activation.
 
+## Existing-instance app-only release pipeline (source tooling; not authorization)
+
+`release_pipeline.py` is for a **previously installed and running instance of this
+exact Compose project**, not initial installation, host provisioning, Caddy route
+changes or the frozen release being coordinated elsewhere. Plan mode has no SSH,
+Docker or server effects. Build an immutable package with `build_local.py`, then
+run `smoke_local.py` with its separately scoped disposable `--execute` before
+promoting that exact receipt. The immutable archive/source-offer digests, Git
+commit/tree, OCI index, config digest, architecture, source files and migration set
+are checked again at plan time. A green smoke is not a server readiness receipt.
+
+Keep a private, untracked JSON target file (mode 0600) with exactly these keys:
+`ssh_alias` (configured OpenSSH key alias, no user@host), `project` (the existing
+Compose project), `stage` (a **new**, absent `/srv/...` directory per attempt),
+`password_file` (existing app-owned 0400 path), `ephemeris_dir` (existing licensed
+read-only directory), `snapshot_dir` (pre-existing independent `/srv/...` directory
+owned by app UID 10001, distinct from staging and all serving volumes), `origin`
+(exact HTTPS deployment origin) and `loopback_port` (the existing loopback host
+port). The server must already have the correct image-platform runtime, Compose,
+Docker permissions and an SSH public key installed for the configured alias.
+Setting up that SSH key and checking the server baseline are separate prerequisites;
+this tool neither installs keys nor prompts for passwords. Do not put secret values
+in the target file. The target's *paths* stay private and are represented by a
+hash in the plan and final sanitized receipt.
+
+```
+python3 deploy/release_pipeline.py --artifact-receipt <ignored-package-receipt> --target <private-target.json> > <private-plan.json>
+```
+
+Check the plan's immutable identities and exact target **and obtain a fresh,
+separately scoped approval for this particular release**. Only then create a
+private approval file `{"approved_action":"release","plan_sha256":"<from-plan>"}`.
+Execution is a separate deliberate invocation:
+
+```
+python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <same-target.json> --execute --approval <private-approval.json> --result <new-private-receipt.json>
+```
+
+The runner creates an exclusive durable attempt guard **before SSH**; an existing
+receipt refuses replay. It stages the approved archive via the SSH alias, checks
+the effective Compose project, bound loopback route, previous running app/DB and
+loaded immutable config ID, then stops **only the app**. It invokes the existing
+quiesced `deployment_backup` API against the existing DB/attachment state and
+independent deletion journal/tip, verifying the snapshot schema before doing
+`compose up --no-deps app`. It verifies the running app's image/project, local Host
+and wrong-Host API behavior, and that the served index matches the packaged file.
+No DB rollback, data copy, credential import, edge route change, source publication,
+provider request or public-edge verification is performed. A receipt with
+`status: verified` proves only these bounded checks; confirm the separately
+managed HTTPS edge and user-facing route before claiming a full release.
+
+On timeout, partial upload, backup failure, or ambiguous `up`, **halt**: the
+private server stage's `phase.json` and `previous-image` identify the last
+completed phase and previous immutable runtime image. Do not re-run the command
+with a new receipt or silently retry. Inspect running container labels/image,
+DB and deletion volume/tip, snapshot manifest and server routing. If the app is
+stopped or the new app fails and the previous image is still locally present,
+prepare a *new, separately approved* app-only recovery plan using that previous
+immutable config ID and the same Compose project, with `compose up --no-deps app`;
+reverify serving and unchanged DB/deletion authority. **Never restore an older DB
+or journal for an app rollback.** If the new schema cannot be read by the previous
+app, keep serving halted and resolve compatibility before any recovery. Snapshot
+retention/off-host backup, true remote restore rehearsal and key management are
+not automated by this runner. Leave the old maintenance route alone.
+
 ## Accounts and selected model
 
 The Kat username/password is separate from ChatGPT. Signing in at chatgpt.com,
