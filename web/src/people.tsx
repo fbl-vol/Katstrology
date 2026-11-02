@@ -186,7 +186,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
           'No active generated natal. Nothing is guessed from a draft, an old chart or a file.'}</p></div>
         {activeChart && <button type="button" className="quiet-action" onClick={startConversation}>Discuss current natal</button>}
       </div>
-      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} /> :
+      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion /> :
         <p>This generated chart has only supported partial/solar information. Birth time or houses were not inferred.</p>}</div> :
         <div className="profile-chart-empty"><p>{editorOpen ? 'Supply the birth details below to generate the first chart.' :
           'Choose Create first chart to supply birth details and generate a natal chart.'}</p>

@@ -1,10 +1,14 @@
 """Authenticated, read-only HTTP projection of ephemeral transit views."""
 
+from datetime import date
+import re
+
 from starlette.routing import Route
 
 from m2.app_clock import snapshot
 from m2.people import People
 from m2.product_policy import REPORTING_ZONE
+from m2.transit_animation import frames
 from m2.transit_views import TransitInputError, view
 from m2.web_server import authorized, json_response
 
@@ -34,6 +38,19 @@ async def transit_view(request):
     return json_response(result)
 
 
+async def transit_frames(request):
+    session = await authorized(request)
+    query = request.query_params
+    if (set(query) != {'from', 'to'} or
+            any(len(query.getlist(key)) != 1 or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', query[key])
+                for key in ('from', 'to'))):
+        raise ValueError('Choose exactly two UTC calendar dates')
+    start, end = date.fromisoformat(query['from']), date.fromisoformat(query['to'])
+    result = await request.app.state.runtime.call(
+        lambda store, _auth: frames(store, session, request.path_params['chart_id'], start, end))
+    return json_response(result)
+
+
 async def application_clock(request):
     await authorized(request)
     query = request.query_params
@@ -44,4 +61,5 @@ async def application_clock(request):
 
 
 routes = [Route('/api/transit-view', transit_view, methods=['GET']),
+          Route('/api/charts/{chart_id}/transit-frames', transit_frames, methods=['GET']),
           Route('/api/clock', application_clock, methods=['GET'])]

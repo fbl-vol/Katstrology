@@ -2,6 +2,9 @@ import { useRef } from 'react';
 import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import './chart-wheel.css';
 import { WheelExportActions } from './chart-export';
+import { TransitMotion } from './transit-motion';
+import { point, signs, zodiac } from './chart-geometry';
+export { point, signs, zodiac } from './chart-geometry';
 
 export type Point = { id: string; longitude_degrees: number; sign: number };
 export type Placement = Point & { latitude_degrees: number; speed_degrees_per_day: number;
@@ -18,21 +21,9 @@ export type Chart = { id: string; person_id: string; birth_id: string; profile_i
     natal?: NatalResult; houses: string; engine: { method: string; version: string };
     profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean; include_lilith?: 'mean' | 'osculating' } }; } };
 
-export const signs = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
-  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'];
 const aspectColors: Record<string, string> = { conjunction: 'var(--wheel-aspect-gold, #a87931)',
   opposition: 'var(--wheel-aspect-warm, #ad684c)', square: 'var(--wheel-aspect-warm, #ad684c)',
   trine: 'var(--wheel-aspect-cool, #487b72)', sextile: 'var(--wheel-aspect-cool, #487b72)' };
-
-export function zodiac(degrees: number) {
-  const within = degrees % 30;
-  return `${Math.floor(within)}°${String(Math.floor((within % 1) * 60)).padStart(2, '0')}′ ${signs[Math.floor(degrees / 30)]}`;
-}
-
-export function point(degrees: number, ascendant: number, radius: number) {
-  const radians = Math.PI + (ascendant - degrees) * Math.PI / 180;
-  return { x: 240 + radius * Math.cos(radians), y: 240 + radius * Math.sin(radians) };
-}
 
 function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProvenance = {} }: {
   chart: Chart; natal: NatalResult; compact?: boolean; label?: string;
@@ -137,7 +128,7 @@ export function CompactNatalWheel({ chart }: { chart: Chart }) {
     natal.houses.angles.length > 0 ? <Wheel chart={chart} natal={natal} compact /> : null;
 }
 
-export function NatalChart({ chart }: { chart: Chart }) {
+export function NatalChart({ chart, allowMotion = false }: { chart: Chart; allowMotion?: boolean }) {
   const natal = chart.result.natal;
   if (!natal) return null;
   const settings = chart.result.profile.settings;
@@ -153,6 +144,7 @@ export function NatalChart({ chart }: { chart: Chart }) {
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
         {natal.houses.status === 'supported' ? <Wheel chart={chart} natal={natal} /> :
           <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects below remain available.</p>}
+        {allowMotion && <TransitMotion chart={chart} />}
         <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
           <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
           <tbody>{natal.positions.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th>

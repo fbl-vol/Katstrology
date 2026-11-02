@@ -79,6 +79,20 @@ records 2017-11-09 03:58:17 UTC at mean 270.0000775° and osculating
 2.10.03 engine and pinned lunar/planetary files, without using that site's
 interpretation as authority.
 
+The optional **Play dated transits** panel on the current natal loads only after
+an explicit date selection and click. It accepts 1–7 UTC days in the supported
+1900–2099 range, uses the owned current chart and Swiss 15-minute positions for
+actual transiting planets, and keeps the natal fixed. The 20-second loop uses
+shortest-circle interpolation only for the displayed movement. It labels the
+UTC time and **never** treats an unsampled frame as an exact degree, crossing,
+station or aspect event; the dated transit view remains the exact calculation.
+Pause, replay, manual scrub, reduced-motion stills, document-hidden and
+out-of-view stop are built in. No provider request, persisted result, login
+animation, model inference or background calculation is involved. A seven-day
+synthetic Mercury station/zodiac-wrap sample measured <0.0001° midpoint error
+and 6730 Swiss planet samples in <0.1s locally; this is a bounded feasibility
+check, not production-device profiling. No unbounded dates or apogee animation.
+
 Source references and reproducible independent checks (published values are
 only computational anchors, not approval of a person's historical birth time):
 
