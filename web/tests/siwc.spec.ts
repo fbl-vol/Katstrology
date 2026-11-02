@@ -455,7 +455,7 @@ test('return to the same archived thread after correcting a saved birth year ret
   const resumed = await resumedSent;
   expect(resumed.status()).toBe(202);
   expect(new URL(resumed.url()).pathname).toBe(conversationPath);
-  await expect(page.getByText(`Synthetic continuity verified with corrected chart ${chartId}`)).toBeVisible();
+  await expect(page.getByText(`Synthetic continuity verified with corrected chart ${chartId}`, { exact: true })).toBeVisible();
   const archived = await archivedTurn(page, page.locator('.turn-card').last());
   expect(archived.parent_id).toBe(original.id);
   expect(archived.selected_people[0].chart_id).toBe(chartId);
