@@ -151,6 +151,29 @@ test('a normal three-page reply reaches its exact final event', async ({ page })
     expect(all.events.at(-1).kind).toBe('complete');
   });
 
+test('a 270-event reply retains its ending after archive paging and reload', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto('/');
+    await page.getByLabel('Username').fill('reader-complete-270-normal');
+    await page.getByLabel('Password').fill('synthetic-browser-password');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByLabel('Message Kat').fill('Synthetic 270-event reply fixture');
+    await page.getByRole('button', { name: 'Send message' }).click();
+    await expect(page.locator('.turn-card .assistant-answer').first())
+      .toContainText('[segment-269]', { timeout: 60000 });
+    await page.reload();
+    const offsets: number[] = [];
+    await page.route('**/turns/*?offset=*', async route => {
+      offsets.push(Number(new URL(route.request().url()).searchParams.get('offset')));
+      await route.continue();
+    });
+    await page.getByRole('navigation', { name: 'Recent conversations' }).locator('.recent-entry button').first().click();
+    await expect(page.locator('.turn-card .assistant-answer').first())
+      .toContainText('[segment-269]', { timeout: 60000 });
+    expect(offsets).toEqual([32, 96, 160, 224]);
+    await expect(page.locator('.turn-card').first().getByRole('alert')).toHaveCount(0);
+  });
+
 test('a normal long archived reply remains document-scrollable on mobile', async ({ page }) => {
     test.setTimeout(120000);
     await page.setViewportSize({ width: 390, height: 844 });

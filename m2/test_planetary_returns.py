@@ -59,6 +59,21 @@ class PlanetaryReturnTests(DatabaseCase):
             self.assertEqual(event['chart']['aspects_truncated'],
                              len(event['chart']['aspects']) < event['chart']['aspects_total'])
 
+    def test_five_year_venus_passes_equal_adjacent_half_open_windows(self):
+        start = datetime(2024, 4, 5, 12, tzinfo=UTC)
+        midpoint = start + timedelta(days=915)
+        end = start + timedelta(days=1830)
+        finder = PlanetaryReturns(self.store)
+        def passes(begin, finish):
+            result = finder.calculate(self.alice, self.chart['id'], 'venus',
+                                      begin, finish, 51.5, -0.17)
+            self.assertEqual(result['status'], 'supported')
+            return [(event['instant_utc'], event['pass_direction']) for event in result['events']]
+        whole = passes(start, end)
+        self.assertGreater(len(whole), 4)
+        self.assertIn('retrograde', [direction for _, direction in whole])
+        self.assertEqual(whole, passes(start, midpoint) + passes(midpoint, end))
+
     def test_all_named_bodies_and_exact_birth_boundary(self):
         born = datetime(2024, 4, 5, 12, tzinfo=UTC)
         finder = PlanetaryReturns(self.store)

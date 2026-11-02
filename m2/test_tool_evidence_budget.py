@@ -387,6 +387,33 @@ class ToolEvidenceBudgetTests(DatabaseCase):
         finally:
             bridge.close()
 
+    def test_more_than_256_events_survive_owned_backup_and_derivative_rebuild(self):
+        self.store.begin(self.alice, 'budget-thread', 'long-restored', 'Synthetic long event turn')
+        for index in range(260):
+            self.store.append(self.alice, 'budget-thread', 'long-restored', 'assistant_chunk',
+                              {'content': f'bounded-part-{index} '})
+        self.store.append(self.alice, 'budget-thread', 'long-restored', 'complete', {})
+        from m2.recall import current_text
+        original = current_text(self.store, self.alice, 'budget-thread', 'long-restored')
+        self.assertIn('bounded-part-259', original)
+        snapshot = Path(self.directory.name) / 'long-turn-snapshot'
+        backup(self.store, snapshot)
+        target = 'kat_m2_restored_' + uuid4().hex[:12]
+        dsn = make_conninfo(self.admin_dsn, dbname=target)
+        with psycopg.connect(self.admin_dsn, autocommit=True) as db:
+            db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(target)))
+        recovered = None
+        try:
+            recovered = restore(snapshot, dsn, Path(self.directory.name) / 'long-recovered', self.ledger)
+            owner = recovered.authenticate('alice', 'synthetic-password-alice')
+            self.assertEqual(recovered.read_turn(owner, 'budget-thread', 'long-restored')['event_count'], 262)
+            self.assertEqual(current_text(recovered, owner, 'budget-thread', 'long-restored'), original)
+        finally:
+            if recovered:
+                recovered.close()
+            with psycopg.connect(self.admin_dsn, autocommit=True) as db:
+                db.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(target)))
+
     def test_three_multibyte_history_windows_preserve_full_model_projection(self):
         self.create_history_windows()
         script = [native_call(index + 1, 'get_conversation_messages', {
