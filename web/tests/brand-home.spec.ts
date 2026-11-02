@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const renders = resolve(import.meta.dirname, '../../.local/application-performance');
-const brand = { name: 'kat. — New conversation' };
+const brand = { name: 'katstrology. — New conversation' };
 
 async function sidebarButton(page: Page, name: string | RegExp, mobile: boolean) {
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
@@ -31,6 +31,25 @@ async function brandHome(page: Page, mobile: boolean) {
   }
 }
 
+test('selected Aubergine reference keeps the transparent seated mark and wordmark', async ({ page }) => {
+  mkdirSync(renders, { recursive: true });
+  await page.addInitScript(() => localStorage.setItem('kat.appearance.theme', 'aubergine'));
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-transit-desktop');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await expect(page.locator('.brand-kitten svg')).toBeVisible();
+  await expect(page.locator('.brand')).toContainText('katstrology.');
+  await page.screenshot({ path: resolve(renders, 'brand-fidelity-aubergine-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 560 });
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await expect(page.locator('.sidebar')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  const brandBounds = await page.locator('.brand').boundingBox();
+  const closeBounds = await page.locator('.side-close').boundingBox();
+  expect(brandBounds!.x + brandBounds!.width).toBeLessThan(closeBounds!.x);
+  await page.screenshot({ path: resolve(renders, 'brand-fidelity-aubergine-short-mobile.png') });
+});
+
 test('normal brand reuses New conversation from saved thread and every route', async ({ page }) => {
     test.setTimeout(100000);
     mkdirSync(renders, { recursive: true });
@@ -39,7 +58,11 @@ test('normal brand reuses New conversation from saved thread and every route', a
     await page.getByLabel('Password').fill('synthetic-browser-password');
     await page.getByRole('button', { name: 'Open workspace' }).click();
     await expect(page.getByRole('region', { name: 'New conversation' })).toBeVisible();
-    expect(decodeURIComponent((await page.locator('.brand img').getAttribute('src'))!)).toContain('Crescent-tail kitten primary logo');
+    const mark = page.locator('.brand-kitten svg');
+    await expect(mark).toHaveAttribute('data-kitten', 'crescent-kitten');
+    await expect(page.locator('.brand')).toContainText('katstrology.');
+    expect(await mark.locator('.tail').count()).toBe(1);
+    expect(await mark.locator('style').count()).toBe(0); // Fixed inline art obeys style-src self.
     expect(decodeURIComponent((await page.locator('link[rel="icon"]').getAttribute('href'))!)).toMatch(/kat-face|Simplified kitten face/);
     let creates = 0;
     page.on('request', request => {
@@ -88,6 +111,22 @@ test('normal brand reuses New conversation from saved thread and every route', a
       await sidebarButton(page, /Synthetic transit reader/, mobile);
       await expect(page.getByRole('heading', { name: 'Synthetic transit reader' })).toBeVisible();
       await brandHome(page, mobile);
+      if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
+      await expect(mark).toHaveAttribute('data-motion', 'on');
+      const brandTail = mark.locator('.tail');
+      const brandTime = await brandTail.evaluate(node => node.getAnimations()[0]?.currentTime as number);
+      const brandFrame = await mark.screenshot();
+      await page.waitForTimeout(1400);
+      expect((await brandTail.evaluate(node => node.getAnimations()[0]?.currentTime as number)) - brandTime).toBeGreaterThan(1000);
+      expect(brandFrame.equals(await mark.screenshot())).toBe(false);
+      const brandBox = await page.locator('.brand').boundingBox();
+      const drawerBox = await page.locator('.sidebar').boundingBox();
+      expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(drawerBox!.x + drawerBox!.width);
+      expect(await page.locator('.brand-kitten').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+      if (mobile) {
+        await page.screenshot({ path: resolve(renders, `brand-fidelity-drawer-${view.name}.png`) });
+        await page.getByRole('complementary', { name: 'Workspace navigation' }).getByRole('button', { name: 'Close navigation' }).click();
+      }
       const kitten = page.locator('.welcome .reading-kitten svg');
       await expect(kitten).toBeVisible();
       await expect(kitten).toHaveAttribute('data-motion', 'on');
@@ -95,11 +134,32 @@ test('normal brand reuses New conversation from saved thread and every route', a
         expect(await kitten.locator(part).first().evaluate(node => getComputedStyle(node).animationName)).toBe(name);
       }
       expect(await kitten.locator('.iris').first().evaluate(node => getComputedStyle(node).fill)).toBe('rgb(230, 193, 120)');
+      const tail = kitten.locator('.tail');
+      const before = await tail.evaluate(node => node.getAnimations()[0]?.currentTime as number);
+      const startFrame = await kitten.screenshot();
+      await page.waitForTimeout(1300);
+      const after = await tail.evaluate(node => node.getAnimations()[0]?.currentTime as number);
+      expect(after - before).toBeGreaterThan(900);
+      expect(startFrame.equals(await kitten.screenshot())).toBe(false); // Actual rendered frames, not an animation name.
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      for (const part of ['.eye', '.tail', '.star']) {
-        expect(await kitten.locator(part).first().evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+      for (const art of [kitten, mark]) {
+        for (const part of ['.eye', '.tail', '.star']) {
+          expect(await art.locator(part).first().evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+        }
       }
       await page.emulateMedia({ reducedMotion: 'no-preference' });
+      // Chromium headless keeps background tabs visible; exercise the visibility event branch explicitly.
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect(kitten).toHaveAttribute('data-motion', 'off');
+      await expect(mark).toHaveAttribute('data-motion', 'off');
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect(kitten).toHaveAttribute('data-motion', 'on');
       expect(creates).toBe(1);
       expect(await page.evaluate(() => (window as Window & { brandDocument?: string }).brandDocument)).toBe('original');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(view.width + 1);

@@ -10,8 +10,7 @@ import { CreatePersonDialog, PersonDetail, type Person } from './people';
 import { useProvider } from './provider';
 import { SettingsView } from './settings';
 import { SourceNotice } from './source-notice';
-import { ReadingKitten } from './kitten';
-import katCrescent from './assets/kat-crescent.svg';
+import { BrandKitten, ReadingKitten } from './kitten';
 import { TransitView } from './transit-view';
 import { ChartHub, type ChartChoice } from './chart-hub';
 import { AdvancedView, type AdvancedDraft } from './advanced-view';
@@ -540,7 +539,7 @@ function App() {
   return <div className="app">
     {drawer && <button className="drawer-scrim" aria-label="Close navigation" onClick={closeDrawer} />}
     <aside className={`sidebar${drawer ? ' open' : ''}`} aria-label="Workspace navigation" onKeyDown={drawerKeys}>
-      <div className="brand-row"><button className="brand" type="button" aria-label="kat. — New conversation" onClick={() => newChat()}><img src={katCrescent} alt="" />kat.</button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
+      <div className="brand-row"><button className="brand" type="button" aria-label="katstrology. — New conversation" onClick={() => newChat()}><BrandKitten /><span>katstrology.</span></button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
       <div className="side-main-actions"><button className="new-chat" type="button" onClick={() => newChat()}>＋ &nbsp; New conversation</button>
         <button ref={chartNavButton} className="create-chart-nav" type="button" onClick={openChartHub}>＋ &nbsp; Create chart</button></div>
       <nav aria-label="People"><div className="side-heading-row"><h2 className="side-heading">PEOPLE</h2><button aria-label="Add person" onClick={() => {

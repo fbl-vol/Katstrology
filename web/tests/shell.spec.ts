@@ -282,7 +282,7 @@ test('a delayed archived ACK cannot clear a new conversation draft', async ({ pa
   await page.getByLabel('Message Kat').fill('Synthetic first input');
   await page.getByRole('button', { name: 'Send message' }).click();
   await ready;
-  await page.getByRole('button', { name: 'kat. — New conversation' }).click();
+  await page.getByRole('button', { name: 'katstrology. — New conversation' }).click();
   await page.getByLabel('Message Kat').fill('Keep this new draft');
   const response = page.waitForResponse(value => value.url().includes('/turns') && value.request().method() === 'POST');
   release();

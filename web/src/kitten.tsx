@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
+import crescentKitten from './assets/kat-crescent.svg?raw';
 import readingKitten from './assets/kat-reading.svg?raw';
 
-/** This fixed, bundled artwork is not user-supplied markup. Its styles live in style.css for CSP. */
-export function ReadingKitten() {
+// Both SVGs are fixed bundled artwork. The source crescent's embedded style is
+// for standalone exports; inline artwork uses style.css under the strict CSP.
+const crescentInline = crescentKitten.replace(/<style>[\s\S]*?<\/style>/, '');
+
+function KittenArt({ variant }: { variant: 'brand' | 'reading' }) {
   const container = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -26,6 +30,15 @@ export function ReadingKitten() {
     };
   }, []);
 
-  return <span className="reading-kitten" aria-hidden="true" ref={container}
-    dangerouslySetInnerHTML={{ __html: readingKitten }} />;
+  return <span className={`kitten-art ${variant === 'brand' ? 'brand-kitten' : 'reading-kitten'}`}
+    aria-hidden="true" ref={container}
+    dangerouslySetInnerHTML={{ __html: variant === 'brand' ? crescentInline : readingKitten }} />;
+}
+
+export function BrandKitten() {
+  return <KittenArt variant="brand" />;
+}
+
+export function ReadingKitten() {
+  return <KittenArt variant="reading" />;
 }
