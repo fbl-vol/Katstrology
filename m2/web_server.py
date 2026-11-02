@@ -377,8 +377,8 @@ def main():
     ledger = (state / 'browser-runtime/deletions/deletions.jsonl' if deployment else
               state / 'browser-runtime/deletions.jsonl')
     if args.action == 'enroll':
-        username = input('Synthetic local username: ')
-        password = getpass.getpass('Synthetic local password (12+ characters): ')
+        username = input('Kat workspace username: ')
+        password = getpass.getpass('Kat workspace password (12+ characters): ')
         with Store(dsn, files, Tombstones(ledger)) as store:
             store.register_local(username, password)
         return

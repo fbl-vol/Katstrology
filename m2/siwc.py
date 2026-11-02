@@ -193,6 +193,16 @@ class CredentialFiles:
     def host_id(self):
         return self._read(self.host, {})['ext_agent_host_id']
 
+    def forget_disconnected(self, owner):
+        """Explicit offline recovery; never overwrite or erase a renewable session."""
+        record = self.load(owner)
+        selected = record.get('selected')
+        account = record.get('accounts', {}).get(selected) if selected else None
+        if (not account or len(record['accounts']) != 1 or account.get('access_token')
+                or account.get('refresh_token')):
+            raise ValueError('Exactly one disconnected registration required for offline recovery')
+        self.save(owner, {'selected': None, 'accounts': {}})
+
     @staticmethod
     def _handoff_key(passphrase, salt):
         if not isinstance(passphrase, str) or len(passphrase) < 16:
@@ -310,9 +320,22 @@ class ProviderBridge:
                      and bool(value.get('refresh_token')),
                      'selected': key == record['selected']}
                     for key, value in record['accounts'].items()]
+        selected = record['accounts'].get(record['selected']) if record['selected'] else None
+        if not selected:
+            phase = 'not_connected'
+        elif 'chatgpt.tokens.use.direct' not in selected.get('scopes', ()) and selected.get('id_token'):
+            phase = 'identity_only'
+        elif not selected.get('refresh_token'):
+            phase = 'reauthorization_required'
+        elif (not selected.get('access_token') or
+              not isinstance(selected.get('expires_at'), (int, float)) or
+              selected['expires_at'] < time.time() + 60):
+            phase = 'refresh_required'
+        else:
+            phase = 'ready'
         return {'available': True, 'accounts': accounts,
                 'connected': any(item['selected'] and item['plan_enabled'] for item in accounts),
-                'selected': record['selected']}
+                'selected': record['selected'], 'phase': phase}
 
     def begin(self, owner, session_digest, callback_uri, client_id=None):
         record = self.credentials.load(owner)

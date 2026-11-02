@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
+from m2.product_policy import MODEL
 from m2.provider_media import VISION_MODELS
 from m2.web_server import COOKIE, Forbidden, authorized, json_body, json_response
 from m2.web_auth import WebAuth
@@ -19,7 +20,8 @@ async def status(request):
     session = await authorized(request, fast=True)
     bridge = request.app.state.runtime.siwc
     result = bridge.status(session.owner_id) if bridge else {
-        'available': False, 'connected': False, 'accounts': [], 'selected': None}
+        'available': False, 'connected': False, 'accounts': [], 'selected': None,
+        'phase': 'not_connected'}
     return json_response({**result, 'registration':
                           'offline' if request.app.state.deployment else 'local'})
 
@@ -85,7 +87,8 @@ async def models(request):
         raise ValueError('ChatGPT plan is disabled')
     result = await asyncio.to_thread(bridge.models, session.owner_id)
     return json_response({'models': [{**item, 'file_input_supported':
-                                      item['slug'] in VISION_MODELS} for item in result]})
+                                      item['slug'] in VISION_MODELS} for item in result],
+                          'chat_available': any(item['slug'] == MODEL for item in result)})
 
 
 async def choose(request):

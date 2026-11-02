@@ -53,30 +53,79 @@ The default without `--execute` is a plan. This is not host activation.
 
 ## Accounts and selected model
 
-After explicit approval and with the sole Store process stopped, `m2.web_server
-enroll --deployment-origin ... --db-password-file <absolute-file>
---state-directory <absolute-private-dir> --served-dist <absolute-build>` prompts
-for a Kat username/password offline; there is no signup API. For the optional
-ChatGPT plan, first create a **new dedicated local registration** in the supported
-127.0.0.1 OAuth flow using a synthetic-free, separately approved personal
-session. Stop both source/target owners, then use
-`python -m m2.deployment_credentials export-local --state-directory <owned-local>
---handoff-file <absolute-new-private-file>` and
-`python -m m2.deployment_credentials import-deployment --state-directory
-<fresh-deployment-state> --handoff-file <approved-securely-transferred-file>
---db-password-file <absolute-private-file>`. Both sides require the same
-username and authenticated Kat account password; the passphrase is prompted, not
-passed as an argument. Transfer the encrypted file through a separately approved
-secure channel, keep the passphrase separate, verify file custody and remove the
-transfer artifact only under that scope. Import refuses overwrite, preserves the
-server's own `ext_agent_host_id` and clears the copied access token so the **first
-use on the server** must refresh. It does not call the provider or prove live plan
-eligibility. The source refresh token remains a risk until separately handled.
-OpenAI's OSS self-hosted VM guidance notes that host-specific attribution and
-revocation of transferred sessions are not yet available; refresh/revocation may
-fail. Never reuse an existing laptop's registration by default. Local
-login/settings are not a promise of provider access; manual charts work while
-chat is unavailable.
+The Kat username/password is separate from ChatGPT. Signing in at chatgpt.com,
+including its **Manage usage** page, does not register Kat. The production web
+app deliberately offers no browser OAuth/signup or credential-upload form: OpenAI's
+OSS callback must be HTTP `127.0.0.1` on the computer running the browser, not a
+made-up HTTPS callback to the server. This is a **future, separately approved
+personal-credential handoff**, not a command to run against the current host.
+
+1. On a **dedicated computer and fresh, separate Kat source checkout**, install
+   the Python/Swiss dependencies as documented in [`m2/README.md`](../m2/README.md)
+   and run `npm ci --prefix web`. Choose an unused loopback port other than 8765.
+   Confirm that checkout has no `.local/m2-pg-name` or `.local/m2-pg.env`.
+   Run `m2/start_local_postgres.sh` (creates only this new checkout's owned
+   fixture), then build into an owned unserved directory with
+   `npm --prefix web run build -- --outDir "$PWD/.local/connection-dist"`.
+   Run `.venv-swiss/bin/python -m m2.web_server enroll --port <loopback-port>
+   --state-directory "$PWD/.local" --served-dist "$PWD/.local/connection-dist"`
+   to create the matching Kat username locally. This does **not** copy the
+   server's Kat password or account; use the same username and authenticate
+   independently on each side.
+2. Start only that local checkout with `.venv-swiss/bin/python -m m2.web_server
+   serve --port <loopback-port> --enable-siwc --state-directory "$PWD/.local"
+   --served-dist "$PWD/.local/connection-dist"`, open its exact
+   `http://127.0.0.1:<loopback-port>/` address on the same computer, log in to
+   the new local Kat account and choose **Connect ChatGPT plan** in Settings.
+   The supported flow uses fresh state/nonce/PKCE and the loopback callback; grant
+   separate plan-use permission. An identity-only result cannot enable chat.
+   Neither a phone's Manage usage link nor its normal ChatGPT website login
+   completes this local callback. Stop the local server before export.
+3. With both Store owners stopped and only under approved private credential
+   access, run `python -m m2.deployment_credentials export-local
+   --state-directory <absolute-dedicated-local-state>
+   --handoff-file <absolute-new-private-encrypted-file>` on the dedicated
+   computer. Authenticate that local Kat username; the encryption passphrase is
+   prompted and must not be in argv or the transfer channel. Securely transfer
+   the encrypted file (for example via SSH) to a private 0600 target file, then
+   run `python -m m2.deployment_credentials import-deployment
+   --state-directory <absolute-server-state> --db-password-file <absolute-private-file>
+   --handoff-file <absolute-transferred-file>` on the stopped personal server.
+   Authenticate the **existing server Kat account with the same username** and
+   enter the passphrase. Import refuses any prior destination registration,
+   retains the server's own stable host ID, and clears the copied access token.
+   Start the server under its separately approved scope; Settings may show
+   **refresh required** until the server first requests available models or
+   chat, when it attempts its own token refresh. A saved grant is not proof of
+   actual eligibility or that a provider request will succeed. Never retry an
+   ambiguous transfer by overwriting a record; inspect status first. Keep the
+   encrypted artifact under approved custody and remove it only within that
+   scope. The source refresh token remains a risk until separately handled.
+
+If the server confirms a terminal invalid-refresh or you explicitly disconnect,
+its selected registration remains for identity/recovery, but a new import still
+refuses overwrite. After a new authorized **local** sign-in and encrypted export,
+stop the server and run `python -m m2.deployment_credentials
+forget-disconnected-deployment --state-directory <absolute-server-state>
+--db-password-file <absolute-private-file>`; authenticate the server Kat owner
+and type `FORGET`. It refuses a renewable session or multiple registrations,
+removes only the one already-disconnected owner's mapping, and preserves the
+server host ID. Then import the new encrypted file as above. A temporary network
+or model-catalog failure is **not** evidence to forget credentials: retry later
+without clearing them. If `invalid_client` occurs, correct the integration rather
+than wiping a registration. Remote revocation can be unconfirmed; ChatGPT settings
+can manage access but cannot create Kat's loopback callback. OpenAI currently
+cannot provide host-specific usage attribution/revocation for transferred
+sessions; avoid reusing an existing laptop registration. No paid API fallback,
+ChatGPT-history import, or automatic model request is part of the handoff.
+Manual charts remain usable without chat.
+
+Current first-party contracts: [OSS registration and loopback callback](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
+[self-hosted VM handoff](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms),
+[refresh/disconnect](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
+and [recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery).
+These describe an eligible personal OSS route; they do not authorize a provider
+sign-in, production credential handling or verification under this source request.
 
 ## Recovery and release boundary
 

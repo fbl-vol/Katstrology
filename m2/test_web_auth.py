@@ -14,6 +14,8 @@ from m2.attachments import Attachments
 from m2.charts import Charts
 from m2.deletion import Tombstones
 from m2.local_fixture import ROOT
+from m2.product_policy import MODEL
+from m2.siwc import CredentialFiles, ProviderBridge
 from m2.store import Store
 from m2.test_support import synthetic_web_dist, test_fixture_dsn
 from m2.web_server import create_app
@@ -99,6 +101,89 @@ class BrowserAuthTests(unittest.TestCase):
             self.assertEqual((status['registration'], status['available'], status['connected']),
                              ('offline', True, True))
             self.assertEqual(client.post('/auth/chatgpt/start', headers={'Origin': origin}).status_code, 404)
+
+    def test_deployment_connection_status_refresh_disconnect_and_restart_are_owner_scoped(self):
+        origin = 'https://katstrology.dk'
+        root = Path(self.directory.name) / 'synthetic-siwc'
+        credentials = CredentialFiles(root)
+        credentials.save('alice', {'selected': 'oaiapp_fixture', 'accounts': {
+            'oaiapp_fixture': {'client_id': 'oaiapp_fixture', 'subject': 'synthetic-subject',
+                               'scopes': ['chatgpt.tokens.use.direct'], 'refresh_token': 'synthetic-renewable',
+                               'access_token': None, 'expires_at': 0}}})
+
+        class FakeTransport:
+            calls = []
+            fixed_model_available = True
+
+            def token(self, request):
+                self.calls.append(request['grant_type'])
+                return {'access_token': 'synthetic-server-access',
+                        'refresh_token': 'synthetic-server-refresh',
+                        'token_type': 'Bearer', 'expires_in': 3600}
+
+            def models(self, _token):
+                return {'models': [{'slug': MODEL if self.fixed_model_available else 'other-fixture',
+                                    'display_name': 'Fixture', 'visibility': 'list'}]}
+
+            def revoke(self, _refresh, _client_id):
+                self.calls.append('revoke')
+                raise RuntimeError('Synthetic remote revocation unavailable')
+
+            def close(self):
+                pass
+
+        transport = FakeTransport()
+        def app():
+            return create_app(self.dsn, self.files, self.ledger, self.dist,
+                              origin=origin, deployment=True,
+                              siwc_factory=lambda _: ProviderBridge(root, transport))
+
+        with TestClient(app(), base_url=origin) as alice:
+            bob = TestClient(alice.app, base_url=origin)
+            try:
+                a = alice.post('/api/login', headers={'Origin': origin}, json={
+                    'username': 'alice', 'password': 'synthetic-password-alice'}).json()
+                bob.post('/api/login', headers={'Origin': origin}, json={
+                    'username': 'bob', 'password': 'synthetic-password-bob'})
+                status = alice.get('/api/siwc/status').json()
+                self.assertEqual((status['registration'], status['phase'], status['connected']),
+                                 ('offline', 'refresh_required', True))
+                self.assertEqual(bob.get('/api/siwc/status').json()['phase'], 'not_connected')
+                self.assertEqual(bob.get('/api/siwc/models').status_code, 503)
+                self.assertNotIn('synthetic-renewable', str(status))
+                self.assertEqual(alice.get('/api/siwc/models', headers={
+                    'Sec-Fetch-Site': 'cross-site'}).status_code, 403)
+                self.assertEqual(alice.get('/api/siwc/models', headers={
+                    'Host': 'attacker.invalid'}).status_code, 403)
+                self.assertEqual(transport.calls, [])
+                self.assertEqual(alice.post('/auth/chatgpt/start', headers={'Origin': origin},
+                    data={'csrf': a['csrf']}).status_code, 404)
+                self.assertEqual(alice.post('/api/siwc/disconnect', headers={'Origin': origin}).status_code, 403)
+                self.assertEqual(alice.post('/api/siwc/disconnect', headers={
+                    'Origin': 'https://attacker.invalid', 'X-Kat-CSRF': a['csrf']}).status_code, 403)
+                models = alice.get('/api/siwc/models')
+                self.assertEqual(models.status_code, 200)
+                self.assertEqual(models.json()['models'][0]['slug'], MODEL)
+                self.assertTrue(models.json()['chat_available'])
+                self.assertEqual(transport.calls, ['refresh_token'])
+                transport.fixed_model_available = False
+                self.assertFalse(alice.get('/api/siwc/models').json()['chat_available'])
+                self.assertEqual(alice.get('/api/siwc/status').json()['phase'], 'ready')
+                self.assertEqual(bob.get('/api/siwc/status').json()['accounts'], [])
+                token = alice.cookies['kat_session']
+            finally:
+                bob.close()
+        with TestClient(app(), base_url=origin) as restarted:
+            restarted.cookies.set('kat_session', token)
+            self.assertEqual(restarted.get('/api/siwc/status').json()['phase'], 'ready')
+            self.assertEqual(restarted.post('/api/siwc/disconnect', headers={
+                'Origin': origin, 'X-Kat-CSRF': a['csrf']}).json()['remote'],
+                'remote_revocation_unconfirmed')
+            self.assertEqual(restarted.get('/api/siwc/status').json()['phase'],
+                             'reauthorization_required')
+            self.assertFalse(restarted.get('/api/siwc/status').json()['connected'])
+            self.assertEqual(transport.calls, ['refresh_token', 'revoke'])
+            self.assertEqual(restarted.post('/auth/chatgpt/start', headers={'Origin': origin}).status_code, 404)
 
     def test_workspace_login_requires_origin_and_csrf_and_can_reconnect(self):
         with self.client() as client:
