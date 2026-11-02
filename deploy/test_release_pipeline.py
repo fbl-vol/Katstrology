@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from deploy import release_pipeline as pipeline
+from deploy import release_access
 from deploy import release_remote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -456,21 +457,22 @@ class ReleasePlanTests(unittest.TestCase):
             archive.write_bytes(b'synthetic image')
             result = Path(directory) / 'result.json'
             steps = []
-            def fake_remote(_alias, request):
+            def fake_remote(_alias, request, upload=None):
+                self.assertEqual(set(request), {'action', 'plan'} | ({'bytes'} if upload else set()))
+                if upload:
+                    self.assertEqual(upload, archive)
+                    self.assertEqual(request['bytes'], archive.stat().st_size)
                 steps.append(request['action'])
                 return {'status': 'ok', **({'assets': assets} if request['action'] == 'verify_serving_path' else {})}
             with patch.object(pipeline, 'remote', side_effect=fake_remote), \
-                 patch.object(pipeline.subprocess, 'run') as scp, \
                  patch.object(pipeline, 'verify_public') as public:
                 pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
                 public.assert_called_once_with(target['origin'], assets)
-                scp.assert_called_once()
-            self.assertEqual(steps, ['stage', 'compose', 'preflight', 'quiesce_and_snapshot',
+            self.assertEqual(steps, ['stage', 'upload', 'compose', 'preflight', 'quiesce_and_snapshot',
                                      'activate_app_only', 'verify_serving_path'])
             self.assertEqual(json.loads(result.read_text())['status'], 'verified')
             result.unlink()
             with patch.object(pipeline, 'remote', side_effect=fake_remote), \
-                 patch.object(pipeline.subprocess, 'run'), \
                  patch.object(pipeline, 'verify_public', side_effect=ValueError('synthetic bad TLS')):
                 with self.assertRaisesRegex(RuntimeError, 'halted'):
                     pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
@@ -482,9 +484,15 @@ class ReleasePlanTests(unittest.TestCase):
             stage, snapshot = Path(directory) / 'stage', Path(directory) / 'snapshot'
             snapshot.mkdir()
             target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': str(snapshot)}
-            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
-                    'schema_version': 22, 'artifact': {'config_digest': 'sha256:' + 'b' * 64,
-                    'image_archive_sha256': sha256(b'image').hexdigest(), 'commit': 'c' * 40}}
+            compose_file = Path(directory) / 'protected-compose.yaml'
+            compose_file.write_text('synthetic compose')
+            receipt = {'commit': 'c' * 40, 'tree': 'd' * 40, 'image_id': 'sha256:' + 'f' * 64,
+                       'config_digest': 'sha256:' + 'b' * 64,
+                       'image_archive_sha256': sha256(b'image').hexdigest(),
+                       'source_offer_sha256': 'e' * 64}
+            plan = pipeline.plan(receipt, target, 22, compose_file.read_bytes())
+            policy = {'target': target, 'approved_plan_sha256': plan['plan_sha256'],
+                      'schema_version': 22, 'compose_file': str(compose_file), 'max_archive_bytes': 1024}
             config = effective_config(target, plan['artifact']['config_digest'])
             running = True
             image = 'sha256:' + 'd' * 64
@@ -518,7 +526,7 @@ class ReleasePlanTests(unittest.TestCase):
                     return ''
                 if 'run' in argv:
                     self.assertFalse(running)
-                    folder = snapshot / ('snapshot-' + 'a' * 16)
+                    folder = snapshot / ('snapshot-' + plan['plan_sha256'][:16])
                     folder.mkdir()
                     (folder / 'manifest.json').write_text(json.dumps({'schema_version': 22,
                         'journal_prefix_sha256': 'f' * 64}))
@@ -546,14 +554,14 @@ class ReleasePlanTests(unittest.TestCase):
                 info = original_stat(path, *args, **kwargs)
                 return SimpleNamespace(st_mode=info.st_mode, st_uid=10001) if path == snapshot else info
             with patch.object(Path, 'stat', app_owned), patch.object(release_remote, 'run', side_effect=docker), \
-                 patch.object(release_remote, 'build_opener', return_value=Opener()):
+                 patch.object(release_remote, 'build_opener', return_value=Opener()), \
+                 patch.object(release_access, 'protected', side_effect=lambda path: Path(path)):
                 def phase(action, **extra):
-                    with patch.object(release_remote, 'REQUEST', {'action': action,
-                             'target': target, 'plan': plan, **extra}, create=True):
-                        release_remote.main()
+                    return release_access.dispatch({'action': action, 'plan': plan, **extra},
+                                                   policy, BytesIO(b'image' if action == 'upload' else b''))
                 phase('stage')
-                (stage / 'image.tar').write_bytes(b'image')
-                phase('compose', compose='synthetic compose')
+                phase('upload', bytes=5)
+                phase('compose')
                 for action in ('preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'):
                     phase(action)
             self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'local_verified')

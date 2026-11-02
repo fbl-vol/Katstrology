@@ -1,0 +1,17 @@
+{
+  "target": {
+    "ssh_alias": "example-restricted-kat-key",
+    "project": "kat-example",
+    "stage": "/srv/kat-example/releases/attempt-unique-opaque",
+    "password_file": "/srv/kat-example/secrets/db-password",
+    "ephemeris_dir": "/srv/kat-example/ephe",
+    "snapshot_dir": "/srv/kat-example/snapshots",
+    "origin": "https://example.invalid",
+    "loopback_port": 28765,
+    "db_image": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "compose_file": "/etc/kat-release/compose.yaml",
+  "approved_plan_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "schema_version": 22,
+  "max_archive_bytes": 2147483648
+}

@@ -114,26 +114,40 @@ def plan(receipt, target, schema, compose):
              'target_sha256': sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()}
     identity = {key: receipt[key] for key in ('commit', 'tree', 'image_id', 'config_digest',
                 'image_archive_sha256', 'source_offer_sha256')}
-    content = {'contract': 1, 'target': scope, 'artifact': identity, 'schema_version': schema,
+    content = {'contract': 2, 'target': scope, 'artifact': identity, 'schema_version': schema,
                'compose_sha256': sha256(compose).hexdigest(),
                'runner_sha256': digest(Path(__file__)),
                'remote_runner_sha256': digest(Path(__file__).with_name('release_remote.py')),
-               'steps': ['stage', 'preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'],
+               'access_helper_sha256': digest(Path(__file__).with_name('release_access.py')),
+               'steps': ['stage', 'upload', 'compose', 'preflight', 'quiesce_and_snapshot',
+                         'activate_app_only', 'verify_serving_path'],
                'on_ambiguity': 'halt_without_retry_or_database_restore'}
     content['plan_sha256'] = sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return content
 
 
-def remote(alias, request):
-    # Run only fixed, versioned remote code. The request has no secret values.
-    source = (Path(__file__).with_name('release_remote.py')).read_text()
-    program = 'REQUEST = ' + repr(request) + '\n' + source
-    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-                             '-o', 'ConnectTimeout=10', alias, 'python3', '-'], input=program, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=180)
-    if result.returncode:
-        raise RuntimeError('Remote phase failed; inspect server-side state before any new attempt')
-    return json.loads(result.stdout)
+def remote(alias, request, upload=None):
+    """Only the fixed OpenSSH command; stdin is JSON followed by bounded archive bytes."""
+    command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+               '-o', 'ConnectTimeout=10', alias, 'kat-release-v1']
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL) as process:
+        try:
+            process.stdin.write(json.dumps(request, separators=(',', ':')).encode() + b'\n')
+            if upload is not None:
+                with upload.open('rb') as archive:
+                    while block := archive.read(1024 * 1024):
+                        process.stdin.write(block)
+            process.stdin.close()
+            process.stdin = None
+            output, _ = process.communicate(timeout=600 if upload is not None else 180)
+        except (Exception, KeyboardInterrupt):
+            process.kill()
+            process.wait()
+            raise
+        if process.returncode or len(output) > 16384:
+            raise RuntimeError('Restricted remote phase failed; inspect protected stage before another attempt')
+    return json.loads(output)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -192,16 +206,12 @@ def execute(receipt, archive, compose, target, planned, approval, receipt_path):
         os.close(directory)
     alias = target['ssh_alias']
     try:
-        remote(alias, {'action': 'stage', 'target': target, 'plan': planned})
-        stage = target['stage']
-        for source, name in ((archive, 'image.tar'),):
-            subprocess.run(['scp', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-                            str(source), f'{alias}:{stage}/{name}'],
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
-        # Compose is from the verified immutable source offer, not this mutable checkout.
-        remote(alias, {'action': 'compose', 'target': target, 'plan': planned, 'compose': compose.decode()})
+        remote(alias, {'action': 'stage', 'plan': planned})
+        remote(alias, {'action': 'upload', 'plan': planned, 'bytes': archive.stat().st_size}, upload=archive)
+        # Installed root-protected template, never client-supplied Compose or Python.
+        remote(alias, {'action': 'compose', 'plan': planned})
         for phase in ('preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'):
-            observed = remote(alias, {'action': phase, 'target': target, 'plan': planned})
+            observed = remote(alias, {'action': phase, 'plan': planned})
             if observed['status'] == 'recovered_old_app':
                 receipt_path.write_text(json.dumps({'plan_sha256': planned['plan_sha256'],
                     'status': 'recovered_old_app; release not activated'}) + '\n')

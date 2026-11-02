@@ -53,6 +53,11 @@ The default without `--execute` is a plan. This is not host activation.
 
 ## Existing-instance app-only release pipeline (source tooling; not authorization)
 
+**The earlier b05e033 production release is complete**, but used the approved
+existing interactive session, not this runner. This replacement SSH transport is
+**uninstalled source only**. Never infer that a usable restricted key, helper or
+server policy exists from a local test or publication of this source.
+
 `release_pipeline.py` is for a **previously installed and running instance of this
 exact Compose project**, not initial installation, host provisioning, Caddy route
 changes or the frozen release being coordinated elsewhere. Plan mode has no SSH,
@@ -72,10 +77,11 @@ or the source template RepoDigest), `snapshot_dir` (pre-existing independent
 `/srv/...` directory owned by app UID 10001, distinct from staging and all serving
 volumes), `origin`
 (exact HTTPS deployment origin) and `loopback_port` (the existing loopback host
-port). The server must already have the correct image-platform runtime, Compose,
-Docker permissions and an SSH public key installed for the configured alias.
-Setting up that SSH key and checking the server baseline are separate prerequisites;
-this tool neither installs keys nor prompts for passwords. Do not put secret values
+port). The server must already have the correct image-platform runtime and Compose.
+For this new runner, a **separately approved** root-owned forced-command helper,
+protected Compose template/policy, and restricted SSH key must be installed as
+described below; there is no fallback to a general root key, Docker group or
+interactive shell. This source does not install keys or prompt for passwords. Do not put secret values
 in the target file. The target's *paths* stay private and are represented by a
 hash in the plan and final sanitized receipt.
 
@@ -93,8 +99,13 @@ python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <s
 ```
 
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
-receipt refuses replay. It stages the approved archive via the SSH alias and
-writes a stage-local DB-image-only Compose override from the approved installed
+receipt refuses replay. Its only SSH command is `kat-release-v1` with `-T`,
+BatchMode and strict host-key checking. Stdin is one bounded JSON request line,
+with the archive bytes framed only for `upload`; no SCP, SFTP, supplied Python,
+remote command string, client-selected path, environment or Compose is sent.
+The installed helper stages the archive only at the **root-protected policy's**
+fixed absent stage path and uses the root-owned protected Compose template. It
+writes a stage-local DB-image-only override from the installed policy's immutable
 `db_image`, without pulling/retagging/recreating the DB. A source template registry
 alias may not exist after archive import; the installed config ID must exist and
 match the unchanged DB container. It checks the resulting effective Compose
@@ -115,8 +126,49 @@ receipt at `app_activated_local_verified_public_incomplete`: inspect the edge,
 do not claim success or replay the app activation. No DB rollback, data copy,
 credential import, edge route change, source publication or provider request is
 performed. HTTP checks do not replace human usability or Android device install.
-The SSH key, Docker permissions, app-owned snapshot path and a reachable public
-TLS origin remain actual execution prerequisites, not established by local tests.
+The key, protected helper/policy/template, app-owned snapshot path and a reachable
+public TLS origin remain actual execution prerequisites, not established by local
+tests. The authorized Kat app image executes as Kat UID 10001 and necessarily can
+access Kat data and Kat credentials; **that is not authority over unrelated host
+services, a general root shell, Docker commands or credential browsing**.
+
+### Restricted server-side access contract (source only; no installation)
+
+`release_access.py` is a **root-owned installed** forced-command entry point; it
+loads `/etc/kat-release/policy.json` (see generic
+`release_access_policy.example.json`) and a root-owned Compose template, checking
+all ancestor ownership/modes. The protected target fixes the exact Kat project,
+absent attempt stage, snapshot destination, secret/ephemeris references, immutable
+installed DB image, origin and loopback port. The policy also fixes the exact
+approved plan SHA-256, schema and maximum image archive size; it must be updated
+under a new scoped approval for a new release. Its target fields must match the
+local target file byte-for-byte in the plan hash; the SSH alias is merely a local
+connection name, never a server command. The protected template SHA and the installed helper/phase-code SHA must equal
+the approved plan's pinned source bytes, or the forced command refuses before
+loading/stopping. Protocol contract 2 deliberately cannot replay a contract-1 plan.
+Policy and code must be root-owned and not writable through group, others or any
+symlink ancestor. The fixed stage parent must be root-owned; the attempt stage is
+created exclusively and upload refuses replay/symlink/truncated/extra bytes.
+
+For a *future separately approved* installation, use native OpenSSH
+`authorized_keys` key options of this exact shape, with a separately generated
+public key replacing the placeholder and executable root-owned helper files:
+
+```
+restrict,command="/usr/bin/python3 -I /usr/local/libexec/kat-release/deploy/release_access.py" ssh-ed25519 <APP-RELEASE-PUBLIC-KEY> kat-app-release
+```
+
+Keep the full helper tree `/usr/local/libexec/kat-release/deploy/` and `/etc/kat-release/`
+root-owned, non-writable to the key holder and symlink-free. `restrict` denies PTY,
+agent/X11/port forwarding and user rc; the forced command rejects every original
+SSH command except `kat-release-v1`, including shell, Python, SCP and SFTP requests.
+The installed code runs under root solely to perform its **fixed** Kat app lifecycle
+through Docker; it is not permission to grant a `docker` group, unrestricted sudo,
+arbitrary helper subcommands or a root login. Do not enable agent-/port-forwarding,
+SFTP, PermitUserEnvironment or host/user-specific overrides that bypass the forced
+command. The private key, root-owned policy/template and SSH configuration are
+separate installation decisions, not shipped or created here. No keys, secrets or
+private server paths belong in Git or in receipts.
 
 On timeout, partial upload, backup failure, or ambiguous `up`, **halt**: the
 private stage's `phase.json`, `previous-image` and `previous-container` identify

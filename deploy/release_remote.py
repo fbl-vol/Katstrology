@@ -1,6 +1,7 @@
-"""Fixed SSH-side phases for release_pipeline.py; never invoke directly on a serving host.
+"""Fixed app-only phases, callable solely by installed release_access forced command.
 
-REQUEST is injected by the local gated runner. No secrets or raw responses are emitted.
+The trusted server policy supplies REQUEST after forced-command validation; never
+execute this module with client-provided Python or a writable Compose template.
 """
 
 import hashlib
@@ -10,13 +11,17 @@ from pathlib import Path
 import re
 import stat
 import subprocess
-import sys
 from urllib.error import HTTPError
 from urllib.request import Request, ProxyHandler, build_opener
 
 
+SERVER_ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8',
+              'DOCKER_HOST': 'unix:///var/run/docker.sock'}
+
+
 def run(*args, env=None, input=None, timeout=120):
-    return subprocess.check_output(args, env=env, input=input, text=True,
+    return subprocess.check_output(args, env=SERVER_ENV if env is None else env,
+                                   input=input, text=True,
                                    stderr=subprocess.DEVNULL, timeout=timeout).strip()
 
 
@@ -97,7 +102,7 @@ def main():
     # OCI index identity is not the Docker runtime image ID; Compose pins config.
     image = planned['artifact']['config_digest']
     project = target['project']
-    environment = {**os.environ, 'KAT_APP_IMAGE': image,
+    environment = {**SERVER_ENV, 'KAT_APP_IMAGE': image,
                    'KAT_DB_PASSWORD_FILE': target['password_file'],
                    'KAT_EPHE_DIR': target['ephemeris_dir']}
     compose = ['docker', 'compose', '-f', str(stage / 'compose.yaml'),
@@ -219,8 +224,7 @@ def main():
             if restored['Image'] != previous_image or not restored['State']['Running']:
                 raise RuntimeError('Old app restart unconfirmed')
             advance('quiescing', 'recovered_old_app')
-            print(json.dumps({'phase': action, 'status': 'recovered_old_app'}))
-            return
+            return {'phase': action, 'status': 'recovered_old_app'}
         name = 'snapshot-' + planned['plan_sha256'][:16]
         run(*compose, 'run', '--rm', '--no-deps', '-T', '-v',
             str(snapshot_root) + ':/verification', 'app',
@@ -282,16 +286,7 @@ def main():
             if code != 200 or hashlib.sha256(body).hexdigest() != expected:
                 raise ValueError('Served asset differs from packaged image')
         advance('app_started', 'local_verified')
-        print(json.dumps({'phase': action, 'status': 'ok', 'assets': assets}))
-        return
+        return {'phase': action, 'status': 'ok', 'assets': assets}
     else:
         raise ValueError('Unsupported phase')
-    print(json.dumps({'phase': action, 'status': 'ok'}))
-
-
-if __name__ == '__main__':
-    try:
-        main()
-    except BaseException:
-        print('Release phase halted; inspect protected stage; do not retry automatically.', file=sys.stderr)
-        raise SystemExit(1)
+    return {'phase': action, 'status': 'ok'}
