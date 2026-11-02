@@ -3,6 +3,7 @@
 from hashlib import sha256
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
@@ -236,6 +237,23 @@ class ReleasePlanTests(unittest.TestCase):
                             release_remote.main()
                     self.assertFalse(any('load' in call or 'stop' in call for call in calls))
                     self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
+
+    def test_installed_db_override_resolves_in_real_compose_config(self):
+        with TemporaryDirectory() as directory:
+            target = synthetic_target()
+            override = Path(directory) / 'runtime.yaml'
+            override.write_text(release_remote.installed_db_override(target))
+            env = {**os.environ, 'KAT_APP_IMAGE': 'sha256:' + 'b' * 64,
+                   'KAT_DB_PASSWORD_FILE': target['password_file'],
+                   'KAT_EPHE_DIR': target['ephemeris_dir']}
+            output = subprocess.check_output(['docker', 'compose', '-f', str(ROOT / 'deploy/compose.yaml'),
+                '-f', str(override), '-p', target['project'], 'config', '--format', 'json'],
+                env=env, text=True)
+            config = json.loads(output)
+            self.assertEqual(config['services']['db']['image'], target['db_image'])
+            self.assertEqual(config['services']['app']['image'], env['KAT_APP_IMAGE'])
+            self.assertEqual(config['services']['app']['ports'][0]['published'],
+                             str(target['loopback_port']))
 
     def test_installed_db_config_pin_works_without_source_registry_alias(self):
         with TemporaryDirectory() as directory:
