@@ -70,3 +70,87 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await expect(slider).toHaveAttribute('aria-valuetext', /2024-04-01 00:00 UTC/);
   expect(sends).toBe(0);
 });
+
+test('conjunction scrub leaves each moving glyph visible at its linked longitude', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
+    ? route.continue() : route.abort());
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-motion-conjunction');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'A space for someone new.' });
+  await dialog.getByLabel('Name').fill('Synthetic conjunction reader');
+  await dialog.getByRole('button', { name: 'Create person' }).click();
+  const form = page.getByRole('region', { name: 'Generate a chart' });
+  await form.getByLabel('Birth date').fill('2024-03-20');
+  await form.getByLabel('Birth time').fill('04:06');
+  await form.getByLabel('Birthplace search').fill('Copenhagen');
+  await form.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).first().click();
+  await form.getByRole('button', { name: 'Generate chart' }).click();
+  await expect(form.locator('.birth-status')).toContainText('Current natal saved');
+  const panel = page.getByRole('tabpanel', { name: 'Charts' }).locator('.transit-motion');
+  await panel.locator('summary').click();
+  await panel.getByLabel('From (UTC)').fill('2024-04-02');
+  await panel.getByLabel('To (UTC)').fill('2024-04-09');
+  const response = page.waitForResponse(item => item.url().includes('/transit-frames') && item.status() === 200);
+  await panel.getByRole('button', { name: 'Load dated samples' }).click();
+  const frames = await (await response).json() as { bodies: string[]; longitudes: number[][] };
+  expect(frames.longitudes).toHaveLength(673);
+  const slider = panel.getByRole('slider', { name: 'Scrub dated samples' });
+  // Use the native range setter so React receives a real input event at the exact Swiss sample.
+  await slider.evaluate((input: HTMLInputElement) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '648');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(slider).toHaveAttribute('aria-valuetext', '2024-04-08 18:00 UTC');
+  const wheel = panel.locator('svg.natal-wheel');
+  const marks: Record<string, { x: number; y: number }> = {};
+  for (const [body, glyph] of [['sun', '☉'], ['moon', '☽'], ['mercury', '☿']]) {
+    marks[body] = await wheel.locator('text').filter({ hasText: glyph }).last().evaluate(node => {
+      const circle = node.parentElement!.querySelector('circle')!;
+      return { x: Number(circle.getAttribute('cx')), y: Number(circle.getAttribute('cy')) };
+    });
+  }
+  for (const [a, b] of [['sun', 'moon'], ['sun', 'mercury'], ['moon', 'mercury']]) {
+    expect(Math.hypot(marks[a].x - marks[b].x, marks[a].y - marks[b].y), `${a}/${b} label centers`).toBeGreaterThanOrEqual(24);
+  }
+  const allMarks = await wheel.locator('g[data-sky-body] > circle:first-of-type').evaluateAll(circles => circles.map(circle => ({
+    x: Number(circle.getAttribute('cx')), y: Number(circle.getAttribute('cy')),
+  })));
+  expect(allMarks).toHaveLength(frames.bodies.length);
+  for (let i = 0; i < allMarks.length; i++) {
+    for (let j = i + 1; j < allMarks.length; j++) {
+      expect(Math.hypot(allMarks[i].x - allMarks[j].x, allMarks[i].y - allMarks[j].y), `outer glyphs ${i}/${j}`).toBeGreaterThanOrEqual(24);
+    }
+  }
+  for (const body of ['sun', 'moon', 'mercury']) {
+    const root = wheel.locator(`g[data-sky-body="${body}"] line`);
+    const { x, y } = await root.evaluate(line => ({ x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')) }));
+    const degrees = frames.longitudes[648][frames.bodies.indexOf(body)];
+    const radians = Math.PI - degrees * Math.PI / 180;
+    expect(Math.hypot(x - 240 - 156 * Math.cos(radians), y - 240 - 156 * Math.sin(radians)), `${body} Swiss sample link`).toBeLessThan(0.1);
+  }
+
+  mkdirSync(renders, { recursive: true });
+  for (const size of [
+    { name: 'desktop', width: 1440, height: 1024 },
+    { name: 'mobile', width: 390, height: 844 },
+    { name: 'short', width: 390, height: 560 },
+    { name: 'wide', width: 2560, height: 1080 },
+  ]) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await panel.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: resolve(renders, `conjunction-corrected-${size.name}.png`), fullPage: true });
+    await wheel.screenshot({ path: resolve(renders, `conjunction-wheel-${size.name}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width + 1);
+  }
+  await slider.focus(); await page.keyboard.press('Home');
+  await expect(slider).toHaveAttribute('aria-valuetext', '2024-04-02 00:00 UTC');
+  await wheel.screenshot({ path: resolve(renders, 'conjunction-wheel-start.png') });
+  await page.keyboard.press('End');
+  await expect(slider).toHaveAttribute('aria-valuetext', '2024-04-09 00:00 UTC');
+  await wheel.screenshot({ path: resolve(renders, 'conjunction-wheel-end.png') });
+});

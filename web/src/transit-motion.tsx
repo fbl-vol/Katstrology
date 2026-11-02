@@ -21,6 +21,26 @@ function labelTracks(bodies: { id: string; longitude_degrees: number }[]) {
   return tracks;
 }
 
+function skyCallouts(bodies: { id: string; longitude_degrees: number }[]) {
+  const marks = new Map<string, { x: number; y: number }>();
+  for (const body of [...bodies].sort((a, b) => a.longitude_degrees - b.longitude_degrees)) {
+    // Keep the sampled/interpolated longitude on the 156px ring; move only the linked glyph.
+    for (let spread = 0; spread <= 180 && !marks.has(body.id); spread += 10) {
+      for (const offset of spread ? [-spread, spread] : [0]) {
+        for (const radius of [140, 168, 196]) {
+          const spot = point(body.longitude_degrees + offset, 0, radius);
+          if ([...marks.values()].every(mark => Math.hypot(spot.x - mark.x, spot.y - mark.y) >= 24)) {
+            marks.set(body.id, spot);
+            break;
+          }
+        }
+        if (marks.has(body.id)) break;
+      }
+    }
+  }
+  return marks;
+}
+
 function MotionWheel({ chart, motion, frame }: { chart: Chart; motion: Motion; frame: number }) {
   const natal = chart.result.natal!;
   const index = Math.min(Math.floor(frame), motion.longitudes.length - 2);
@@ -30,9 +50,7 @@ function MotionWheel({ chart, motion, frame }: { chart: Chart; motion: Motion; f
     return { id: body, longitude_degrees: (from + ((to - from + 540) % 360 - 180) * fraction + 360) % 360 };
   });
   const natalTracks = labelTracks(natal.positions);
-  // Fix each transiting label's track for the entire playback; no jumping lanes.
-  const skyTracks = labelTracks(motion.bodies.map((id, i) => ({ id,
-    longitude_degrees: motion.longitudes[0][i] })));
+  const skyMarks = skyCallouts(positions);
   const timestamp = new Date(Date.parse(motion.start_utc) + frame * motion.step_seconds * 1000);
   const time = timestamp.toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short',
     year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -41,22 +59,28 @@ function MotionWheel({ chart, motion, frame }: { chart: Chart; motion: Motion; f
     <div className="natal-wheel-scroll"><svg className="natal-wheel" viewBox="0 0 480 480" role="img"
       aria-labelledby={`${id}-title ${id}-desc`}>
       <title id={`${id}-title`}>Sampled transiting planets around the fixed natal chart at {time} UTC</title>
-      <desc id={`${id}-desc`}>{motion.qualification} Outer marks are transiting planets; inner marks are natal positions. Exact positions require the dated transit view.</desc>
+      <desc id={`${id}-desc`}>{motion.qualification} Outer glyphs are transiting planets; their lines lead to the shown longitude on the middle ring. Glyphs may shift to avoid overlaps. Inner marks are natal positions. Exact positions require the dated transit view.</desc>
       <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />
       {[190, 156, 106, 71].map(radius => <circle key={radius} cx="240" cy="240" r={radius}
         fill="none" stroke="var(--wheel-ring, #b9c9b8)" />)}
-      {signs.map((sign, i) => { const spot = point(i * 30 + 15, 0, 205);
+      {signs.map((sign, i) => { const spot = point(i * 30 + 15, 0, 223);
         return <text key={sign} x={spot.x} y={spot.y} textAnchor="middle" dominantBaseline="middle"
           fontSize="11" fill="var(--wheel-ink, #425e49)">{sign.slice(0, 3)}</text>; })}
       {natal.positions.map(body => { const spot = point(body.longitude_degrees, 0, 78 + (natalTracks.get(body.id) || 0));
         return <g key={`natal-${body.id}`}><circle cx={spot.x} cy={spot.y} r="11" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-natal, #a16134)" />
           <text x={spot.x} y={spot.y} textAnchor="middle" dominantBaseline="middle" fontSize="15"
             fill="var(--wheel-natal, #a16134)">{bodyGlyph(body.id) || body.id.slice(0, 2)}</text></g>; })}
-      {positions.map(body => { const spot = point(body.longitude_degrees, 0, 140 + (skyTracks.get(body.id) || 0));
-        return <g key={`sky-${body.id}`}><circle cx={spot.x} cy={spot.y} r="11" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-sky, #245b4e)" />
+      {positions.map(body => { const spot = skyMarks.get(body.id)!;
+        const anchor = point(body.longitude_degrees, 0, 156);
+        return <g key={`sky-${body.id}`} data-sky-body={body.id}>
+          <line x1={anchor.x} y1={anchor.y} x2={spot.x} y2={spot.y}
+            stroke="var(--wheel-sky, #245b4e)" strokeWidth="1" />
+          <circle cx={spot.x} cy={spot.y} r="11" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-sky, #245b4e)" />
           <text x={spot.x} y={spot.y} textAnchor="middle" dominantBaseline="middle" fontSize="15"
-            fill="var(--wheel-sky, #245b4e)">{bodyGlyph(body.id) || body.id.slice(0, 2)}</text></g>; })}
-    </svg></div><p className="natal-qualification">Outer ring: {positions.map(body => bodyLabel(body.id)).join(', ')}. Inner ring: saved natal positions. No aspect events, sky houses or exact intermediate positions are claimed.</p>
+            fill="var(--wheel-sky, #245b4e)">{bodyGlyph(body.id) || body.id.slice(0, 2)}</text>
+          <circle cx={anchor.x} cy={anchor.y} r="2" fill="var(--wheel-sky, #245b4e)" />
+        </g>; })}
+    </svg></div><p className="natal-qualification">Outer glyphs: {positions.map(body => bodyLabel(body.id)).join(', ')}. Each line links a glyph to its longitude on the middle ring; glyphs may shift to stay readable. Inner ring: saved natal positions. No aspect events, sky houses or exact intermediate positions are claimed.</p>
   </div>;
 }
 
