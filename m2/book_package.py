@@ -19,6 +19,7 @@ MAX_MANIFEST = 8 * 1024 * 1024
 MAX_PASSAGES = 512
 MAX_LEAVES = 1024
 MAX_PASSAGE_CHARS = 3000
+MAX_BOOK_PASSAGE_BYTES = 16 * 1024
 VERSION = 1
 
 
@@ -143,6 +144,10 @@ def prepare(source_path, leaves_path, metadata_path, output_root, *, _verify=Tru
         locations = [page for page in pages if page['start'] < end and page['end'] > start]
         if not locations:
             raise ValueError('Passage has no source location')
+        content = normalized[start:end]
+        encoded = content.encode('utf-8')
+        if len(encoded) > MAX_BOOK_PASSAGE_BYTES:
+            raise ValueError('Book passage exceeds UTF-8 byte bound')
         first = locations[0]
         parent = (first['parent_section'] if all(p['parent_section'] == first['parent_section']
                                                  for p in locations) else 'mixed_sections')
@@ -153,8 +158,8 @@ def prepare(source_path, leaves_path, metadata_path, output_root, *, _verify=Tru
                   else 'not_reviewed' if any(p['review_status'] == 'not_reviewed' for p in locations)
                   else 'sampled')
         passages.append({'id': f'p-{start:07d}', 'ordinal': len(passages),
-                         'start': start, 'end': end, 'content': normalized[start:end],
-                         'content_sha256': digest(normalized[start:end].encode()),
+                         'start': start, 'end': end, 'content': content,
+                         'content_sha256': digest(encoded),
                          'section': first['section'], 'parent_section': parent,
                          'page_start': first['page'], 'page_end': locations[-1]['page'],
                          'printed_page_start': first['printed_page'],

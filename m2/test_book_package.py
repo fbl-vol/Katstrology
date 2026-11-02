@@ -295,6 +295,89 @@ class PackageTests(DatabaseCase):
         self.assertIsNone(self.store.db.execute('''SELECT 1 FROM reference_sources
             WHERE owner_id='alice' AND id=%s''', (metadata['source_id'],)).fetchone())
 
+    def test_symbol_rich_and_four_byte_book_passages_import_and_read(self):
+        root = Path(self.directory.name)
+        raw, leaves, metadata, _, record = fixture(root)
+        refs = References(self.store)
+        for label, text in (
+                ('symbols', 'Synthetic planetary table\n' + '☉ ♄ ♃ ♀ ' * 350),
+                ('four-byte', '🌙' * 3000)):
+            with self.subTest(label=label):
+                record['processing_revision'] = label
+                metadata.write_text(json.dumps(record))
+                leaves.write_text(json.dumps([dict(
+                    text=text, page=1, printed_page=1, source_locator=label,
+                    section='Synthetic symbols', parent_section='Synthetic observations',
+                    extraction_status='unverified_transcription', review_status='not_reviewed')],
+                    ensure_ascii=False))
+                package = prepare(raw, leaves, metadata, root / 'packages')
+                manifest = validate(package)
+                first = manifest['passages'][0]
+                self.assertLessEqual(len(first['content']), 3000)
+                self.assertGreater(len(first['content'].encode('utf-8')), 4096)
+                self.assertLessEqual(len(first['content'].encode('utf-8')), 16384)
+                self.assertEqual(''.join(p['content'] for p in manifest['passages']), text + '\n\n')
+                source = refs.import_book_package(self.alice, package)['source_id']
+                self.assertTrue(refs.import_book_package(self.alice, package)['already_imported'])
+                self.assertEqual(refs.get_passage(self.alice, source, first['id'])['approval'],
+                                 'not_kat_selected')
+                verify_reference_contents(self.store)
+                with self.assertRaises(PermissionError):
+                    refs.readable_passage(self.alice, source, first['id'])
+                with self.assertRaises(KeyError):
+                    refs.get_passage(self.bob, source, first['id'])
+                refs.select(self.alice, source)  # synthetic only; no real corpus selected
+                read = execute(self.store, self.alice, 'get_reference_passage', {
+                    'source_id': source, 'passage_id': first['id']}, set())
+                self.assertEqual(read['content'], first['content'][:1800])
+                self.assertEqual(read['next_offset'], 1800)
+                following = execute(self.store, self.alice, 'get_reference_passage', {
+                    'source_id': source, 'passage_id': first['id'], 'offset': 1800}, set())
+                self.assertEqual(read['content'] + following['content'], first['content'])
+                self.assertEqual(read['content_sha256'], sha256(first['content'].encode()).hexdigest())
+
+    def test_book_only_byte_ceiling_and_legacy_four_kib_remain(self):
+        root = Path(self.directory.name)
+        raw, leaves, metadata, _, _ = fixture(root)
+        leaves.write_text(json.dumps([dict(
+            text='🌙' * 4096, page=1, printed_page=1,
+            source_locator='fixture', section='Symbols', parent_section='Fixture',
+            extraction_status='unverified_transcription', review_status='not_reviewed')]))
+        refs = References(self.store)
+        source = refs.import_book_package(self.alice, prepare(raw, leaves, metadata,
+                                                               root / 'packages'))['source_id']
+        before = self.store.db.execute('''SELECT count(*) AS n FROM reference_passages
+            WHERE owner_id='alice' AND source_id=%s''', (source,)).fetchone()['n']
+        # Probe the service byte boundary with a contiguous source span, then
+        # remove the synthetic probe row; normal packages still chunk at 3000 chars.
+        with self.store.db.transaction():
+            refs.add_passage(self.alice, source, 'exact-book-ceiling', 'Symbols', '🌙' * 4096)
+            self.assertEqual(refs.get_passage(self.alice, source, 'exact-book-ceiling')['content'],
+                             '🌙' * 4096)
+            self.store.db.execute('''DELETE FROM reference_passages
+                WHERE owner_id='alice' AND source_id=%s AND id='exact-book-ceiling' ''', (source,))
+        with self.assertRaisesRegex(ValueError, 'Invalid or oversized text'):
+            refs.add_passage(self.alice, source, 'too-large-book', 'Symbols', '🌙' * 4097)
+        self.assertEqual(self.store.db.execute('''SELECT count(*) AS n FROM reference_passages
+            WHERE owner_id='alice' AND source_id=%s''', (source,)).fetchone()['n'], before)
+        verify_reference_contents(self.store)
+        legacy = dict(source_id='legacy-four-kib', author='Synthetic author', title='Synthetic text',
+                      edition='Unverified', tradition='fixture', technique='text',
+                      provenance='Local authored fixture', rights_evidence='Synthetic fixture',
+                      rights_basis='synthetic_fixture', language='en', source_url=None,
+                      extraction_note='No OCR', supersedes_source_id=None)
+        exactly_four_kib = '🌙' * 1024
+        refs.ingest_edition(self.alice, legacy, exactly_four_kib,
+            [{'id': 'p', 'section': 'Synthetic', 'content': exactly_four_kib}])
+        self.assertEqual(refs.get_passage(self.alice, 'legacy-four-kib', 'p')['content'],
+                         exactly_four_kib)
+        legacy['source_id'] = 'legacy-exceeds-four-kib'
+        with self.assertRaisesRegex(ValueError, 'Invalid or oversized text'):
+            refs.ingest_edition(self.alice, legacy, exactly_four_kib + '🌙',
+                [{'id': 'p', 'section': 'Synthetic', 'content': exactly_four_kib + '🌙'}])
+        self.assertIsNone(self.store.db.execute('''SELECT 1 FROM reference_sources
+            WHERE owner_id='alice' AND id=%s''', (legacy['source_id'],)).fetchone())
+
     def test_book_bytes_and_old_backup_remain_revoked(self):
         root = Path(self.directory.name)
         raw, leaves, metadata, _, _ = fixture(root)

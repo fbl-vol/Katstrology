@@ -80,13 +80,16 @@ class References:
         self.store._id(source_id)
         self.store._id(passage_id)
         self.store._text(section, 256)
-        self.store._text(content, 4096)
-        digest = sha256(content.encode('utf-8')).hexdigest()
         source = self.store.db.execute('''
-            SELECT approval FROM reference_sources WHERE owner_id=%s AND id=%s
+            SELECT s.approval,b.source_id IS NOT NULL AS book_package
+            FROM reference_sources s LEFT JOIN reference_book_sources b
+              ON (b.owner_id=s.owner_id AND b.source_id=s.id)
+            WHERE s.owner_id=%s AND s.id=%s
         ''', (owner, source_id)).fetchone()
         if not source or source['approval'] != 'not_kat_selected':
             raise ValueError('Passages can only be added to an unselected source edition')
+        self.store._text(content, book_package.MAX_BOOK_PASSAGE_BYTES if source['book_package'] else 4096)
+        digest = sha256(content.encode('utf-8')).hexdigest()
         original = self.store.db.execute('''
             SELECT original_text FROM reference_originals WHERE owner_id=%s AND source_id=%s
         ''', (owner, source_id)).fetchone()
