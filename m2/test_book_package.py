@@ -18,6 +18,7 @@ from m2.provider_model import ResponsesModel
 from m2.test_agent_reads import FakeBridge, ScriptedTransport
 from m2.tool_evidence import MAX_MODEL_EVIDENCE_BYTES
 
+from m2 import book_package
 from m2.book_package import prepare, validate
 from m2.references import References
 from m2.evidence import search_evidence
@@ -89,6 +90,7 @@ class PackageTests(DatabaseCase):
         self.assertEqual(read['end_offset'], last['end'])
         self.assertEqual(read['neighbors']['previous'], manifest['passages'][-2]['id'])
         crossing = next(p for p in manifest['passages'] if p['page_end'] > p['page_start'])
+        self.assertEqual(crossing['parent_section'], 'Synthetic observations')
         self.assertEqual(refs.get_passage(self.alice, source, crossing['id'])['content'],
                          text[crossing['start']:crossing['end']])
         with self.assertRaises(KeyError):
@@ -171,6 +173,127 @@ class PackageTests(DatabaseCase):
         with self.assertRaises(ValueError):
             prepare(raw, leaves, metadata, root / 'packages')
         self.assertEqual(validate(package)['source_id'], original_id)
+
+    def test_noncanonical_transcript_rejected_before_any_db_write(self):
+        root = Path(self.directory.name)
+        package = prepare(*fixture(root)[:3], root / 'packages')
+        transcript = package / 'transcript.json'
+        transcript.write_text(json.dumps(json.loads(transcript.read_text()),
+                                         ensure_ascii=False, indent=2), encoding='utf-8')
+        source_id = json.loads((package / 'manifest.json').read_text())['source_id']
+        with self.assertRaisesRegex(ValueError, 'canonical'):
+            References(self.store).import_book_package(self.alice, package)
+        self.assertIsNone(self.store.db.execute('''SELECT 1 FROM reference_sources
+            WHERE owner_id='alice' AND id=%s''', (source_id,)).fetchone())
+
+    def test_import_uses_validated_bytes_even_if_input_changes_during_read(self):
+        root = Path(self.directory.name)
+        package = prepare(*fixture(root)[:3], root / 'packages')
+        original = (package / 'source.bin').read_bytes()
+        bounded_file = book_package.bounded_file
+        changed = False
+
+        def replace_after_first_read(path, limit):
+            nonlocal changed
+            content = bounded_file(path, limit)
+            if not changed and Path(path) == package / 'source.bin':
+                changed = True
+                (package / 'source.bin').write_bytes(b'controlled changed raw')
+            return content
+
+        with patch.object(book_package, 'bounded_file', side_effect=replace_after_first_read):
+            source_id = References(self.store).import_book_package(self.alice, package)['source_id']
+        self.assertTrue(changed)
+        saved = self.store.db.execute('''SELECT raw_source FROM reference_book_sources
+            WHERE owner_id='alice' AND source_id=%s''', (source_id,)).fetchone()
+        self.assertEqual(bytes(saved['raw_source']), original)
+        verify_reference_contents(self.store)
+
+    def test_transcript_and_normalized_changes_cannot_escape_validated_snapshot(self):
+        root = Path(self.directory.name)
+        raw, leaves, metadata, _, record = fixture(root)
+        refs = References(self.store)
+        for filename, column in (('transcript.json', 'transcript'),
+                                 ('normalized.txt', 'original_text')):
+            with self.subTest(filename=filename):
+                record['processing_revision'] = filename
+                metadata.write_text(json.dumps(record))
+                package = prepare(raw, leaves, metadata, root / 'packages')
+                original = (package / filename).read_bytes()
+                bounded_file = book_package.bounded_file
+                changed = False
+
+                def replace_after_read(path, limit):
+                    nonlocal changed
+                    content = bounded_file(path, limit)
+                    if not changed and Path(path) == package / filename:
+                        changed = True
+                        (package / filename).write_bytes(b'changed after validated read')
+                    return content
+
+                with patch.object(book_package, 'bounded_file', side_effect=replace_after_read):
+                    source_id = refs.import_book_package(self.alice, package)['source_id']
+                self.assertTrue(changed)
+                saved = self.store.db.execute('''
+                    SELECT b.transcript,o.original_text FROM reference_book_sources b
+                    JOIN reference_originals o USING (owner_id,source_id)
+                    WHERE b.owner_id='alice' AND b.source_id=%s
+                ''', (source_id,)).fetchone()
+                self.assertEqual(bytes(saved[column]) if column == 'transcript' else
+                                 saved[column].encode('utf-8'), original)
+                verify_reference_contents(self.store)
+
+    def test_mixed_parent_leaves_never_advertise_false_neighbors(self):
+        root = Path(self.directory.name)
+        raw, leaves, metadata, _, _ = fixture(root)
+        rows = [dict(text=chr(65 + i) * 900, page=i + 1, printed_page=i + 1,
+                     source_locator=f'leaf {i}', section=f'section-{i}',
+                     parent_section=f'parent-{i}', extraction_status='unverified_transcription',
+                     review_status='not_reviewed') for i in range(8)]
+        leaves.write_text(json.dumps(rows))
+        package = prepare(raw, leaves, metadata, root / 'packages')
+        manifest = validate(package)
+        self.assertEqual(''.join(item['content'] for item in manifest['passages']),
+                         ''.join(leaf['text'] + '\n\n' for leaf in rows))
+        refs = References(self.store)
+        source = refs.import_book_package(self.alice, package)['source_id']
+        refs.select(self.alice, source)
+        for passage in manifest['passages']:
+            self.assertNotEqual(passage['parent_section'], 'mixed_sections')
+            self.assertEqual(refs.readable_passage(self.alice, source, passage['id'])['neighbors'],
+                             {'previous': None, 'next': None})
+        for leaf in rows:
+            leaf['parent_section'] = 'shared-parent'
+        leaves.write_text(json.dumps(rows))
+        same_parent = prepare(raw, leaves, metadata, root / 'packages')
+        new_manifest = validate(same_parent)
+        new_source = refs.import_book_package(self.alice, same_parent)['source_id']
+        refs.select(self.alice, new_source)
+        for passage in new_manifest['passages']:
+            self.assertEqual(refs.readable_passage(self.alice, new_source, passage['id'])['neighbors'],
+                             {'previous': None, 'next': None})
+
+    def test_legacy_file_import_retains_64_passage_admission(self):
+        root = Path(self.directory.name)
+        _, _, _, _, metadata = fixture(root)
+        metadata.pop('processing_revision')
+        metadata['source_id'] = 'synthetic-legacy-cap'
+        original = root / 'small-original.txt'
+        original.write_text('sample')
+        path = root / 'small-manifest.json'
+        refs = References(self.store)
+        metadata['passages'] = [{'id': f'p-{i}', 'section': 'Synthetic', 'content': 'sample'}
+                                for i in range(64)]
+        path.write_text(json.dumps(metadata))
+        self.assertFalse(refs.import_text_file(self.alice, path, original)['already_imported'])
+        metadata['source_id'] = 'synthetic-over-legacy-cap'
+        metadata['passages'].append({'id': 'p-64', 'section': 'Synthetic', 'content': 'sample'})
+        path.write_text(json.dumps(metadata))
+        self.assertLess(path.stat().st_size, 32768)
+        with self.assertRaisesRegex(ValueError, '1..64'):
+            refs.import_text_file(self.alice, path, original)
+        self.assertIsNone(self.store.db.execute('''SELECT 1 FROM reference_sources
+            WHERE owner_id='alice' AND id=%s''', (metadata['source_id'],)).fetchone())
 
     def test_book_bytes_and_old_backup_remain_revoked(self):
         root = Path(self.directory.name)

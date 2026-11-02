@@ -122,14 +122,14 @@ class References:
         if not row:
             raise KeyError('Passage not found')
         row['neighbors'] = {'previous': None, 'next': None}
-        if row['ordinal'] is not None:
+        if row['ordinal'] is not None and row['parent_section'] != 'mixed_sections':
             neighbors = self.store.db.execute('''
-                SELECT id,ordinal FROM reference_book_locations l JOIN reference_passages p
+                SELECT p.id,l.ordinal FROM reference_book_locations l JOIN reference_passages p
                   ON (p.owner_id=l.owner_id AND p.source_id=l.source_id AND p.id=l.passage_id)
                 WHERE l.owner_id=%s AND l.source_id=%s AND l.parent_section=%s
-                  AND l.ordinal IN (%s,%s)
-            ''', (owner, source_id, row['parent_section'], row['ordinal'] - 1,
-                  row['ordinal'] + 1)).fetchall()
+                  AND p.section=%s AND l.ordinal IN (%s,%s)
+            ''', (owner, source_id, row['parent_section'], row['section'],
+                  row['ordinal'] - 1, row['ordinal'] + 1)).fetchall()
             for neighbor in neighbors:
                 row['neighbors']['previous' if neighbor['ordinal'] < row['ordinal'] else 'next'] = neighbor['id']
         conv_id, turn_id = row['source_conversation_id'], row['source_turn_id']
@@ -241,8 +241,8 @@ class References:
 
     def ingest_edition(self, session, metadata, original_text, passages):
         """Atomic text ingest; revisions use new immutable source IDs."""
-        if not isinstance(passages, list) or not 1 <= len(passages) <= 512:
-            raise ValueError('Select 1..512 located passages')
+        if not isinstance(passages, list) or not 1 <= len(passages) <= 64:
+            raise ValueError('Select 1..64 located passages')
         with self.store.db.transaction():
             source_id = self.add_source(session, original_text=original_text, **metadata)
             for item in passages:
@@ -253,13 +253,10 @@ class References:
 
     def import_book_package(self, session, path):
         """Validate all package bytes before an atomic, unselected owner import."""
-        manifest = book_package.validate(path)
+        package = book_package.validated_snapshot(path)
+        manifest, raw, transcript, text = package
         owner = self.store.owner(session)
         source_id = self.store._id(manifest['source_id'])
-        raw = book_package.bounded_file(Path(path) / 'source.bin', book_package.MAX_RAW)
-        transcript = book_package.bounded_file(Path(path) / 'transcript.json', book_package.MAX_TEXT)
-        text = book_package.decode_text(book_package.bounded_file(
-            Path(path) / 'normalized.txt', book_package.MAX_TEXT))
         existing = self.store.db.execute('''
             SELECT b.manifest,b.raw_source,b.transcript,b.raw_sha256,o.original_text,o.content_sha256
             FROM reference_book_sources b JOIN reference_originals o

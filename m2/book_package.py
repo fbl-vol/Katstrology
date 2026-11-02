@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 MAX_RAW = 16 * 1024 * 1024
@@ -19,6 +20,13 @@ MAX_PASSAGES = 512
 MAX_LEAVES = 1024
 MAX_PASSAGE_CHARS = 3000
 VERSION = 1
+
+
+class ValidatedPackage(NamedTuple):
+    manifest: dict
+    raw: bytes
+    transcript: bytes
+    normalized: str
 
 
 def digest(data):
@@ -117,6 +125,13 @@ def prepare(source_path, leaves_path, metadata_path, output_root, *, _verify=Tru
     start = 0
     while start < len(normalized):
         end = min(start + MAX_PASSAGE_CHARS, len(normalized))
+        current = next(page for page in pages if page['start'] <= start < page['end'])
+        for page in pages:
+            if (page['start'] > start and
+                    (page['parent_section'], page['section']) !=
+                    (current['parent_section'], current['section'])):
+                end = min(end, page['start'])
+                break
         if end < len(normalized):
             # Prefer a paragraph, then a word boundary; include its whitespace
             # in the preceding exact slice so no characters silently disappear.
@@ -188,13 +203,21 @@ def prepare(source_path, leaves_path, metadata_path, output_root, *, _verify=Tru
 
 
 def validate(package):
-    """Check untrusted package bytes, every located span and deterministic identity."""
+    """Check package and return its manifest for offline inspection."""
+    return validated_snapshot(package).manifest
+
+
+def validated_snapshot(package):
+    """Validate once and retain the exact bytes the importer must commit."""
     path = Path(package)
     if path.is_symlink() or not path.is_dir() or {p.name for p in path.iterdir()} != {
             'source.bin', 'transcript.json', 'normalized.txt', 'manifest.json'}:
         raise ValueError('Invalid package layout')
     raw = bounded_file(path / 'source.bin', MAX_RAW)
-    transcript = json.loads(decode_text(bounded_file(path / 'transcript.json', MAX_TEXT)))
+    transcript_bytes = bounded_file(path / 'transcript.json', MAX_TEXT)
+    transcript = json.loads(decode_text(transcript_bytes))
+    if transcript_bytes != json_bytes(transcript):
+        raise ValueError('Transcript must use canonical JSON bytes')
     text = decode_text(bounded_file(path / 'normalized.txt', MAX_TEXT))
     manifest = json.loads(decode_text(bounded_file(path / 'manifest.json', MAX_MANIFEST)))
     if not isinstance(manifest, dict) or set(manifest) != {
@@ -214,4 +237,4 @@ def validate(package):
         rebuilt = json.loads((built / 'manifest.json').read_text(encoding='utf-8'))
     if rebuilt != manifest or text != ''.join(p['content'] for p in manifest['passages']):
         raise ValueError('Package identity or spans mismatch')
-    return manifest
+    return ValidatedPackage(manifest, raw, transcript_bytes, text)
