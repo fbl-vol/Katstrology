@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import tarfile
+from tempfile import TemporaryFile
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -22,6 +23,8 @@ GIT_ID = re.compile(r'[0-9a-f]{40}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
 ALIAS = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,79}\Z')
 PROJECT = re.compile(r'[a-z][a-z0-9_-]{1,62}\Z')
+UPLOAD_TIMEOUT = 600
+PHASE_TIMEOUT = 180
 
 
 def digest(path):
@@ -130,24 +133,30 @@ def remote(alias, request, upload=None):
     """Only the fixed OpenSSH command; stdin is JSON followed by bounded archive bytes."""
     command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                '-o', 'ConnectTimeout=10', alias, 'kat-release-v1']
-    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                          stderr=subprocess.DEVNULL) as process:
+    header = json.dumps(request, separators=(',', ':')).encode() + b'\n'
+    if len(header) > 16 * 1024:
+        raise ValueError('Release request exceeds helper header bound')
+    # Native tempfile stdin is unlinked/owned locally. Python never writes to a
+    # network pipe before the child timeout starts, even when the peer stops reading.
+    with TemporaryFile(mode='w+b') as framed:
+        framed.write(header)
+        if upload is not None:
+            size = upload.stat().st_size
+            if size != request.get('bytes') or not 0 < size <= 2 * 1024**3:
+                raise ValueError('Archive framing length differs or exceeds bound')
+            with upload.open('rb') as archive:
+                while block := archive.read(1024 * 1024):
+                    framed.write(block)
+        framed.flush()
+        framed.seek(0)
         try:
-            process.stdin.write(json.dumps(request, separators=(',', ':')).encode() + b'\n')
-            if upload is not None:
-                with upload.open('rb') as archive:
-                    while block := archive.read(1024 * 1024):
-                        process.stdin.write(block)
-            process.stdin.close()
-            process.stdin = None
-            output, _ = process.communicate(timeout=600 if upload is not None else 180)
-        except (Exception, KeyboardInterrupt):
-            process.kill()
-            process.wait()
-            raise
-        if process.returncode or len(output) > 16384:
+            result = subprocess.run(command, stdin=framed, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, timeout=UPLOAD_TIMEOUT if upload is not None else PHASE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('Restricted remote phase failed; timed out without retry') from None
+        if result.returncode or len(result.stdout) > 16384:
             raise RuntimeError('Restricted remote phase failed; inspect protected stage before another attempt')
-    return json.loads(output)
+    return json.loads(result.stdout)
 
 
 class NoRedirect(HTTPRedirectHandler):

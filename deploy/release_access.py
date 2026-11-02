@@ -7,6 +7,7 @@ versioned release_remote module after validating a root-owned release policy.
 """
 
 from hashlib import sha256
+from importlib.util import module_from_spec, spec_from_file_location
 import json
 import os
 from pathlib import Path
@@ -16,8 +17,8 @@ import sys
 
 if __package__:
     from deploy import release_remote
-else:  # Installed root-owned script, not the caller's working directory or PYTHONPATH.
-    import release_remote
+else:
+    release_remote = None  # Isolated script: load only the adjacent protected file after the guard.
 
 POLICY = Path('/etc/kat-release/policy.json')
 REQUEST_LIMIT = 16 * 1024
@@ -30,6 +31,20 @@ PLAN_FIELDS = {'contract', 'target', 'artifact', 'schema_version', 'compose_sha2
                'steps', 'on_ambiguity', 'plan_sha256'}
 ARTIFACT_FIELDS = {'commit', 'tree', 'image_id', 'config_digest',
                    'image_archive_sha256', 'source_offer_sha256'}
+
+
+def phase_module():
+    adjacent = protected(Path(__file__).with_name('release_remote.py'))
+    if release_remote is not None:
+        if Path(release_remote.__file__) != adjacent:
+            raise ValueError('Phase module is not adjacent to the fixed helper')
+        return release_remote
+    spec = spec_from_file_location('_kat_root_protected_release_phase', adjacent)
+    if spec is None or spec.loader is None:
+        raise ValueError('Protected phase module unavailable')
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def protected(path):
@@ -97,7 +112,7 @@ def validate(request, policy):
             or plan['schema_version'] != policy['schema_version']
             or digest != plan['plan_sha256'] or digest != policy['approved_plan_sha256']
             or sha256(protected(__file__).read_bytes()).hexdigest() != plan['access_helper_sha256']
-            or sha256(protected(release_remote.__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
+            or sha256(protected(phase_module().__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
             or sha256(protected(policy['compose_file']).read_bytes()).hexdigest() != plan['compose_sha256']):
         raise ValueError('Protected approval, target or template differs')
     if action == 'upload' and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
@@ -140,10 +155,11 @@ def dispatch(request, policy, input_stream):
     if input_stream.read(1):
         raise ValueError('Unexpected request body')
     # Only trusted policy, code and template enter the actual lifecycle.
-    release_remote.REQUEST = {'action': action, 'target': target, 'plan': plan}
+    phase = phase_module()
+    phase.REQUEST = {'action': action, 'target': target, 'plan': plan}
     if action == 'compose':
-        release_remote.REQUEST['compose'] = protected(policy['compose_file']).read_text()
-    return release_remote.main()
+        phase.REQUEST['compose'] = protected(policy['compose_file']).read_text()
+    return phase.main()
 
 
 def main(input_stream=None, original_command=None, policy_path=POLICY):
@@ -154,7 +170,7 @@ def main(input_stream=None, original_command=None, policy_path=POLICY):
     if not header.endswith(b'\n') or len(header) > REQUEST_LIMIT:
         raise ValueError('Release request exceeds header bound')
     protected(__file__)
-    protected(release_remote.__file__)
+    phase_module()
     request = json.loads(header)
     result = dispatch(request, read_policy(policy_path), input_stream)
     if result is not None:

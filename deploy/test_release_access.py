@@ -4,7 +4,10 @@ from hashlib import sha256
 from io import BytesIO
 import json
 from pathlib import Path
+import os
+import subprocess
 from tempfile import TemporaryDirectory
+from time import monotonic
 import unittest
 from unittest.mock import patch
 
@@ -29,6 +32,30 @@ def fixture(directory):
 
 
 class AppScopedAccessTests(unittest.TestCase):
+    def test_documented_isolated_script_enters_command_guard_without_import_escape(self):
+        script = Path(access.__file__)
+        result = subprocess.run(['/usr/bin/python3', '-I', str(script)], input=b'',
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd='/',
+            env={'PATH': '/usr/bin:/bin', 'SSH_ORIGINAL_COMMAND': 'python3 -',
+                 'PYTHONPATH': '/nonexistent/client-injected'}, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b'Restricted release refused', result.stderr)
+        self.assertNotIn(b'ModuleNotFoundError', result.stderr)
+        self.assertNotIn(b'Traceback', result.stderr)
+        with patch.object(access, 'release_remote', None), \
+             patch.object(access, 'protected', side_effect=lambda path: Path(path)):
+            phase = access.phase_module()
+        self.assertEqual(Path(phase.__file__), script.with_name('release_remote.py'))
+        self.assertTrue(callable(phase.main))
+
+    def test_isolated_adjacent_loader_rejects_symlink_module(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / 'release_access.py'
+            (Path(directory) / 'release_remote.py').symlink_to('/etc/passwd')
+            with patch.object(access, '__file__', str(source)), patch.object(access, 'release_remote', None):
+                with self.assertRaisesRegex(ValueError, 'root protected'):
+                    access.phase_module()
+
     def test_only_forced_protocol_command_is_accepted(self):
         for command in ('', 'python3 -', 'sh', 'scp -t /tmp/archive', 'sftp',
                         'kat-release-v1 ; id', 'kat-release-v1 --pty'):
@@ -106,18 +133,12 @@ class AppScopedAccessTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             archive = Path(directory) / 'image.tar'
             archive.write_bytes(b'archive')
-            class Sink:
-                def __init__(self): self.body = b''
-                def write(self, block): self.body += block
-                def close(self): pass
-            class Transport:
-                def __init__(self): self.stdin = Sink(); self.returncode = 0
-                def __enter__(self): return self
-                def __exit__(self, *_args): pass
-                def communicate(self, timeout): return b'{"status":"ok"}', b''
-            transport = Transport()
-            sink = transport.stdin
-            with patch.object(pipeline.subprocess, 'Popen', return_value=transport) as launch:
+            received = []
+            def run(command, **options):
+                received.append(options['stdin'].read())
+                self.assertEqual(options['timeout'], pipeline.UPLOAD_TIMEOUT)
+                return type('Result', (), {'stdout': b'{"status":"ok"}', 'returncode': 0})()
+            with patch.object(pipeline.subprocess, 'run', side_effect=run) as launch:
                 request = {'action': 'upload', 'plan': {'plan_sha256': 'a' * 64}, 'bytes': 7}
                 self.assertEqual(pipeline.remote('synthetic-alias', request, upload=archive), {'status': 'ok'})
             command = launch.call_args.args[0]
@@ -125,9 +146,35 @@ class AppScopedAccessTests(unittest.TestCase):
             self.assertIn('-T', command)
             self.assertNotIn('python3', command)
             self.assertNotIn('scp', command)
-            header, payload = sink.body.split(b'\n', 1)
+            header, payload = received[0].split(b'\n', 1)
             self.assertEqual(json.loads(header), request)
             self.assertEqual(payload, b'archive')
+
+    def test_owned_fake_ssh_consuming_and_stalled_upload_have_bounded_outcome(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / 'ssh'
+            archive = root / 'archive.tar'
+            archive.write_bytes(b'x' * (4 * 1024 * 1024))
+            request = {'action': 'upload', 'plan': {'plan_sha256': 'a' * 64},
+                       'bytes': archive.stat().st_size}
+            for consume in (True, False):
+                binary.write_text('#!/usr/bin/python3\nimport sys,time,json\n'
+                    'header=json.loads(sys.stdin.buffer.readline())\n'
+                    + ('body=sys.stdin.buffer.read()\nassert len(body)==header["bytes"]\n'
+                       'print(json.dumps({"status":"ok"}),flush=True)\n' if consume else 'time.sleep(5)\n'))
+                binary.chmod(0o700)
+                with self.subTest(consume=consume), \
+                     patch.dict(os.environ, {'PATH': str(root) + ':/usr/bin:/bin'}), \
+                     patch.object(pipeline, 'UPLOAD_TIMEOUT', 0.25 if not consume else 5):
+                    start = monotonic()
+                    if consume:
+                        self.assertEqual(pipeline.remote('synthetic-alias', request, upload=archive),
+                                         {'status': 'ok'})
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'phase failed'):
+                            pipeline.remote('synthetic-alias', request, upload=archive)
+                    self.assertLess(monotonic() - start, 3)
 
     def test_policy_rejects_symlink_and_nonroot_writable_ancestors(self):
         with TemporaryDirectory() as directory:

@@ -101,7 +101,9 @@ python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <s
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
 receipt refuses replay. Its only SSH command is `kat-release-v1` with `-T`,
 BatchMode and strict host-key checking. Stdin is one bounded JSON request line,
-with the archive bytes framed only for `upload`; no SCP, SFTP, supplied Python,
+with the archive bytes framed only for `upload`. The client prepares an unlinked,
+local owned input file before SSH; `subprocess.run` bounds the **whole** child
+operation even if the peer stops reading its input. No SCP, SFTP, supplied Python,
 remote command string, client-selected path, environment or Compose is sent.
 The installed helper stages the archive only at the **root-protected policy's**
 fixed absent stage path and uses the root-owned protected Compose template. It
@@ -147,7 +149,11 @@ connection name, never a server command. The protected template SHA and the inst
 the approved plan's pinned source bytes, or the forced command refuses before
 loading/stopping. Protocol contract 2 deliberately cannot replay a contract-1 plan.
 Policy and code must be root-owned and not writable through group, others or any
-symlink ancestor. The fixed stage parent must be root-owned; the attempt stage is
+symlink ancestor. **Routine new-version workflow remains unresolved:** the present
+policy pins one approved plan and absent stage, so every new version would require
+a privileged policy update. Do not install this as a repeatable release solution
+until the server-approved per-release authorization model is selected and reviewed;
+removing the pin or treating a client approval claim as server approval is not a fix. The fixed stage parent must be root-owned; the attempt stage is
 created exclusively and upload refuses replay/symlink/truncated/extra bytes.
 
 For a *future separately approved* installation, use native OpenSSH
@@ -159,7 +165,9 @@ restrict,command="/usr/bin/python3 -I /usr/local/libexec/kat-release/deploy/rele
 ```
 
 Keep the full helper tree `/usr/local/libexec/kat-release/deploy/` and `/etc/kat-release/`
-root-owned, non-writable to the key holder and symlink-free. `restrict` denies PTY,
+root-owned, non-writable to the key holder and symlink-free. Under Python `-I`,
+the helper checks the fixed adjacent phase file and loads it explicitly; it never
+uses CWD or client PYTHONPATH. `restrict` denies PTY,
 agent/X11/port forwarding and user rc; the forced command rejects every original
 SSH command except `kat-release-v1`, including shell, Python, SCP and SFTP requests.
 The installed code runs under root solely to perform its **fixed** Kat app lifecycle
