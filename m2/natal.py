@@ -15,6 +15,10 @@ import swisseph as swe
 from m2.core_calc import ASPECTS, END_YEAR, START_YEAR, aspect_separation
 
 
+# Swiss lunar-apogee points, not asteroid 1181 or a hypothetical second Moon.
+# "True" is the traditional name for an osculating calculation, not an accuracy claim.
+LILITH_IDS = {'mean': 'lilith_mean', 'osculating': 'lilith_osculating'}
+LILITH_BODY_IDS = {'lilith_mean': swe.MEAN_APOG, 'lilith_osculating': swe.OSCU_APOG}
 BODY_IDS = {
     'sun': swe.SUN, 'moon': swe.MOON, 'mercury': swe.MERCURY,
     'venus': swe.VENUS, 'mars': swe.MARS, 'jupiter': swe.JUPITER,
@@ -36,7 +40,8 @@ METHOD_VERSION = 'natal-tropical-v1'
 def checked_natal_settings(settings):
     if (not isinstance(settings, dict) or set(settings) !=
             ({'chart_kind', 'zodiac', 'house_system', 'node_type', 'aspects', 'orbs'} |
-             ({'include_chiron'} if settings.get('include_chiron') is True else set())) or
+             ({'include_chiron'} if settings.get('include_chiron') is True else set()) |
+             ({'include_lilith'} if settings.get('include_lilith') in ('mean', 'osculating') else set())) or
             settings['chart_kind'] != 'natal' or settings['zodiac'] != 'tropical' or
             not isinstance(settings['house_system'], str) or
             settings['house_system'] not in HOUSE_CODES or
@@ -164,12 +169,24 @@ def calculate_natal(instant, latitude, longitude, settings):
                       'sign': int(south_longitude // 30),
                       'retrograde': north['retrograde'], 'house': None,
                       'derived_from': 'selected_north_node_antipode'})
+    if settings.get('include_lilith'):
+        lilith_id = LILITH_IDS[settings['include_lilith']]
+        values = _position(LILITH_BODY_IDS[lilith_id], jd)
+        positions.append({'id': lilith_id, 'longitude_degrees': values[0],
+                          'latitude_degrees': values[1], 'speed_degrees_per_day': values[3],
+                          'sign': int(values[0] // 30), 'retrograde': values[3] < 0,
+                          'house': None})
     houses = _house_facts(jd, latitude, longitude, settings, positions)
     # The antipode is displayed but excluded from aspect pairings: including
     # both nodes would duplicate mirrored aspects and add a tautological 180°.
-    aspects = _aspects(positions[:-1] + houses['angles'], settings)
+    aspects = _aspects([item for item in positions if item['id'] != 'south_node'] + houses['angles'], settings)
     return {'status': 'complete' if houses['status'] == 'supported' else 'partial_unsupported_houses',
             'instant_utc': utc.isoformat(), 'positions': positions, 'houses': houses,
             'aspects': aspects, 'ephemeris_sha256': digests, 'method_version': METHOD_VERSION,
+            **({'lilith_convention': settings['include_lilith'],
+                'lilith_method': 'Swiss mean lunar apogee' if settings['include_lilith'] == 'mean'
+                else 'Swiss osculating lunar apogee (traditionally true); neither ranks accuracy'}
+               if settings.get('include_lilith') else {}),
             'aspect_participants': ('ten planets, ' + ('selected Chiron, ' if settings.get('include_chiron') else '') +
+                                    ('selected lunar apogee, ' if settings.get('include_lilith') else '') +
                                     'selected north node, and angles only when supported; south node is a derived antipode')}

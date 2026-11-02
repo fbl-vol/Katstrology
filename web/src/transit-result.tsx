@@ -15,6 +15,7 @@ export type TransitResultData = {
   aspect_limit?: number; orb_policy?: Record<string, number>;
   profile_id?: string; profile_revision?: number; source_status?: string;
   engine_version?: string; ephemeris_sha256?: Record<string, string>; method?: string;
+  lilith_convention?: 'mean' | 'osculating';
 };
 
 function SkyWheel({ result }: { result: TransitResultData }) {
@@ -43,7 +44,7 @@ function SkyWheel({ result }: { result: TransitResultData }) {
   return <div className="natal-wheel-frame"><div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel"
     viewBox="0 0 480 480" role="img" aria-labelledby="transit-wheel-title transit-wheel-desc">
     <title id="transit-wheel-title">{combined ? 'Natal and transiting' : 'Sky-only'} tropical positions on {result.reporting.date} at {result.reporting.time} {result.reporting.zone}</title>
-    <desc id="transit-wheel-desc">Outer marks are transiting planets; inner marks are natal positions when available. Wheel labels: {chartNotation}. Sign labels use their first three letters. No sky houses or aspect formations are drawn; the tables give exact degrees and bounded aspect names/orbs.</desc>
+    <desc id="transit-wheel-desc">Outer marks are transiting planets; inner marks are natal positions when available. {result.lilith_convention ? `Black Moon Lilith uses the ${result.lilith_convention} lunar apogee. ` : ''}Wheel labels: {chartNotation}. Sign labels use their first three letters. No sky houses or aspect formations are drawn; the tables give exact degrees and bounded aspect names/orbs.</desc>
     <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />
     {[190, 156, 106, 71].map(radius => <circle key={radius} cx="240" cy="240" r={radius} fill="none" stroke="var(--wheel-ring, #b9c9b8)" strokeWidth="1" />)}
     {signs.map((name, index) => {
@@ -61,7 +62,8 @@ function SkyWheel({ result }: { result: TransitResultData }) {
         reporting: result.reporting, profile_id: result.profile_id,
         profile_revision: result.profile_revision, source_status: result.source_status,
         engine_version: result.engine_version, method: result.method,
-        ephemeris_sha256: result.ephemeris_sha256, orb_policy: result.orb_policy }} />
+        ephemeris_sha256: result.ephemeris_sha256, orb_policy: result.orb_policy,
+        lilith_convention: result.lilith_convention }} />
   </div>;
 }
 
@@ -79,6 +81,7 @@ export function TransitResult({ result, subject, headingRef }: {
   return <div className="transit-result"><h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>{subject ? `${subject} · ${result.mode === 'sky' ? 'sky' : 'natal + transits'}` : result.mode === 'sky' ? 'Sky only' : 'Natal + transits'}</h2>
     <p><strong>{result.reporting.date} {result.reporting.time} · {result.reporting.zone}</strong>
       {result.reporting.occurrence !== 'unspecified' && ` · ${result.reporting.occurrence} repeated hour (UTC${result.reporting.offset.slice(0, 3)}:${result.reporting.offset.slice(3)})`}</p>
+    {result.lilith_convention && <p className="natal-qualification">Black Moon Lilith: {result.lilith_convention === 'mean' ? 'mean lunar apogee' : 'true / osculating lunar apogee'} (Swiss). “True” is a model label, not a claim of greater accuracy; not asteroid 1181 or Waldemath.</p>}
     {result.mode === 'natal_transits' && result.source_status !== 'current' &&
       <p className="natal-qualification">This view used an earlier natal chart. Later corrections do not change its saved positions.</p>}
     {result.mode === 'natal_transits' && result.natal_house_status !== 'supported' &&

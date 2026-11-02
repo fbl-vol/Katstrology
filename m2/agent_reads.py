@@ -111,6 +111,10 @@ def project_transit_view(result):
               'profile_revision', 'birth_time_status', 'natal_house_status',
               'same_sky_total', 'transit_to_natal_total', 'aspect_limit')
     projected = {key: result[key] for key in fields}
+    if result.get('lilith_convention'):
+        projected['lilith_convention'] = result['lilith_convention']
+        projected['lilith_method'] = ('mean lunar apogee' if result['lilith_convention'] == 'mean'
+                                      else 'true / osculating lunar apogee; not a claim of greater accuracy')
     projected['position_precision'] = 'ecliptic degrees and speed rounded to six decimals in model projection; complete chart is archived'
     projected['positions'] = [{key: round(value, 6) if isinstance(value, float) else value
                                for key, value in position.items()

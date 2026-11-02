@@ -18,7 +18,9 @@ def _chart_prompt_evidence(payload):
               f"v{result['profile']['revision']} settings={json.dumps(result['profile']['settings'])} "
               f"engine=Swiss-{result['engine']['version']} method={natal['method_version']}; "
               'south_node is the derived north-node antipode, excluded from aspects; '
-              'calculated facts, not a verified birth time or interpretation. ')
+              'calculated facts, not a verified birth time or interpretation. '
+              + (natal['lilith_method'] + '; not asteroid 1181 or Waldemath. '
+                 if natal.get('lilith_method') else ''))
     if natal['status'] == 'unsupported_uncertain_birth_time':
         return prefix + 'Natal positions, houses, angles and aspects unsupported for time interval.'
     positions = ' '.join(f"{p['id']}:{p['longitude_degrees']:.6f}° "
@@ -102,6 +104,8 @@ def natal_answer(chart_id, result):
             f'supplied instant {natal["instant_utc"]}, Swiss Ephemeris {result["engine"]["version"]}, '
             f'{natal["method_version"]}; tropical geocentric apparent positions; '
             f'{profile["settings"]["node_type"]} north node (south node is its derived antipode). '
+            + (f'{natal["lilith_method"]}; not asteroid 1181 or Waldemath. '
+               if natal.get('lilith_method') else '') +
             f'Positions: {placements}. '
             f'Houses: {house_text}. Major aspects (profile orbs): {aspects}. '
             'This calculation does not verify birth-time or location accuracy or provide an interpretation.')

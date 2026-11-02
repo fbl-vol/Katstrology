@@ -45,7 +45,9 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
             'houses': natal['houses'], 'aspects': natal['aspects'][:12],
             'aspects_total': len(natal['aspects']), 'aspects_shown': min(12, len(natal['aspects'])),
             'ephemeris_sha256': natal['ephemeris_sha256'],
-            'method_version': natal['method_version']},
+            'method_version': natal['method_version'],
+            **({'lilith_convention': natal['lilith_convention'],
+                'lilith_method': natal['lilith_method']} if natal.get('lilith_convention') else {})},
             'model_projection_note': 'Rounded derived positions and first 12 aspects; full qualified synthetic chart is archived.'}
         return projected, True
     if name == 'get_secondary_progression' and result.get('status') == 'supported':

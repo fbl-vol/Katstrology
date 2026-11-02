@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import swisseph as swe
 
 from m2.charts import Charts
-from m2.natal import BODY_IDS, _ephemeris, _position
+from m2.natal import BODY_IDS, LILITH_BODY_IDS, LILITH_IDS, _ephemeris, _position
 from m2.core_calc import ASPECTS, START_YEAR, END_YEAR, aspect_separation
 
 STEP = timedelta(hours=1)
@@ -29,7 +29,8 @@ def _position_at(body, instant):
     utc = _utc(instant)
     _, jd = swe.utc_to_jd(utc.year, utc.month, utc.day, utc.hour, utc.minute,
                           utc.second + utc.microsecond / 1e6, swe.GREG_CAL)
-    values = _position(swe.CHIRON if body == 'chiron' else BODY_IDS[body], jd)
+    values = _position(swe.CHIRON if body == 'chiron' else
+                       LILITH_BODY_IDS[body] if body in LILITH_BODY_IDS else BODY_IDS[body], jd)
     return values[0], values[3]
 
 
@@ -85,6 +86,10 @@ class Transits:
                 'in_orb': orb <= chart['result']['profile']['settings']['orbs'][aspect]}
 
     def events(self, session, chart_id, start, end, transit_body, natal_body, aspect):
+        # Osculating apogee longitude can have small numerical discontinuities;
+        # an hourly sign change is not proof of an exact event. Snapshots remain valid.
+        if transit_body in LILITH_BODY_IDS:
+            raise ValueError('Lunar-apogee event scans are unsupported; use a dated snapshot')
         start, end = _utc(start), _utc(end)
         if end <= start or end - start > timedelta(days=30):
             raise ValueError('Transit event window must be positive and at most 30 days')
@@ -199,9 +204,10 @@ class Transits:
     @staticmethod
     def _selection(chart, natal, transit_body, natal_body, aspect):
         settings = chart['result']['profile']['settings']
-        allowed = set(BODY_IDS) | ({'chiron'} if settings.get('include_chiron') else set())
+        allowed = (set(BODY_IDS) | ({'chiron'} if settings.get('include_chiron') else set()) |
+                   ({LILITH_IDS[settings['include_lilith']]} if settings.get('include_lilith') else set()))
         if transit_body not in allowed or natal_body not in allowed | {'midheaven'}:
-            raise ValueError('Unsupported planet or unselected Chiron; nodes and other angles excluded')
+            raise ValueError('Unsupported planet, unselected Chiron or unselected lunar apogee; nodes and other angles excluded')
         if aspect not in settings['aspects']:
             raise ValueError('Aspect not declared in selected chart profile')
         if natal_body == 'midheaven':
@@ -221,4 +227,6 @@ class Transits:
                 'transit_body_id': transit_body, 'natal_body_id': natal_body,
                 'aspect': aspect, 'zodiac': 'tropical', 'unit': 'ecliptic_degree',
                 'birth_time_status': 'exact_supplied_time_not_verified',
-                'source_status': chart['source_status']}
+                'source_status': chart['source_status'],
+                **({'lilith_convention': chart['result']['profile']['settings']['include_lilith']}
+                   if chart['result']['profile']['settings'].get('include_lilith') else {})}

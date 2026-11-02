@@ -10,7 +10,7 @@ import re
 import swisseph as swe
 
 from m2.app_clock import reporting_zone
-from m2.natal import BODY_IDS, DEFAULT_ORBS, _aspects, _ephemeris
+from m2.natal import BODY_IDS, DEFAULT_ORBS, LILITH_IDS, _aspects, _ephemeris
 from m2.synastry import pair_aspects
 from m2.transits import Transits, _position_at, _utc
 
@@ -74,7 +74,9 @@ def view(store, session, day, clock, zone, occurrence, mode, chart_id=None):
     optional_chiron = settings.get('include_chiron', False)
     digests = _ephemeris(include_chiron=optional_chiron)
     positions = []
-    for body in (*BODY_IDS, *(('chiron',) if optional_chiron else ())):
+    lilith_id = LILITH_IDS[settings['include_lilith']] if settings.get('include_lilith') else None
+    for body in (*BODY_IDS, *(('chiron',) if optional_chiron else ()),
+                 *((lilith_id,) if lilith_id else ())):
         longitude, speed = _position_at(body, instant)
         positions.append({'id': body, 'longitude_degrees': longitude,
                           'sign': int(longitude // 30), 'speed_degrees_per_day': speed,
@@ -84,7 +86,7 @@ def view(store, session, day, clock, zone, occurrence, mode, chart_id=None):
     if natal:
         participants = [point for point in natal['positions'] if point['id'] in BODY_IDS
                         or (optional_chiron and point['id'] == 'chiron')
-                        or point['id'] == 'north_node']
+                        or point['id'] == 'north_node' or point['id'] == lilith_id]
         if natal['houses']['status'] == 'supported':
             participants += natal['houses']['angles']
         natal_aspects = pair_aspects(positions, participants, settings)
@@ -92,6 +94,10 @@ def view(store, session, day, clock, zone, occurrence, mode, chart_id=None):
             'reporting': reporting, 'zodiac': 'tropical', 'engine_version': swe.version,
             'ephemeris_sha256': digests, 'method': 'Swiss geocentric apparent tropical ecliptic longitude and speed; major longitude aspects',
             'orb_policy': settings['orbs'], 'positions': positions,
+            **({'lilith_convention': settings['include_lilith'],
+                'lilith_method': 'mean lunar apogee' if settings['include_lilith'] == 'mean'
+                else 'true / osculating lunar apogee (not a claim of greater accuracy)'}
+               if lilith_id else {}),
             'same_sky_aspects': same_sky[:MAX_ASPECTS], 'same_sky_total': len(same_sky),
             'transit_to_natal_aspects': natal_aspects[:MAX_ASPECTS],
             'transit_to_natal_total': len(natal_aspects), 'aspect_limit': MAX_ASPECTS,

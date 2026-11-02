@@ -48,6 +48,7 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
   const [house, setHouse] = useState(activeSettings?.house_system || 'placidus');
   const [node, setNode] = useState(activeSettings?.node_type || 'true');
   const [includeChiron, setIncludeChiron] = useState(activeSettings?.include_chiron === true);
+  const [lilith, setLilith] = useState(activeSettings?.include_lilith || 'off');
   const [orbs, setOrbs] = useState(activeSettings?.orbs || defaultOrbs);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -106,10 +107,11 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
     submitting.current = true; setBusy(true); setError(''); setStatus('Generating and saving the chart…');
     const id = requestId.current || `generate-${crypto.randomUUID()}`;
     requestId.current = id;
-    const settings = house !== 'placidus' || node !== 'true' || includeChiron ||
+    const settings = house !== 'placidus' || node !== 'true' || includeChiron || lilith !== 'off' ||
       Object.keys(defaultOrbs).some(key => orbs[key] !== defaultOrbs[key]) ?
       { chart_kind: 'natal', zodiac: 'tropical', house_system: house, node_type: node,
-        aspects: Object.keys(defaultOrbs), orbs, ...(includeChiron ? { include_chiron: true } : {}) } : null;
+        aspects: Object.keys(defaultOrbs), orbs, ...(includeChiron ? { include_chiron: true } : {}),
+        ...(lilith !== 'off' ? { include_lilith: lilith } : {}) } : null;
     try {
       const result = await api<Generation>(`people/${person.id}/generate`, workspace.csrf, 'POST', {
         request_id: id, birth_date: day, birth_time: unknown ? '' : hour, time_unknown: unknown,
@@ -170,6 +172,11 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
           <label>House system <select value={house} onChange={event => { changed(); setHouse(event.target.value); }}><option value="placidus">Placidus</option><option value="whole_sign">Whole sign</option></select></label>
           <label>North node <select value={node} onChange={event => { changed(); setNode(event.target.value); }}><option value="true">True node</option><option value="mean">Mean node</option></select></label>
           <label className="check"><input ref={chironRef} type="checkbox" checked={includeChiron} onChange={event => { changed(); setIncludeChiron(event.target.checked); }} />Include Chiron in this chart and its aspects</label>
+          <label>Black Moon Lilith (lunar apogee) <select value={lilith} onChange={event => { changed(); setLilith(event.target.value); }}>
+            <option value="off">Off (default)</option><option value="mean">Mean lunar apogee</option>
+            <option value="osculating">True / osculating lunar apogee</option>
+          </select></label>
+          <p>Optional for this chart and its aspects. “True” names an osculating orbital model, not a more accurate answer. Neither is asteroid 1181 Lilith or Waldemath’s hypothetical moon; leave off to keep the standard chart.</p>
           <div className="birth-orbs"><strong>Major aspect orbs (degrees)</strong>{Object.keys(defaultOrbs).map(key => <label key={key}>{key}<input type="number" step="0.1" min="0.1" max="10" value={orbs[key]} onChange={event => { changed(); setOrbs(current => ({ ...current, [key]: Number(event.target.value) })); }} /></label>)}</div>
           <p>Coordinates below replace the listed city centre only when both are entered. Without a selected place, supply both coordinates and a canonical IANA timezone; the birthplace label stays user-supplied.</p>
           <div className="two-col"><label>Latitude override <input type="number" step="any" min="-90" max="90" value={latitude} onChange={event => { changed(); setLatitude(event.target.value); }} /></label>

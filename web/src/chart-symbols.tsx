@@ -6,6 +6,8 @@ const bodies = [
   ['venus', '♀', 'Venus'], ['mars', '♂', 'Mars'], ['jupiter', '♃', 'Jupiter'],
   ['saturn', '♄', 'Saturn'], ['uranus', '♅', 'Uranus'], ['neptune', '♆', 'Neptune'],
   ['pluto', '♇', 'Pluto'], ['chiron', 'Ch', 'Chiron (opt-in)'],
+  ['lilith_mean', 'BM', 'Black Moon Lilith (mean lunar apogee)'],
+  ['lilith_osculating', 'BT', 'Black Moon Lilith (true / osculating lunar apogee)'],
   ['north_node', '☊', 'North Node'],
   ['south_node', '☋', 'South Node'],
 ] as const;
@@ -25,7 +27,7 @@ export function bodyGlyph(id: string) {
   return byId.get(id)?.glyph || null;
 }
 
-export const chartNotation = bodies.filter(([id]) => id !== 'chiron')
+export const chartNotation = bodies.filter(([id]) => id !== 'chiron' && !id.startsWith('lilith_'))
   .map(([, glyph, label]) => `${glyph} ${label}`).join(' · ') +
   ' · Asc Ascendant · MC Midheaven';
 
@@ -41,7 +43,7 @@ export function Glyph({ id }: { id: string }) {
 }
 
 export function ChartNotation({ rings, ids }: { rings: string; ids?: string[] }) {
-  const visible = new Set(ids || bodies.filter(([id]) => id !== 'chiron').map(([id]) => id));
+  const visible = new Set(ids || bodies.filter(([id]) => id !== 'chiron' && !id.startsWith('lilith_')).map(([id]) => id));
   return <details className="chart-notation"><summary>Symbols</summary>
     <p>{rings} Zodiac labels use the first three letters of each sign. Numbered rays mark house cusps when supported; aspect lines are listed by name and orb in the tables. Color is never the only source of a chart fact.</p>
     <table><caption>Planet and lunar node symbols on this wheel</caption><tbody>

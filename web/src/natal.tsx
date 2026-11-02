@@ -10,12 +10,13 @@ export type NatalResult = { status: string; instant_utc?: string; positions: Pla
   houses: { status: string; system: string; cusps: { number: number; longitude_degrees: number }[];
             angles: Point[] }; aspects: { first: string; second: string; kind: string;
             orb_degrees: number; exact_degrees: number }[];
-  method_version: string; ephemeris_sha256?: Record<string, string>; reason?: string };
+  method_version: string; ephemeris_sha256?: Record<string, string>; reason?: string;
+  lilith_convention?: 'mean' | 'osculating'; lilith_method?: string };
 export type Chart = { id: string; person_id: string; birth_id: string; profile_id: string; profile_revision: number;
   source_status: string; result: { natal_sun: { status: string; sun_longitude_degrees?: number };
     birth: { zone: string; latitude: number | null; longitude: number | null; provenance: string };
     natal?: NatalResult; houses: string; engine: { method: string; version: string };
-    profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean } }; } };
+    profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean; include_lilith?: 'mean' | 'osculating' } }; } };
 
 export const signs = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'];
@@ -55,7 +56,7 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
     <div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel" xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 480 480" role="img" aria-labelledby={`wheel-title-${chart.id} wheel-desc-${chart.id}`}>
       <title id={`wheel-title-${chart.id}`}>Tropical {label.toLowerCase()} wheel{compact ? ' for the next message' : ''}</title>
-      <desc id={`wheel-desc-${chart.id}`}>Calculated {natal.houses.system} cusps, planets, nodes, ascendant, midheaven and displayed aspects. {natal.positions.some(body => body.id === 'chiron') ? 'Opted-in Chiron included. ' : ''}Wheel labels: {chartNotation}. Sign labels use their first three letters. Numbered rays are house cusps. The following tables list degrees, cusps and aspect names/orbs.</desc>
+      <desc id={`wheel-desc-${chart.id}`}>Calculated {natal.houses.system} cusps, planets, nodes, ascendant, midheaven and displayed aspects. {natal.positions.some(body => body.id === 'chiron') ? 'Opted-in Chiron included. ' : ''}{natal.lilith_method ? `${natal.lilith_method}. ` : ''}Wheel labels: {chartNotation}. Sign labels use their first three letters. Numbered rays are house cusps. The following tables list degrees, cusps and aspect names/orbs.</desc>
       <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />
       {[188, 120, 82].map(radius => <circle key={radius} cx="240" cy="240" r={radius} fill="none" stroke="var(--wheel-ring, #aabda9)" strokeWidth="1" />)}
       {Array.from({ length: 12 }, (_, i) => {
@@ -142,7 +143,7 @@ export function NatalChart({ chart }: { chart: Chart }) {
   const settings = chart.result.profile.settings;
   const birth = chart.result.birth;
   return <div className="natal-detail">
-    <p>{natal.status === 'complete' ? 'Calculated natal chart' : 'Limited natal chart'} · {settings.house_system} houses · {settings.node_type} north node.</p>
+    <p>{natal.status === 'complete' ? 'Calculated natal chart' : 'Limited natal chart'} · {settings.house_system} houses · {settings.node_type} north node{natal.lilith_method ? ` · ${natal.lilith_method}` : ''}.</p>
     {(birth.provenance.startsWith('provisional:') || birth.provenance.includes('geonames_city_centre')) &&
       <p className="natal-qualification">{birth.provenance.startsWith('provisional:') &&
         'Birth details are provisional; treat these positions as tentative.'}
@@ -152,7 +153,7 @@ export function NatalChart({ chart }: { chart: Chart }) {
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
         {natal.houses.status === 'supported' ? <Wheel chart={chart} natal={natal} /> :
           <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects below remain available.</p>}
-        <div className="natal-tables"><table><caption>Planet and lunar node positions · tropical longitude</caption>
+        <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
           <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
           <tbody>{natal.positions.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th>
             <td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td><td>{item.house ?? '—'}</td>
@@ -167,7 +168,7 @@ export function NatalChart({ chart }: { chart: Chart }) {
             <td>{item.kind}</td><td>{bodyLabel(item.second)}</td><td>{item.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
           {!natal.aspects.length && <p>No aspects fall within this profile’s selected orbs.</p>}</div>
         <details className="chart-supporting-data"><summary>How this chart was calculated</summary>
-          <p>House membership uses ecliptic-projected longitude. The south node is the north node’s antipode; it is not a second node calculation or an aspect participant. Aspects use ecliptic longitude, not applying/separating motion. No interpretation, synastry, rectification or future prediction is calculated.</p>
+          <p>House membership uses ecliptic-projected longitude. The south node is the north node’s antipode; it is not a second node calculation or an aspect participant. Aspects use ecliptic longitude, not applying/separating motion. {natal.lilith_method ? `${natal.lilith_method}. “True” does not mean more accurate; not asteroid 1181 or Waldemath. ` : ''}No interpretation, synastry, rectification or future prediction is calculated.</p>
         </details>
       </>}
   </div>;

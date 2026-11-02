@@ -60,6 +60,25 @@ transit views and two-chart ecliptic-longitude comparison on saved generated
 natals; they do not add rectification, house overlays, composite charts,
 compatibility scores, an interpretation engine or uploaded-image permission.
 
+Black Moon Lilith is **off by default**, not a rewrite of saved profiles or charts.
+An explicit per-chart `include_lilith: "mean" | "osculating"` selects Swiss
+`MEAN_APOG` or `OSCU_APOG` (traditionally called *true*). These are two lunar
+apogee conventions, not accuracy rankings; neither is asteroid 1181 Lilith or
+Waldemath's hypothetical moon. Saved positions have separate `lilith_mean` /
+`lilith_osculating` IDs, the selected profile, method annotation, original
+engine/file hashes and owner-qualified immutable chart identity. Selected
+natal-plus-transit snapshots and dated views use that same convention; sky-only
+views keep the normal bodies. Approximate osculating-apogee discontinuities make
+exact contact-event scans unsupported for a transiting apogee; snapshots and
+ordinary planetary contacts *to* a fixed selected natal apogee remain available.
+Unknown birth time still produces no full natal apogee placement. Solar return
+charts inherit the saved convention; other techniques do not silently add it.
+The independent rounded example in [Lilith in Capricorn](https://horoscopetools.com/guides/lilith-in-capricorn/)
+records 2017-11-09 03:58:17 UTC at mean 270.0000775° and osculating
+242.4181950°. `m2.test_lilith` verifies both with the installed Swiss
+2.10.03 engine and pinned lunar/planetary files, without using that site's
+interpretation as authority.
+
 Source references and reproducible independent checks (published values are
 only computational anchors, not approval of a person's historical birth time):
 
