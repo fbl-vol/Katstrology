@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" role="img" aria-label="Reading-room kitten new-conversation mascot" data-kitten="reading-kitten" data-motion="off"><title>Reading-room kitten new-conversation mascot</title><path class="fur" d="M113 184C92 197 85 233 96 267H222C231 236 218 200 193 185Z"/><path class="fur" d="M104 274C53 283 25 254 40 230C48 217 65 222 69 232C53 227 47 241 55 249C67 260 86 255 101 252Z"/>
+<g class="kitten-head">
+<path class="fur" d="M94 112C88 99 82 72 87 54Q88 49 93 54L122 79Q151 69 181 80L211 55Q216 50 219 57C225 79 221 103 215 115C225 128 226 141 220 151L227 157L217 162L222 171L209 174C195 192 176 200 153 201C128 201 107 194 94 177L82 174L87 165L77 160L88 154C81 140 85 124 94 112Z"/>
+<path d="M96 102Q90 78 94 66L116 86Q103 88 96 102ZM188 87L211 67Q216 86 209 105Q202 94 188 87Z" fill="#594052"/>
+<path d="M112 94Q152 75 192 96" fill="none" stroke="#3b2c44" stroke-width="3" stroke-linecap="round"/>
+<g class="eye"><ellipse class="iris" cx="125" cy="137" rx="23" ry="26"/><ellipse class="pupil" cx="128" cy="139" rx="11" ry="20"/><ellipse class="glint" cx="118" cy="125" rx="5.2" ry="6.2"/><circle class="glint" cx="135" cy="146" r="2.4"/></g>
+<g class="eye"><ellipse class="iris" cx="184" cy="137" rx="23" ry="26"/><ellipse class="pupil" cx="181" cy="139" rx="11" ry="20"/><ellipse class="glint" cx="177" cy="125" rx="5.2" ry="6.2"/><circle class="glint" cx="192" cy="146" r="2.4"/></g>
+<ellipse cx="143" cy="170" rx="14" ry="10" fill="#211925"/><ellipse cx="166" cy="170" rx="14" ry="10" fill="#211925"/>
+<path d="M149 162Q154 159 160 162Q163 164 154 169Q146 164 149 162Z" fill="#c59da8"/>
+<path d="M154 169V174Q150 179 145 175M154 174Q159 179 164 175" fill="none" stroke="#b496ad" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M104 165Q86 159 74 160M103 172Q86 172 75 177M205 165Q224 159 237 161M205 173Q223 174 234 180" fill="none" stroke="#b096bb" stroke-width="1.4" stroke-linecap="round" opacity=".7"/>
+</g>
+<path d="M50 217Q104 195 155 222Q211 194 267 216L267 298Q211 285 155 308Q101 285 50 298Z" fill="#211829" stroke="#a78ab4" stroke-width="2" stroke-linejoin="round"/>
+<path d="M58 216Q107 201 155 227Q210 201 259 216V287Q210 275 155 297Q107 275 58 287Z" fill="#ebdfc7" stroke="#cfb897" stroke-width="1.2"/>
+<path d="M155 227V297M74 233Q105 225 137 240M74 247Q105 239 137 254M74 261Q105 253 137 268M175 240Q211 223 244 233M175 254Q211 237 244 247" fill="none" stroke="#b5a184" stroke-width="1.2"/>
+<path d="M158 291L154 320L161 315L168 320L165 291" fill="#96728e"/>
+<ellipse class="fur" cx="113" cy="216" rx="19" ry="13"/><ellipse class="fur" cx="204" cy="216" rx="19" ry="13"/>
+<path class="fur-line" d="M107 214V219M115 214V219M198 214V219M206 214V219"/>
+<path d="M221 263Q222 269 228 270Q222 271 221 277Q220 271 214 270Q220 269 221 263Z" fill="#c7a264"/>
+</svg>

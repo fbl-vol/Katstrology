@@ -10,6 +10,8 @@ import { CreatePersonDialog, PersonDetail, type Person } from './people';
 import { useProvider } from './provider';
 import { SettingsView } from './settings';
 import { SourceNotice } from './source-notice';
+import { ReadingKitten } from './kitten';
+import katCrescent from './assets/kat-crescent.svg';
 import { TransitView } from './transit-view';
 import { ChartHub, type ChartChoice } from './chart-hub';
 import { AdvancedView, type AdvancedDraft } from './advanced-view';
@@ -538,7 +540,7 @@ function App() {
   return <div className="app">
     {drawer && <button className="drawer-scrim" aria-label="Close navigation" onClick={closeDrawer} />}
     <aside className={`sidebar${drawer ? ' open' : ''}`} aria-label="Workspace navigation" onKeyDown={drawerKeys}>
-      <div className="brand-row"><button className="brand" type="button" aria-label="kat. — New conversation" onClick={() => newChat()}>kat.</button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
+      <div className="brand-row"><button className="brand" type="button" aria-label="kat. — New conversation" onClick={() => newChat()}><img src={katCrescent} alt="" />kat.</button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
       <div className="side-main-actions"><button className="new-chat" type="button" onClick={() => newChat()}>＋ &nbsp; New conversation</button>
         <button ref={chartNavButton} className="create-chart-nav" type="button" onClick={openChartHub}>＋ &nbsp; Create chart</button></div>
       <nav aria-label="People"><div className="side-heading-row"><h2 className="side-heading">PEOPLE</h2><button aria-label="Add person" onClick={() => {
@@ -669,7 +671,7 @@ function App() {
         </div> : archive.localPending?.conversationId === pendingConversationId.current ?
           <div className="messages pending-messages"><LocalPendingMessage pending={archive.localPending}
             onRetry={() => void retryPending()} onReconnect={openSettings} disabled={archive.busy || preparingSend} /></div> :
-          <div className="welcome"><div className="eyebrow">THE READING ROOM</div><h1>What’s on your mind?</h1><p>A chart, a question, or a thought to follow.</p></div>}
+          <div className="welcome"><ReadingKitten /><div className="eyebrow">THE READING ROOM</div><h1>What’s on your mind?</h1><p>A chart, a question, or a thought to follow.</p></div>}
         <ContextChart selection={selection} people={people} turns={archive.turns} activeHead={conversation?.active_head || null} onOpenChart={openContextChart} />
         </div>
         <div className="composer-wrap" ref={chatComposer.dock}>{discuss && <p className="compose-context" role="status">

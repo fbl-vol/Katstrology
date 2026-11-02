@@ -39,6 +39,8 @@ test('normal brand reuses New conversation from saved thread and every route', a
     await page.getByLabel('Password').fill('synthetic-browser-password');
     await page.getByRole('button', { name: 'Open workspace' }).click();
     await expect(page.getByRole('region', { name: 'New conversation' })).toBeVisible();
+    expect(decodeURIComponent((await page.locator('.brand img').getAttribute('src'))!)).toContain('Crescent-tail kitten primary logo');
+    expect(decodeURIComponent((await page.locator('link[rel="icon"]').getAttribute('href'))!)).toMatch(/kat-face|Simplified kitten face/);
     let creates = 0;
     page.on('request', request => {
       if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/conversations') creates++;
@@ -85,6 +87,13 @@ test('normal brand reuses New conversation from saved thread and every route', a
       await sidebarButton(page, /Synthetic transit reader/, mobile);
       await expect(page.getByRole('heading', { name: 'Synthetic transit reader' })).toBeVisible();
       await brandHome(page, mobile);
+      const kitten = page.locator('.welcome .reading-kitten svg');
+      await expect(kitten).toBeVisible();
+      await expect(kitten).toHaveAttribute('data-motion', 'on');
+      expect(await kitten.locator('.iris').first().evaluate(node => getComputedStyle(node).fill)).toBe('rgb(230, 193, 120)');
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      expect(await kitten.locator('.eye').first().evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       expect(creates).toBe(1);
       expect(await page.evaluate(() => (window as Window & { brandDocument?: string }).brandDocument)).toBe('original');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(view.width + 1);
