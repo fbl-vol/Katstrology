@@ -217,6 +217,64 @@ class ToolEvidenceBudgetTests(DatabaseCase):
         finally:
             bridge.close()
 
+    def test_two_selected_people_and_year_transit_reads_reach_fake_responses_without_old_refusal(self):
+        other = People(self.store).add(self.alice, 'Second synthetic reader')
+        second = BirthFlow(self.store).generate(self.alice, other['id'], {
+            'request_id': 'second-budget-chart', 'birth_date': '1995-02-11',
+            'birth_time': '09:00', 'time_unknown': False,
+            'birthplace': 'Synthetic Copenhagen reference', 'place_id': None,
+            'provisional': True, 'zone_override': 'Europe/Copenhagen',
+            'latitude_override': 55.68, 'longitude_override': 12.57,
+            'fold': None, 'settings': None})['chart']
+        second_id = second['id']
+        reads = [
+            ('get_chart', {'chart_id': self.chart_id}),
+            ('compare_selected_charts', {'chart_a_id': self.chart_id, 'chart_b_id': second_id}),
+            ('find_transit_events', {'chart_id': self.chart_id,
+                'start_utc': '2024-01-01T00:00:00+00:00',
+                'end_utc': '2025-01-01T00:00:00+00:00',
+                'transit_body': 'moon', 'natal_body': 'sun', 'aspect': 'square'}),
+            ('get_lunar_returns', {'chart_id': self.chart_id,
+                'start_utc': '2024-01-01T00:00:00+00:00',
+                'end_utc': '2025-01-01T00:00:00+00:00',
+                'latitude': 55.68, 'longitude': 12.57}),
+            ('get_transit_view', {'date': '2025-01-01', 'time': '12:00',
+                'zone': 'Europe/Copenhagen', 'occurrence': 'unspecified',
+                'mode': 'natal_transits', 'chart_id': second_id}),
+        ]
+        model, bridge = model_for(*(native_call(i, name, args) for i, (name, args) in
+                                    enumerate(reads, start=1)),
+            [text('The two synthetic people have separate chart versions and year-level events.'),
+             slim_footer([])])
+        try:
+            status = run_turn(self.store, self.alice, 'budget-thread', 'year-relationship',
+                'Compare both selected charts and a year of transit and lunar-return calculations.',
+                model, lambda _: None, model_provider='chatgpt_plan', model_slug='gpt-6.1-sol',
+                selected_people=[{'person_id': self.person_id, 'chart_id': self.chart_id},
+                                 {'person_id': other['id'], 'chart_id': second_id}])
+            events = self.store.read_turn(self.alice, 'budget-thread', 'year-relationship')['events']
+            self.assertEqual(status, 'complete', events[-1]['payload'])
+            results = [event['payload'] for event in events if event['kind'] == 'tool_result'
+                       and event['payload'].get('id', '').startswith('call-')]
+            self.assertEqual([row['id'] for row in results], [f'call-{i}' for i in range(1, 6)])
+            self.assertGreater(sum(row['model_projection_bytes'] for row in results), 32 * 1024)
+            self.assertTrue(all(row['model_projection_status'] != 'limit' for row in results))
+            self.assertGreater(len(results[2]['result']['events']), 20)
+            self.assertGreater(len(results[3]['result']['events']), 10)
+            self.assertEqual(results[1]['result']['chart_b_id'], second_id)
+            self.assertEqual([row['call_id'] for row in bridge.requests[-1]['input']
+                              if row.get('type') == 'function_call_output'],
+                             [f'call-{i}' for i in range(1, 6)])
+            self.assertEqual(len(bridge.requests), 6)
+            self.assertEqual(run_turn(self.store, self.alice, 'budget-thread', 'year-relationship',
+                'Compare both selected charts and a year of transit and lunar-return calculations.',
+                model, lambda _: None, model_provider='chatgpt_plan', model_slug='gpt-6.1-sol',
+                selected_people=[{'person_id': self.person_id, 'chart_id': self.chart_id},
+                                 {'person_id': other['id'], 'chart_id': second_id}]), 'complete')
+            self.assertEqual(len(bridge.requests), 6)
+        finally:
+            bridge.close()
+
     def test_excessive_read_returns_structured_limit_not_success_shaped_evidence(self):
         for size, scope in ((300_000, 'per_call'), (1_100_000, 'archive')):
             with self.subTest(scope=scope):

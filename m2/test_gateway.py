@@ -187,6 +187,12 @@ with Store(os.environ['KAT_FIXTURE_DSN'], os.environ['KAT_FIXTURE_FILES'],
         from m2.recall import current_text
         text = current_text(self.store, self.alice, 'long', 'many')
         self.assertIn('part-259', text)
+        from m2.compaction import turn_text
+        self.assertIn('part-259', turn_text(self.store, self.alice, 'long', 'many', {'long': {'many'}}, {}))
+        self.store.close()
+        self.store = Store(self.dsn, Path(self.directory.name) / 'files', self.ledger)
+        self.alice = self.store.authenticate('alice', 'synthetic-password-alice')
+        self.assertIn('part-259', current_text(self.store, self.alice, 'long', 'many'))
         self.assertEqual(self.store.read_turn(self.alice, 'long', 'many')['event_count'], 262)
 
     def test_large_single_output_delta_archives_contiguous_utf8_chunks(self):
