@@ -277,8 +277,12 @@ selected-branch context; previous chart tool facts can be included from the
 stored result rather than inferred from prior prose. The same owner-scoped
 `Charts` and `References` services back a **locally tested MCP 1.30 stdio
 adapter** (`m2/mcp_server.py`, both in-memory protocol and subprocess tests).
-Its session is authenticated *before* tools are served and has no account
-selector, network listener, unrestricted shell/file tool or capture hook.
+Its `find_chart_events` tool is the legacy Sun-to-natal-Sun hourly-scan path:
+only a closed UTC window of at most 30 days is supported (not 732 days).
+Longer windows require separate bounded reads; this is not the newer pageable
+transit or planetary-return calculation. Its session is authenticated *before*
+tools are served and has no account selector, network listener, unrestricted
+shell/file tool or capture hook.
 An external MCP-only host still does **not** satisfy full conversation capture
 or bounded client-managed context. The standalone adapter requires a controlling
 TTY for local password entry; the synthetic subprocess test uses explicitly

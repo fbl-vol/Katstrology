@@ -87,6 +87,10 @@ class ChartToolsTests(DatabaseCase):
                     chart_tools(self.store, self.alice)) as client:
                 tools = await client.list_tools()
                 self.assertIn('get_chart', [tool.name for tool in tools.tools])
+                description = next(tool.description for tool in tools.tools
+                                   if tool.name == 'find_chart_events')
+                self.assertIn('<=30 UTC days', description)
+                self.assertNotIn('732', description)
                 result = await client.call_tool('get_chart', {'chart_id': 'known'})
                 self.assertFalse(result.isError)
                 payload = result.structuredContent or json.loads(result.content[0].text)
@@ -97,6 +101,14 @@ class ChartToolsTests(DatabaseCase):
                 self.assertFalse(crossing.isError, crossing.content)
                 content = crossing.structuredContent or json.loads(crossing.content[0].text)
                 self.assertEqual(content['status'], 'unsupported_uncertain_birth_time')
+                window = {'chart_id': 'known', 'start_utc': '2024-03-20T00:00:00+00:00',
+                          'end_utc': '2024-04-19T00:00:00+00:00'}
+                maximum = await client.call_tool('find_chart_events', window)
+                self.assertFalse(maximum.isError, maximum.content)
+                too_long = await client.call_tool('find_chart_events', {
+                    **window, 'end_utc': '2024-04-20T00:00:00+00:00'})
+                self.assertTrue(too_long.isError)
+                self.assertIn('Unsupported event window', too_long.content[0].text)
             async with create_connected_server_and_client_session(
                     chart_tools(self.store, self.bob)) as other:
                 denied = await other.call_tool('get_chart', {'chart_id': 'known'})

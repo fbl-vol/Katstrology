@@ -11,7 +11,7 @@ from starlette.routing import Route
 from m2.revisions import export_conversation
 from m2.product_policy import MODEL, REPORTING_ZONE
 from m2.siwc import ProviderFailure
-from m2.web_server import authorized, json_body, json_response
+from m2.web_server import MAX_TEXT_JSON, authorized, json_body, json_response
 
 
 def _cursor(value):
@@ -26,7 +26,7 @@ def _cursor(value):
 
 async def send(request):
     session = await authorized(request, mutate=True, fast=True)
-    payload = await json_body(request, max_bytes=128 * 1024)
+    payload = await json_body(request, max_bytes=MAX_TEXT_JSON)
     required = {'id', 'text', 'selected_people', 'parent', 'revision_kind', 'replaces_turn_id'}
     legacy = {'mode', 'model_slug', 'chart_file', 'reporting_zone'}
     optional = {'selected_result'}

@@ -4,7 +4,7 @@ from starlette.routing import Route
 
 from m2.conversations import Conversations
 from m2.revisions import correct, select_branch
-from m2.web_server import authorized, json_body, json_response
+from m2.web_server import MAX_TEXT_JSON, authorized, json_body, json_response
 
 
 def _offset(request):
@@ -84,7 +84,7 @@ async def branch(request):
 
 async def correction(request):
     session = await authorized(request, mutate=True)
-    payload = await json_body(request, max_bytes=128 * 1024)
+    payload = await json_body(request, max_bytes=MAX_TEXT_JSON)
     if set(payload) != {'id', 'source_turn', 'action', 'replacement'}:
         raise ValueError('Invalid correction')
     created = await request.app.state.runtime.call(lambda store, _: correct(

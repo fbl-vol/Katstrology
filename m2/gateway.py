@@ -18,6 +18,7 @@ from m2.prompting import HOSTED, LOCAL, identity
 from m2.provider_steps import ProviderFlush, ProviderStep
 from m2.tool_answers import _chart_prompt_evidence, chart_answer, event_answer, reference_answer
 from m2.selected_results import selected_evidence
+from m2.store import MAX_EVENT_BYTES
 from m2.core_calc import solar_longitude
 
 
@@ -30,17 +31,23 @@ DEFAULT_PARENT = '@active'
 HOSTED_REPLY_TOKENS = 384
 
 
-def _event_text_chunks(text, max_bytes=8192):
-    """Keep each durable reply event under the independent generic event limit."""
-    start, used = 0, 0
-    for index, char in enumerate(text):
-        size = len(char.encode('utf-8'))
-        if used + size > max_bytes:
-            yield text[start:index]
-            start, used = index, 0
-        used += size
-    if start < len(text):
-        yield text[start:]
+def _event_text_chunks(text):
+    """Bound both Store.append's payload guard and the escaped JSON payload."""
+    start = 0
+    while start < len(text):
+        # A code point is at least one byte. Limit the candidate to one event's
+        # worth of characters, rather than repeatedly measuring the whole reply.
+        low, high = start + 1, min(len(text), start + MAX_EVENT_BYTES)
+        while low < high:
+            middle = (low + high + 1) // 2
+            payload = {'content': text[start:middle]}
+            if (len(str(payload).encode('utf-8')) <= MAX_EVENT_BYTES and
+                    len(json.dumps(payload).encode('utf-8')) <= MAX_EVENT_BYTES):
+                low = middle
+            else:
+                high = middle - 1
+        yield text[start:low]
+        start = low
 
 
 def turn_steps(store, session, conversation_id, turn_id, request, model, deliver,

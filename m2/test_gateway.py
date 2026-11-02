@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
+import json
 import os
 import select
 import subprocess
@@ -197,18 +198,37 @@ with Store(os.environ['KAT_FIXTURE_DSN'], os.environ['KAT_FIXTURE_FILES'],
 
     def test_large_single_output_delta_archives_contiguous_utf8_chunks(self):
         class LargeDelta(TinySource):
+            def __init__(self, answer):
+                super().__init__()
+                self.answer = answer
+
             def create_completion(self, prompt, **kwargs):
                 self.invocations += 1
-                yield {'choices': [{'text': 'ø' * 12000, 'finish_reason': None}]}
+                yield {'choices': [{'text': self.answer, 'finish_reason': None}]}
                 yield {'choices': [{'text': '', 'finish_reason': 'stop'}]}
+
         self.store.create_conversation(self.alice, 'large-output')
-        model = LargeDelta()
-        self.assertEqual(run_turn(self.store, self.alice, 'large-output', 'answer', 'Synthetic',
-                                  model, lambda _: None, parent_id='@root'), 'complete')
-        chunks = [event['payload']['content'] for event in self.store.read_turn(
-            self.alice, 'large-output', 'answer')['events'] if event['kind'] == 'assistant_chunk']
-        self.assertEqual(''.join(chunks), 'ø' * 12000)
-        self.assertTrue(all(len(chunk.encode('utf-8')) <= 8192 for chunk in chunks))
+        for index, answer in enumerate(('ø' * 12000,
+                                        'Answer: ' + '\x01' * 9000 + '\t\n"\\' * 1600 + '🌙' * 600)):
+            with self.subTest(index=index):
+                turn_id = f'answer-{index}'
+                model = LargeDelta(answer)
+                delivered = []
+                self.assertEqual(run_turn(self.store, self.alice, 'large-output', turn_id,
+                    'Synthetic', model, delivered.append, parent_id='@root'), 'complete')
+                recorded = self.store.read_turn(self.alice, 'large-output', turn_id)['events']
+                chunks = [event['payload']['content'] for event in recorded
+                          if event['kind'] == 'assistant_chunk']
+                self.assertEqual(''.join(chunks), answer)
+                self.assertTrue(all(len(str({'content': chunk}).encode('utf-8')) <= 16384 and
+                                    len(json.dumps({'content': chunk}).encode('utf-8')) <= 16384
+                                    for chunk in chunks))
+                self.assertEqual([event['kind'] for event in delivered],
+                                 [event['kind'] for event in recorded[1:]])
+                self.assertEqual(recorded[-1]['kind'], 'complete')
+                self.assertEqual(run_turn(self.store, self.alice, 'large-output', turn_id,
+                    'Synthetic', model, lambda _: None, parent_id='@root'), 'complete')
+                self.assertEqual(model.invocations, 1)
 
     def test_cancel_restart_storage_refusal_and_no_reexecution(self):
         self.store.create_conversation(self.alice, 'thread')

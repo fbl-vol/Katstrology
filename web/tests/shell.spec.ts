@@ -20,6 +20,26 @@ test('local workspace login, honest empty state, protected logout', async ({ pag
   await expect(page.getByRole('heading', { name: 'Welcome to Kat.' })).toBeVisible();
 });
 
+test('an oversized escaped draft is not sent or cleared', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-escaped-boundary');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toBeVisible();
+  const attempted: string[] = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && /\/api\/conversations(?:\/[^/]+\/turns)?$/.test(new URL(request.url()).pathname))
+      attempted.push(request.url());
+  });
+  const draft = 'Q' + '\t'.repeat(64 * 1024);
+  const composer = page.getByLabel('Message Kat');
+  await composer.fill(draft);
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('This message is longer than 64 KiB. Shorten it before sending; your draft is still here.')).toBeVisible();
+  await expect(composer).toHaveValue(draft);
+  expect(attempted).toEqual([]);
+});
+
 test('an unreferenced synthetic legacy file can be deleted without deleting its person', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   await page.goto('/');

@@ -26,11 +26,15 @@ import uvicorn
 from m2.deletion import ReferencedPersonAttachment, Tombstones
 from m2.local_fixture import ROOT, fixture_dsn
 from m2.product_policy import public_defaults
-from m2.store import Store
+from m2.store import Store, MAX_MESSAGE
 from m2.web_auth import SESSION_HOURS, WebAuth
 
 
 MAX_JSON = 16 * 1024
+# JSON can represent one accepted UTF-8 text byte as six ASCII bytes (\\u0001).
+# Reserve the ordinary body allowance for the bounded request envelope; other
+# routes retain MAX_JSON and Store still enforces the 64 KiB text limit.
+MAX_TEXT_JSON = 6 * MAX_MESSAGE + MAX_JSON
 COOKIE = 'kat_session'
 
 

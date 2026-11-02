@@ -38,7 +38,7 @@ def chart_tools(store, session):
     @mcp.tool()
     def find_chart_events(chart_id: str, start_utc: str, end_utc: str,
                           body: str = 'sun', aspect: str = 'conjunction') -> dict:
-        """Find bounded Sun-to-natal-Sun crossings; UTC ISO instants, <=732 days."""
+        """Find Sun-to-natal-Sun crossings; UTC ISO instants, <=30 UTC days."""
         return charts.find_events(session, chart_id, datetime.fromisoformat(start_utc),
                                   datetime.fromisoformat(end_utc), body, aspect)
 

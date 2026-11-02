@@ -87,6 +87,42 @@ class ChatHttpTests(DatabaseCase):
         self.assertEqual(self.post('/api/conversations/thread/turns/first/cancel').status_code, 404)
         self.assertEqual(self.post('/api/conversations/thread/export').status_code, 404)
 
+    def test_full_utf8_message_and_correction_fit_escaped_http_envelopes(self):
+        self.assertEqual(self.post('/api/conversations', {
+            'id': 'thread', 'title': 'Synthetic thread', 'people': []}).status_code, 201)
+        text = 'Q' + '\t' * (64 * 1024 - 1)
+        payload = self.message('escaped-input', text)
+        self.assertEqual(len(text.encode('utf-8')), 64 * 1024)
+        self.assertGreater(len(json.dumps(payload).encode('utf-8')), 128 * 1024)
+        ack = self.post('/api/conversations/thread/turns', payload)
+        self.assertEqual(ack.status_code, 202, ack.text)
+        self.assertEqual(self.events('escaped-input')[-1]['kind'], 'complete')
+        saved = self.client.get('/api/conversations/thread/turns/escaped-input').json()
+        self.assertEqual(saved['events'][0]['payload']['content'], text)
+        self.assertEqual(self.post('/api/conversations/thread/turns', payload).status_code, 202)
+        self.assertEqual(len(self.responses()), 1)
+        self.assertEqual(self.post('/api/conversations/thread/turns',
+                                   self.message('too-long', text + '\t')).status_code, 400)
+        self.assertEqual(self.client.get('/api/conversations/thread/turns/too-long').status_code, 404)
+
+        replacement = 'R' + '\x01' * (64 * 1024 - 1)
+        correction = {'id': 'fix-escaped', 'source_turn': 'escaped-input',
+                      'action': 'correct', 'replacement': replacement}
+        self.assertGreater(len(json.dumps(correction).encode('utf-8')), 128 * 1024)
+        self.assertEqual(self.post('/api/conversations/thread/corrections', correction).status_code, 200)
+        saved = self.client.get('/api/conversations/thread/turns/escaped-input').json()
+        self.assertEqual(saved['corrections'][-1]['replacement'], replacement)
+        self.assertEqual(self.post('/api/conversations/thread/corrections', {
+            **correction, 'id': 'too-long-correction', 'replacement': replacement + '\x01'}).status_code, 400)
+        self.assertEqual(len(self.client.get('/api/conversations/thread/turns/escaped-input')
+                             .json()['corrections']), 1)
+        no_csrf = self.client.post('/api/conversations/thread/corrections', json=correction,
+                                   headers={'Origin': 'http://127.0.0.1:8765'})
+        self.assertEqual(no_csrf.status_code, 403)
+        self.login('bob', 'synthetic-password-bob')
+        self.assertEqual(self.client.get('/api/conversations/thread/turns/escaped-input').status_code,
+                         404)
+
     def test_invalid_capacity_and_revoked_permission_reject_before_archive(self):
         self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
         original = self.transport.models
