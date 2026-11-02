@@ -91,28 +91,38 @@ python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <s
 
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
 receipt refuses replay. It stages the approved archive via the SSH alias, checks
-the effective Compose project, bound loopback route, previous running app/DB and
-loaded immutable config ID, then stops **only the app**. It invokes the existing
-quiesced `deployment_backup` API against the existing DB/attachment state and
-independent deletion journal/tip, verifying the snapshot schema before doing
-`compose up --no-deps app`. It verifies the running app's image/project, local Host
-and wrong-Host API behavior, and that the served index matches the packaged file.
-No DB rollback, data copy, credential import, edge route change, source publication,
-provider request or public-edge verification is performed. A receipt with
-`status: verified` proves only these bounded checks; confirm the separately
-managed HTTPS edge and user-facing route before claiming a full release.
+the effective Compose project **against the running app and DB** (actual state,
+credential, ephemeris and DB mounts; command/origin, runtime flags, network and
+loopback route), loaded immutable config ID, and independent app-owned empty
+snapshot destination before stopping **only the app**. Unsupported runtime
+overrides are rejected before any serving mutation; the runner never silently
+switches to fresh volumes or a different port. It invokes the existing quiesced
+`deployment_backup` API against the existing DB/attachment state and independent
+deletion journal/tip, verifying snapshot schema before `compose up --no-deps app`.
+It hashes every image asset against both loopback and the **public HTTPS origin**,
+including the manifest and icons; it checks anonymous/denied Host/Origin/fetch-site
+routes and exact HTTP→HTTPS redirect without disabling TLS certificate checks.
+A `verified` receipt requires **all** checks. A failed public check leaves the
+receipt at `app_activated_local_verified_public_incomplete`: inspect the edge,
+do not claim success or replay the app activation. No DB rollback, data copy,
+credential import, edge route change, source publication or provider request is
+performed. HTTP checks do not replace human usability or Android device install.
+The SSH key, Docker permissions, app-owned snapshot path and a reachable public
+TLS origin remain actual execution prerequisites, not established by local tests.
 
 On timeout, partial upload, backup failure, or ambiguous `up`, **halt**: the
-private server stage's `phase.json` and `previous-image` identify the last
-completed phase and previous immutable runtime image. Do not re-run the command
-with a new receipt or silently retry. Inspect running container labels/image,
-DB and deletion volume/tip, snapshot manifest and server routing. If the app is
-stopped or the new app fails and the previous image is still locally present,
-prepare a *new, separately approved* app-only recovery plan using that previous
-immutable config ID and the same Compose project, with `compose up --no-deps app`;
-reverify serving and unchanged DB/deletion authority. **Never restore an older DB
-or journal for an app rollback.** If the new schema cannot be read by the previous
-app, keep serving halted and resolve compatibility before any recovery. Snapshot
+private stage's `phase.json`, `previous-image` and `previous-container` identify
+the last phase and prior runtime. Preflight failures leave the old app running.
+A confirmed race before the backup command starts restarts **only the same old
+stopped container** and records `recovered_old_app; release not activated`, without
+requiring a second approval for that known-safe action. If a backup command has
+started or activation is ambiguous, do not auto-restart or blindly replay. Inspect
+app/DB/deletion identities and snapshot manifest. For an independently verified
+failed new app with compatible DB, prepare a separately approved app-only recovery
+using the retained previous image and unchanged volumes; reverify serving and
+unchanged deletion authority. **Never restore an older DB or journal for an app
+rollback.** If previous app/schema compatibility is unknown, hold serving for
+investigation instead of guessing. Snapshot
 retention/off-host backup, true remote restore rehearsal and key management are
 not automated by this runner. Leave the old maintenance route alone.
 

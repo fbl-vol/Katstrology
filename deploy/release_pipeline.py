@@ -13,6 +13,8 @@ import re
 import subprocess
 import sys
 import tarfile
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 HEX = re.compile(r'[0-9a-f]{64}\Z')
@@ -132,6 +134,43 @@ def remote(alias, request):
     return json.loads(result.stdout)
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def verify_public(origin, assets, opener=None):
+    """No proxy, redirected content, unverified TLS or session-bearing requests."""
+    opener = opener or build_opener(ProxyHandler({}), NoRedirect())
+
+    def get(url, headers=None):
+        request = Request(url, headers=headers or {}, method='GET')
+        try:
+            response = opener.open(request, timeout=10)
+        except HTTPError as error:
+            response = error
+        with response:
+            body = response.read(4 * 1024 * 1024 + 1)
+            if len(body) > 4 * 1024 * 1024:
+                raise ValueError('Public response exceeds bound')
+            return response.status, response.headers, body
+
+    status, headers, _ = get('http://' + origin.removeprefix('https://') + '/')
+    if status not in (301, 308) or headers.get('Location') != origin + '/':
+        raise ValueError('Public HTTP redirect differs from exact HTTPS origin')
+    if get(origin + '/api/session')[0] != 401:
+        raise ValueError('Public anonymous session boundary differs')
+    for headers in ({'Host': 'wrong.invalid'}, {'Origin': 'https://wrong.invalid'},
+                    {'Sec-Fetch-Site': 'cross-site'}):
+        if get(origin + '/api/session', headers)[0] != 403:
+            raise ValueError('Public Host/Origin/fetch-site guard differs')
+    for name, expected in assets.items():
+        path = '/' if name == 'index.html' else '/' + name
+        status, _, body = get(origin + path)
+        if status != 200 or sha256(body).hexdigest() != expected:
+            raise ValueError('Public HTTPS asset differs from packaged image')
+
+
 def execute(receipt, archive, compose, target, planned, approval, receipt_path):
     if approval != {'approved_action': 'release', 'plan_sha256': planned['plan_sha256']}:
         raise ValueError('Exact-target release approval missing or mismatched')
@@ -159,14 +198,27 @@ def execute(receipt, archive, compose, target, planned, approval, receipt_path):
         # Compose is from the verified immutable source offer, not this mutable checkout.
         remote(alias, {'action': 'compose', 'target': target, 'plan': planned, 'compose': compose.decode()})
         for phase in ('preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'):
-            remote(alias, {'action': phase, 'target': target, 'plan': planned})
+            observed = remote(alias, {'action': phase, 'target': target, 'plan': planned})
+            if observed['status'] == 'recovered_old_app':
+                receipt_path.write_text(json.dumps({'plan_sha256': planned['plan_sha256'],
+                    'status': 'recovered_old_app; release not activated'}) + '\n')
+                raise RuntimeError('Original app restarted before snapshot; release halted')
+            if observed['status'] != 'ok':
+                raise RuntimeError('Unexpected remote phase')
+        assets = observed['assets']
+        receipt_path.write_text(json.dumps({'plan_sha256': planned['plan_sha256'],
+            'artifact': planned['artifact'], 'target': planned['target'],
+            'status': 'app_activated_local_verified_public_incomplete',
+            'packaged_asset_sha256': assets}, indent=2) + '\n')
+        verify_public(target['origin'], assets)
     except (Exception, KeyboardInterrupt):
-        raise RuntimeError('Release halted; no automatic retry or database restore. Inspect protected server stage and serving state.') from None
-    # This receipt contains no secrets, private file paths, request bodies or log output.
+        raise RuntimeError('Release halted; inspect receipt and serving state, do not retry deployment or restore database.') from None
+    # Public check completed without login or provider calls. No paths/secrets in receipt.
     receipt_path.write_text(json.dumps({'plan_sha256': planned['plan_sha256'],
                                         'artifact': planned['artifact'], 'target': planned['target'],
                                         'status': 'verified', 'snapshot': 'quiesced; independently retained',
-                                        'serving_path': 'loopback host route and packaged index verified'}, indent=2) + '\n')
+                                        'packaged_asset_sha256': assets,
+                                        'serving_path': 'loopback and public TLS assets, redirects and authority verified'}, indent=2) + '\n')
 
 
 def main(argv=None):

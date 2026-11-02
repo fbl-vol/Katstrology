@@ -4,6 +4,7 @@ from hashlib import sha256
 from io import BytesIO
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
@@ -48,6 +49,64 @@ def synthetic_package(directory):
     path = root / 'receipt.json'
     path.write_text(json.dumps(receipt))
     return path
+
+
+def effective_config(target, image):
+    project = target['project']
+    return {'name': project, 'services': {
+        'app': {'image': image, 'command': ['python', '-m', 'm2.web_server', 'serve',
+             '--deployment-origin', target['origin'], '--db-password-file', '/run/secrets/db_password',
+             '--state-directory', '/var/lib/kat', '--served-dist', '/opt/kat/web/dist', '--enable-siwc'],
+             'user': '10001:10001', 'read_only': True,
+             'tmpfs': ['/tmp:rw,noexec,nosuid,size=64m'],
+             'ports': [{'mode': 'ingress', 'host_ip': '127.0.0.1', 'target': 8765,
+                        'published': str(target['loopback_port']), 'protocol': 'tcp'}],
+             'volumes': [
+                 {'type': 'bind', 'source': target['password_file'], 'target': '/run/secrets/db_password', 'read_only': True},
+                 {'type': 'volume', 'source': 'kat_state', 'target': '/var/lib/kat'},
+                 {'type': 'volume', 'source': 'deletion_authority', 'target': '/var/lib/kat/browser-runtime/deletions'},
+                 {'type': 'volume', 'source': 'siwc_credentials', 'target': '/var/lib/kat/browser-runtime/siwc'},
+                 {'type': 'bind', 'source': target['ephemeris_dir'], 'target': '/opt/kat/.local/ephe', 'read_only': True},
+             ], 'networks': {'private': None, 'outbound': None}},
+        'db': {'image': 'synthetic-db-id', 'ports': None, 'volumes': [
+            {'type': 'volume', 'source': 'pgdata', 'target': '/var/lib/postgresql/data'}],
+            'secrets': [{'source': 'db_password', 'target': '/run/secrets/db_password'}],
+            'environment': {'POSTGRES_DB': 'kat', 'POSTGRES_USER': 'kat',
+                            'POSTGRES_PASSWORD_FILE': '/run/secrets/db_password'},
+            'networks': {'private': None}},
+    }, 'volumes': {name: {'name': project + '_' + name} for name in
+                   ('kat_state', 'deletion_authority', 'siwc_credentials', 'pgdata')},
+            'networks': {'private': {'name': project + '_private'},
+                         'outbound': {'name': project + '_outbound'}},
+            'secrets': {'db_password': {'file': target['password_file']}}}
+
+
+def runtime_inspect(config, target, *, app=True):
+    service = 'app' if app else 'db'
+    project = target['project']
+    mounts = []
+    for item in config['services'][service]['volumes']:
+        source = (config['volumes'][item['source']]['name'] if item['type'] == 'volume'
+                  else item['source'])
+        mounts.append({'Type': item['type'], 'Name': source if item['type'] == 'volume' else '',
+                       'Source': source, 'Destination': item['target'], 'RW': not item.get('read_only', False)})
+    if not app:
+        mounts.append({'Type': 'bind', 'Source': target['password_file'],
+                       'Destination': '/run/secrets/db_password', 'RW': False})
+    return {'Id': 'existing-app' if app else 'existing-db',
+            'Image': 'sha256:' + 'd' * 64 if app else 'sha256:' + 'e' * 64,
+            'Config': {'Labels': {'com.docker.compose.project': project,
+                                  'com.docker.compose.service': service},
+                       'Cmd': config['services'][service].get('command'),
+                       'User': config['services'][service].get('user') or '',
+                       'Env': [f'{k}={v}' for k, v in config['services'][service].get('environment', {}).items()]},
+            'State': {'Running': True}, 'Mounts': mounts,
+            'HostConfig': {'PortBindings': {'8765/tcp': [{'HostIp': '127.0.0.1',
+                         'HostPort': str(target['loopback_port'])}]} if app else {},
+                           'ReadonlyRootfs': bool(config['services'][service].get('read_only')),
+                           'Tmpfs': {'/tmp': 'rw,noexec,nosuid,size=64m'} if app else {}},
+            'NetworkSettings': {'Networks': {project + '_' + network: {}
+                for network in config['services'][service]['networks']}}}
 
 
 def synthetic_target():
@@ -131,6 +190,308 @@ class ReleasePlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'no retry'):
                     release_remote.main()
                 docker.assert_not_called()
+
+    def test_mismatched_existing_state_and_port_refuse_before_loading_or_stop(self):
+        with TemporaryDirectory() as directory:
+            stage = Path(directory) / 'stage'
+            stage.mkdir()
+            payload = b'synthetic image archive'
+            (stage / 'image.tar').write_bytes(payload)
+            (stage / 'compose.yaml').write_text('synthetic compose')
+            target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': directory}
+            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
+                    'artifact': {'config_digest': 'sha256:' + 'b' * 64,
+                                 'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            config = effective_config(target, plan['artifact']['config_digest'])
+            for mismatch in ('state-volume', 'port', 'db-volume'):
+                with self.subTest(mismatch=mismatch):
+                    existing = runtime_inspect(config, target)
+                    database = runtime_inspect(config, target, app=False)
+                    if mismatch == 'state-volume':
+                        existing['Mounts'][1]['Name'] = 'synthetic-retained-archive'
+                    elif mismatch == 'port':
+                        existing['HostConfig']['PortBindings']['8765/tcp'][0]['HostPort'] = '28766'
+                    else:
+                        database['Mounts'][0]['Name'] = 'synthetic-retained-db'
+                    calls = []
+
+                    def docker(*argv, **_kwargs):
+                        calls.append(argv)
+                        if 'config' in argv: return json.dumps(config)
+                        if 'ps' in argv: return 'existing-app' if argv[-1] == 'app' else 'existing-db'
+                        if argv[:3] == ('docker', 'inspect', 'existing-app'): return json.dumps([existing])
+                        if argv[:3] == ('docker', 'inspect', 'existing-db'): return json.dumps([database])
+                        if argv[:3] == ('docker', 'image', 'inspect'):
+                            return json.dumps([{'Id': argv[-1] if argv[-1].startswith('sha256:') else 'sha256:' + 'e' * 64,
+                                                'Config': {'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
+                        if argv[:2] == ('docker', 'load'): return ''
+                        raise AssertionError(argv)
+
+                    with patch.object(release_remote, 'REQUEST', {'action': 'preflight', 'plan': plan,
+                              'target': target}, create=True), patch.object(release_remote, 'run', side_effect=docker):
+                        with self.assertRaisesRegex(ValueError, 'serving|mount|binding|runtime'):
+                            release_remote.main()
+                    self.assertFalse(any('load' in call or 'stop' in call for call in calls))
+                    self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
+
+    def test_missing_snapshot_refuses_while_old_app_is_running(self):
+        with TemporaryDirectory() as directory:
+            stage = Path(directory) / 'stage'
+            stage.mkdir()
+            payload = b'synthetic image archive'
+            (stage / 'image.tar').write_bytes(payload)
+            (stage / 'compose.yaml').write_text('synthetic compose')
+            target = synthetic_target() | {'stage': str(stage),
+                                          'snapshot_dir': str(Path(directory) / 'missing')}
+            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
+                    'artifact': {'config_digest': 'sha256:' + 'b' * 64,
+                                 'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            config = effective_config(target, plan['artifact']['config_digest'])
+            calls = []
+
+            def docker(*argv, **_kwargs):
+                calls.append(argv)
+                if 'config' in argv: return json.dumps(config)
+                if 'ps' in argv: return 'existing-app' if argv[-1] == 'app' else 'existing-db'
+                if argv[:3] == ('docker', 'inspect', 'existing-app'): return json.dumps([runtime_inspect(config, target)])
+                if argv[:3] == ('docker', 'inspect', 'existing-db'): return json.dumps([runtime_inspect(config, target, app=False)])
+                if argv[:3] == ('docker', 'image', 'inspect'):
+                    return json.dumps([{'Id': argv[-1] if argv[-1].startswith('sha256:') else 'sha256:' + 'e' * 64,
+                                        'Config': {'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
+                if argv[:2] == ('docker', 'load'): return ''
+                raise AssertionError(argv)
+
+            with patch.object(release_remote, 'REQUEST', {'action': 'preflight', 'plan': plan,
+                      'target': target}, create=True), patch.object(release_remote, 'run', side_effect=docker):
+                with self.assertRaisesRegex(ValueError, 'snapshot'):
+                    release_remote.main()
+            self.assertFalse(any('stop' in call for call in calls))
+            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
+
+    def test_snapshot_prerequisite_rejects_owner_and_existing_target_but_accepts_empty(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / 'independent'
+            root.mkdir()
+            target = synthetic_target() | {'stage': str(Path(directory) / 'stage'), 'snapshot_dir': str(root)}
+            plan = {'plan_sha256': 'a' * 64}
+            with self.assertRaisesRegex(ValueError, 'app-owned'):
+                release_remote.check_snapshot(target, plan, [])
+            real_stat = Path.stat
+            def app_owned(path, *args, **kwargs):
+                info = real_stat(path, *args, **kwargs)
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=10001) if path == root else info
+            with patch.object(Path, 'stat', app_owned):
+                self.assertEqual(release_remote.check_snapshot(target, plan, []), root)
+                (root / ('snapshot-' + 'a' * 16)).mkdir()
+                with self.assertRaisesRegex(ValueError, 'already exists'):
+                    release_remote.check_snapshot(target, plan, [])
+                with self.assertRaisesRegex(ValueError, 'overlap'):
+                    release_remote.check_snapshot(target, plan, [
+                        {'Type': 'bind', 'Source': str(root), 'Destination': '/var/lib/kat'}])
+
+    def test_snapshot_race_restarts_only_identified_old_app_before_backup(self):
+        with TemporaryDirectory() as directory:
+            stage = Path(directory) / 'stage'
+            stage.mkdir()
+            target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': directory}
+            compose = b'synthetic compose'
+            (stage / 'compose.yaml').write_bytes(compose)
+            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(compose).hexdigest(),
+                    'artifact': {'config_digest': 'sha256:' + 'b' * 64}}
+            config = effective_config(target, plan['artifact']['config_digest'])
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'preflight_ok'}))
+            (stage / 'previous-container').write_text('existing-app\n')
+            (stage / 'previous-image').write_text('sha256:' + 'd' * 64 + '\n')
+            (stage / 'previous-db-container').write_text('existing-db\n')
+            (stage / 'previous-db-image').write_text('sha256:' + 'e' * 64 + '\n')
+            running = True
+            calls = []
+            def docker(*argv, **_kwargs):
+                nonlocal running
+                calls.append(argv)
+                if 'config' in argv: return json.dumps(config)
+                if argv[:3] == ('docker', 'inspect', 'existing-app'):
+                    app = runtime_inspect(config, target)
+                    app['State']['Running'] = running
+                    return json.dumps([app])
+                if argv[:3] == ('docker', 'inspect', 'existing-db'):
+                    return json.dumps([runtime_inspect(config, target, app=False)])
+                if 'stop' in argv:
+                    running = False
+                    return ''
+                if argv[:2] == ('docker', 'start'):
+                    self.assertEqual(argv[-1], 'existing-app')
+                    running = True
+                    return ''
+                if 'ps' in argv: return 'existing-db' if argv[-1] == 'db' else ('existing-app' if running else '')
+                raise AssertionError(argv)
+            with patch.object(release_remote, 'REQUEST', {'action': 'quiesce_and_snapshot',
+                 'plan': plan, 'target': target}, create=True), \
+                 patch.object(release_remote, 'run', side_effect=docker), \
+                 patch.object(release_remote, 'check_snapshot', side_effect=[Path(directory), ValueError('synthetic snapshot race')]):
+                release_remote.main()
+            self.assertTrue(running)
+            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'recovered_old_app')
+            self.assertFalse(any('run' in argv or 'up' in argv for argv in calls))
+
+    def test_public_verification_checks_redirect_tls_all_assets_and_authority(self):
+        origin = 'https://example.invalid'
+        assets = {'index.html': sha256(b'home').hexdigest(),
+                  'assets/app.js': sha256(b'javascript').hexdigest(),
+                  'manifest.webmanifest': sha256(b'manifest').hexdigest(),
+                  'icons/kat-192.png': sha256(b'icon192').hexdigest(),
+                  'icons/kat-512.png': sha256(b'icon512').hexdigest(),
+                  'icons/kat-512-maskable.png': sha256(b'maskable').hexdigest()}
+        class Response:
+            def __init__(self, status, body=b'', headers=None):
+                self.status, self.body, self.headers = status, body, headers or {}
+            def __enter__(self): return self
+            def __exit__(self, *_args): pass
+            def read(self, _limit): return self.body
+        class Opener:
+            def __init__(self): self.calls = []; self.bad_asset = False
+            def open(self, request, timeout):
+                self.calls.append((request.full_url, dict(request.header_items())))
+                if request.full_url.startswith('http://'):
+                    return Response(308, headers={'Location': origin + '/'})
+                if request.full_url.endswith('/api/session'):
+                    return Response(403 if any(key in dict(request.header_items()) for key in
+                        ('Host', 'Origin', 'Sec-fetch-site')) else 401)
+                path = request.full_url.removeprefix(origin + '/') or 'index.html'
+                body = {'index.html': b'home', 'assets/app.js': b'javascript',
+                        'manifest.webmanifest': b'manifest', 'icons/kat-192.png': b'icon192',
+                        'icons/kat-512.png': b'icon512', 'icons/kat-512-maskable.png': b'maskable'}[path]
+                return Response(200, b'corrupt' if self.bad_asset and path == 'icons/kat-512.png' else body)
+        opener = Opener()
+        pipeline.verify_public(origin, assets, opener=opener)
+        self.assertEqual(len(opener.calls), 11)
+        self.assertTrue(all(url.startswith(origin) for url, _ in opener.calls[1:]))
+        opener.bad_asset = True
+        with self.assertRaisesRegex(ValueError, 'asset differs'):
+            pipeline.verify_public(origin, assets, opener=opener)
+
+    def test_successful_fake_ssh_orchestration_and_public_failure_receipt(self):
+        target = synthetic_target()
+        receipt = {'commit': 'a' * 40, 'tree': 'b' * 40, 'image_id': 'sha256:' + 'c' * 64,
+                   'config_digest': 'sha256:' + 'd' * 64, 'image_archive_sha256': 'e' * 64,
+                   'source_offer_sha256': 'f' * 64}
+        planned = pipeline.plan(receipt, target, 22, b'compose')
+        approval = {'approved_action': 'release', 'plan_sha256': planned['plan_sha256']}
+        assets = {'index.html': sha256(b'home').hexdigest(),
+                  'manifest.webmanifest': sha256(b'manifest').hexdigest()}
+        with TemporaryDirectory() as directory:
+            archive = Path(directory) / 'image.tar'
+            archive.write_bytes(b'synthetic image')
+            result = Path(directory) / 'result.json'
+            steps = []
+            def fake_remote(_alias, request):
+                steps.append(request['action'])
+                return {'status': 'ok', **({'assets': assets} if request['action'] == 'verify_serving_path' else {})}
+            with patch.object(pipeline, 'remote', side_effect=fake_remote), \
+                 patch.object(pipeline.subprocess, 'run') as scp, \
+                 patch.object(pipeline, 'verify_public') as public:
+                pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
+                public.assert_called_once_with(target['origin'], assets)
+                scp.assert_called_once()
+            self.assertEqual(steps, ['stage', 'compose', 'preflight', 'quiesce_and_snapshot',
+                                     'activate_app_only', 'verify_serving_path'])
+            self.assertEqual(json.loads(result.read_text())['status'], 'verified')
+            result.unlink()
+            with patch.object(pipeline, 'remote', side_effect=fake_remote), \
+                 patch.object(pipeline.subprocess, 'run'), \
+                 patch.object(pipeline, 'verify_public', side_effect=ValueError('synthetic bad TLS')):
+                with self.assertRaisesRegex(RuntimeError, 'halted'):
+                    pipeline.execute(receipt, archive, b'compose', target, planned, approval, result)
+            self.assertEqual(json.loads(result.read_text())['status'],
+                             'app_activated_local_verified_public_incomplete')
+
+    def test_remote_fake_docker_runs_full_owned_app_only_lifecycle(self):
+        with TemporaryDirectory() as directory:
+            stage, snapshot = Path(directory) / 'stage', Path(directory) / 'snapshot'
+            snapshot.mkdir()
+            target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': str(snapshot)}
+            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
+                    'schema_version': 22, 'artifact': {'config_digest': 'sha256:' + 'b' * 64,
+                    'image_archive_sha256': sha256(b'image').hexdigest(), 'commit': 'c' * 40}}
+            config = effective_config(target, plan['artifact']['config_digest'])
+            running = True
+            image = 'sha256:' + 'd' * 64
+            calls = []
+            assets = {name: sha256(body).hexdigest() for name, body in {
+                'index.html': b'home', 'manifest.webmanifest': b'manifest',
+                'icons/kat-192.png': b'192', 'icons/kat-512.png': b'512',
+                'icons/kat-512-maskable.png': b'mask'}.items()}
+            bodies = {'/': b'home', '/manifest.webmanifest': b'manifest',
+                      '/icons/kat-192.png': b'192', '/icons/kat-512.png': b'512',
+                      '/icons/kat-512-maskable.png': b'mask'}
+            def docker(*argv, **_kwargs):
+                nonlocal running, image
+                calls.append(argv)
+                if 'config' in argv: return json.dumps(config)
+                if 'ps' in argv: return 'existing-db' if argv[-1] == 'db' else ('existing-app' if running else '')
+                if argv[:3] == ('docker', 'inspect', 'existing-app'):
+                    app = runtime_inspect(config, target)
+                    app['Image'] = image
+                    app['State']['Running'] = running
+                    return json.dumps([app])
+                if argv[:3] == ('docker', 'inspect', 'existing-db'):
+                    return json.dumps([runtime_inspect(config, target, app=False)])
+                if argv[:3] == ('docker', 'image', 'inspect'):
+                    return json.dumps([{'Id': argv[-1] if argv[-1].startswith('sha256:') else 'sha256:' + 'e' * 64,
+                                        'Config': {'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
+                if argv[:2] == ('docker', 'load'): return ''
+                if 'stop' in argv:
+                    self.assertEqual(argv[-1], 'app')
+                    running = False
+                    return ''
+                if 'run' in argv:
+                    self.assertFalse(running)
+                    folder = snapshot / ('snapshot-' + 'a' * 16)
+                    folder.mkdir()
+                    (folder / 'manifest.json').write_text(json.dumps({'schema_version': 22,
+                        'journal_prefix_sha256': 'f' * 64}))
+                    return ''
+                if 'up' in argv:
+                    self.assertIn('--no-deps', argv)
+                    running, image = True, plan['artifact']['config_digest']
+                    return ''
+                if 'exec' in argv: return json.dumps(assets)
+                raise AssertionError(argv)
+            class Response:
+                def __init__(self, status, body=b''): self.status, self.body = status, body
+                def __enter__(self): return self
+                def __exit__(self, *_args): pass
+                def read(self): return self.body
+            class Opener:
+                def open(self, request, timeout):
+                    from urllib.error import HTTPError
+                    if request.get_header('Host') == 'wrong.invalid':
+                        raise HTTPError(request.full_url, 403, 'denied', {}, BytesIO(b''))
+                    path = request.full_url.split(str(target['loopback_port']), 1)[1]
+                    return Response(401 if path == '/api/session' else 200, bodies.get(path, b''))
+            original_stat = Path.stat
+            def app_owned(path, *args, **kwargs):
+                info = original_stat(path, *args, **kwargs)
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=10001) if path == snapshot else info
+            with patch.object(Path, 'stat', app_owned), patch.object(release_remote, 'run', side_effect=docker), \
+                 patch.object(release_remote, 'build_opener', return_value=Opener()):
+                def phase(action, **extra):
+                    with patch.object(release_remote, 'REQUEST', {'action': action,
+                             'target': target, 'plan': plan, **extra}, create=True):
+                        release_remote.main()
+                phase('stage')
+                (stage / 'image.tar').write_bytes(b'image')
+                phase('compose', compose='synthetic compose')
+                for action in ('preflight', 'quiesce_and_snapshot', 'activate_app_only', 'verify_serving_path'):
+                    phase(action)
+            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'local_verified')
+            self.assertEqual(image, plan['artifact']['config_digest'])
+            self.assertTrue(running)
+            self.assertLess(next(i for i, argv in enumerate(calls) if 'stop' in argv),
+                            next(i for i, argv in enumerate(calls) if 'run' in argv))
+            self.assertFalse(any('stop' in argv and 'db' in argv for argv in calls))
 
     def test_invalid_target_never_calls_ssh(self):
         with TemporaryDirectory() as directory:
