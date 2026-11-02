@@ -2,7 +2,7 @@
 
 import psycopg
 
-from m2.provenance import current_turn_usable
+from m2.provenance import current_turn_usable, dialogue_turn_usable
 from m2.prompting import LOCAL as SYSTEM
 RECENT_TURNS = 4
 SUMMARY_TURNS = 12
@@ -54,6 +54,62 @@ def current_text(store, session, conv_id, turn_id, chains=None, resolved=None, t
     return f'[turn {turn_id}] user: {user}\nassistant: {reply}\n{evidence}'
 
 
+def dialogue_projection(store, session, conv_id, turn_id, chains=None, resolved=None, turn=None):
+    """Retain a user's request without promoting old selected facts to evidence.
+
+    A new assistant reply may rejoin the dialogue only when its own selected
+    drafts refresh every historical draft dependency. Corrections, withdrawals,
+    linked-source revocations, inactive branches and file consent stay fenced.
+    """
+    chains = {} if chains is None else chains
+    resolved = {} if resolved is None else resolved
+    if current_turn_usable(store, session, conv_id, turn_id, chains, resolved):
+        text = current_text(store, session, conv_id, turn_id, chains, resolved, turn)
+        return {'text': text, 'full_evidence': True, 'assistant_safe': True} if text else None
+    if not dialogue_turn_usable(store, session, conv_id, turn_id, chains, resolved):
+        return None
+    turn = turn if turn is not None else store.read_turn(session, conv_id, turn_id)
+    if turn['next_event_offset'] is not None:
+        raise ValueError('Turn exceeds supported derivative event window; originals retained')
+    if turn['corrections'] or any(person['attachment_id'] for person in turn['selected_people']):
+        return None
+    user = turn['events'][0]['payload']['content']
+    owner = store.owner(session)
+    stale_people = {row['person_id'] for row in store.db.execute('''
+        SELECT DISTINCT p.person_id FROM turn_people p JOIN person_drafts d
+          ON (d.owner_id=p.owner_id AND d.person_id=p.person_id)
+        WHERE p.owner_id=%s AND p.conversation_id=%s AND p.turn_id=ANY(%s)
+          AND p.draft_revision IS NOT NULL AND d.revision>p.draft_revision
+    ''', (owner, conv_id, store.ancestry(session, conv_id, turn_id))).fetchall()}
+    selected = {p['person_id'] for p in turn['selected_people']
+                if p['draft_revision'] is not None}
+    own_stale = any(row['person_id'] in stale_people for row in store.db.execute('''
+        SELECT person_id FROM turn_people WHERE owner_id=%s AND conversation_id=%s
+          AND turn_id=%s AND draft_revision IS NOT NULL AND EXISTS (
+            SELECT 1 FROM person_drafts d WHERE d.owner_id=turn_people.owner_id
+              AND d.person_id=turn_people.person_id AND d.revision>turn_people.draft_revision)
+    ''', (owner, conv_id, turn_id)).fetchall())
+    assistant_safe = bool(stale_people) and not own_stale and stale_people <= selected
+    if assistant_safe:
+        from m2.charts import Charts
+        assistant_safe = all(not p['chart_id'] or Charts(store).get_chart(
+            session, p['chart_id'])['source_status'] == 'current'
+            for p in turn['selected_people'])
+    reply = ''.join(e['payload']['content'] for e in turn['events']
+                    if e['kind'] == 'assistant_chunk') if assistant_safe else ''
+    label = ('refreshed selected-version dialogue' if assistant_safe else
+             'historical user request; birth/chart details may be superseded')
+    text = f'[turn {turn_id} {label}; not current chart evidence] user: {user}'
+    if reply:
+        text += f'\nassistant interpretation, not evidence: {reply}'
+    return {'text': text, 'full_evidence': False, 'assistant_safe': assistant_safe}
+
+
+def dialogue_text(store, session, conv_id, turn_id, chains=None, resolved=None, turn=None):
+    projected = dialogue_projection(store, session, conv_id, turn_id, chains, resolved, turn)
+    return projected['text'] if projected else None
+
+
 def refresh_summary(store, session, conv_id, head_id, expected_epoch):
     """Coverage links exact selected turn IDs; old caches cannot cross branches."""
     owner = store.owner(session)
@@ -62,7 +118,7 @@ def refresh_summary(store, session, conv_id, head_id, expected_epoch):
     covered = older[-SUMMARY_TURNS:]
     omitted = len(older) - len(covered)
     chains, resolved = {conv_id: set(chain)}, {}
-    lines = [current_text(store, session, conv_id, item, chains, resolved)
+    lines = [dialogue_text(store, session, conv_id, item, chains, resolved)
              for item in covered]
     content = '\n'.join(line[:240] for line in lines if line is not None)
     with store.db.transaction():
@@ -92,11 +148,11 @@ def rebuild_one(store, session, conv_id, expected_epoch):
     entries = []
     chains, resolved = {conv_id: set(chain)}, {}
     for start in range(0, len(chain), 20):
-        valid = [turn_id for turn_id in chain[start:start + 20]
-                 if not stale_tool_evidence(store, session, conv_id, turn_id, chains, resolved)]
-        if not valid:
-            continue
-        for turn in store.read_turns(session, conv_id, valid):
+        for turn in store.read_turns(session, conv_id, chain[start:start + 20]):
+            projected = dialogue_projection(store, session, conv_id, turn['id'],
+                                            chains, resolved, turn)
+            if projected is None:
+                continue
             if turn['next_event_offset'] is not None:
                 raise ValueError('Turn exceeds supported derivative event window; originals retained')
             if turn['corrections']:
@@ -105,10 +161,11 @@ def rebuild_one(store, session, conv_id, expected_epoch):
                     entries.append((correction['id'], 'correction', correction['replacement']))
                 continue
             turn_id = turn['id']
-            entries.append((turn_id, 'user', turn['events'][0]['payload']['content']))
+            entries.append((turn_id, 'user' if projected['full_evidence'] else 'historical_user',
+                            turn['events'][0]['payload']['content']))
             reply = ''.join(e['payload']['content'] for e in turn['events']
                             if e['kind'] == 'assistant_chunk')
-            if reply:
+            if reply and projected['assistant_safe']:
                 entries.append((turn_id, 'assistant', reply))
 
     with store.db.transaction():
@@ -144,6 +201,39 @@ def rebuild_pending(store, session, limit=10):
         ORDER BY conversation_id LIMIT %s
     ''', (owner, limit)).fetchall()
     return sum(rebuild_one(store, session, row['conversation_id'], row['epoch']) for row in rows)
+
+
+def repair_stale_draft_derivatives(store, session, after='', limit=10):
+    """One bounded, explicit metadata-only repair for pre-fix cached projections.
+
+    Run with exclusive Store ownership after a backup; the cursor advances even
+    if a queued rebuild fails, in which case normal rebuild_pending can retry.
+    Do not call at startup or traverse unrelated archives automatically.
+    """
+    owner = store.owner(session)
+    if after:
+        store._id(after)
+    if not 1 <= limit <= 10:
+        raise ValueError('Repair page limit 1..10')
+    rows = store.db.execute('''
+        SELECT c.id FROM conversations c WHERE c.owner_id=%s AND c.id>%s
+          AND EXISTS (SELECT 1 FROM turn_people p JOIN person_drafts d
+            ON d.owner_id=p.owner_id AND d.person_id=p.person_id
+            WHERE p.owner_id=c.owner_id AND p.conversation_id=c.id
+              AND p.draft_revision IS NOT NULL AND d.revision>p.draft_revision)
+        ORDER BY c.id LIMIT %s
+    ''', (owner, after, limit + 1)).fetchall()
+    selected = rows[:limit]
+    for row in selected:
+        with store.db.transaction():
+            store._changed(owner, row['id'], invalidate_dependents=False)
+        epoch = store._conversation(owner, row['id'])['epoch']
+        if not rebuild_one(store, session, row['id'], epoch):
+            raise RuntimeError('Continuity repair was not completed; retry from the previous cursor')
+    return {'repaired': len(selected), 'next_after': selected[-1]['id'] if len(rows) > limit else None,
+            'pending_conversations': store.db.execute('''
+                SELECT count(*) AS n FROM rebuild_queue WHERE owner_id=%s
+            ''', (owner,)).fetchone()['n']}
 
 
 def search(store, session, query, limit=10, person_id=None):
@@ -190,7 +280,7 @@ def assemble_prompt(store, session, conv_id, head_id, request, tokenize,
     if recent_texts is not None:
         recent, summary, cached = list(recent_texts), summary_override, None
     else:
-        recent = [current_text(store, session, conv_id, item, chains, resolved)
+        recent = [dialogue_text(store, session, conv_id, item, chains, resolved)
                   for item in chain[-RECENT_TURNS:]]
         recent = [text for text in recent if text is not None]
         current = store._conversation(owner, conv_id)

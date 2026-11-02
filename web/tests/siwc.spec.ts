@@ -398,6 +398,69 @@ test('eight model-directed reads finish with durable evidence on desktop and mob
   }
 });
 
+test('return to the same archived thread after correcting a saved birth year retains the original question', async ({ page, context }) => {
+  test.setTimeout(120000);
+  const { origin, provider, hostile } = origins();
+  await syntheticNavigation(context, origin, provider, hostile);
+  await openSyntheticSignIn(page, 'reader-continuity-hotfix');
+  await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'A space for someone new.' });
+  await dialog.getByLabel('Name').fill('Synthetic continuity partner');
+  await dialog.getByRole('button', { name: 'Create person' }).click();
+  const form = page.getByRole('region', { name: 'Generate a chart' });
+  await form.getByLabel('Birth date').fill('2000-02-12');
+  await form.getByLabel('Birth time').fill('09:30');
+  await form.getByLabel('Birthplace search').fill('Copenhagen');
+  await form.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
+  await form.getByRole('button', { name: 'Generate chart' }).click();
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await page.getByRole('tab', { name: 'Basic info' }).click();
+  await page.getByRole('button', { name: 'New conversation about Synthetic continuity partner' }).click();
+  const question = 'SyntheticContinuityFixture original relationship question: How can we grow closer?';
+  await page.getByLabel('Message Kat').fill(question);
+  const firstSent = page.waitForResponse(response => response.request().method() === 'POST' &&
+    /\/api\/conversations\/[^/]+\/turns$/.test(new URL(response.url()).pathname));
+  await page.getByRole('button', { name: 'Send message' }).click();
+  const first = await firstSent;
+  expect(first.status()).toBe(202);
+  const conversationPath = new URL(first.url()).pathname;
+  const original = await archivedTurn(page, page.locator('.turn-card').last());
+  await expect(page.locator('.turn-card').last()).toHaveAttribute('data-kat-status', 'complete');
+
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button',
+    { name: /Synthetic continuity partner/ }).click();
+  await page.getByRole('button', { name: 'Edit current chart' }).click();
+  const update = page.getByRole('region', { name: 'Generate a chart' });
+  await expect(update.getByLabel('Birth date')).toBeVisible({ timeout: 10000 });
+  await update.getByLabel('Birth date').fill('1983-02-12');
+  await update.getByLabel('Birthplace search').fill('Copenhagen');
+  await update.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
+  const posted = page.waitForResponse(response => response.request().method() === 'POST' &&
+    /\/api\/people\/[^/]+\/generate$/.test(new URL(response.url()).pathname));
+  await update.getByRole('button', { name: 'Generate chart' }).click();
+  const corrected = await posted;
+  expect(corrected.status()).toBe(201);
+  const chartId = (await corrected.json()).chart.id as string;
+  expect(chartId).not.toBe(original.selected_people[0].chart_id);
+  await page.reload();
+  const recent = page.getByRole('navigation', { name: 'Recent conversations' });
+  await recent.getByRole('button', { name: /Chart conversation topics|SyntheticContinuityFixture/ }).first().click();
+  await expect(page.locator('.turn-card')).toHaveCount(1);
+  await expect(page.getByLabel('Message Kat')).toBeVisible();
+  await page.getByLabel('Message Kat').fill('SyntheticContinuityFixture continue the original question.');
+  const resumedSent = page.waitForResponse(response => response.request().method() === 'POST' &&
+    /\/api\/conversations\/[^/]+\/turns$/.test(new URL(response.url()).pathname));
+  await page.getByRole('button', { name: 'Send message' }).click();
+  const resumed = await resumedSent;
+  expect(resumed.status()).toBe(202);
+  expect(new URL(resumed.url()).pathname).toBe(conversationPath);
+  await expect(page.getByText(`Synthetic continuity verified with corrected chart ${chartId}`)).toBeVisible();
+  const archived = await archivedTurn(page, page.locator('.turn-card').last());
+  expect(archived.parent_id).toBe(original.id);
+  expect(archived.selected_people[0].chart_id).toBe(chartId);
+});
+
 test('generated chart selection reaches actual synthetic model input on a new discussion', async ({ page, context }) => {
   test.setTimeout(90000);
   const { origin, provider, hostile } = origins();

@@ -51,9 +51,10 @@ def _turn_record(store, owner, conv_id, turn_id):
     ''', (owner, conv_id, turn_id)).fetchone()
 
 
-def _lineage_current(store, session, conv_id, turn_id, chains, resolved, original):
+def _lineage_current(store, session, conv_id, turn_id, chains, resolved, original,
+                     allow_historical_drafts=False):
     owner = store.owner(session)
-    origin = (conv_id, turn_id, original)
+    origin = (conv_id, turn_id, original, allow_historical_drafts)
     if origin in resolved:
         return resolved[origin]
 
@@ -76,7 +77,7 @@ def _lineage_current(store, session, conv_id, turn_id, chains, resolved, origina
             continue
         if len(visited) >= MAX_SOURCE_NODES:
             raise ValueError('Source lineage exceeds supported limit')
-        source_conv, source_turn, require_original = key
+        source_conv, source_turn, require_original, allow_drafts = key
         if source_conv not in chains:
             head = store.active_head(session, source_conv)
             chains[source_conv] = set(store.ancestry(session, source_conv, head)) if head else set()
@@ -86,7 +87,7 @@ def _lineage_current(store, session, conv_id, turn_id, chains, resolved, origina
         row = _turn_record(store, owner, source_conv, source_turn)
         if (not row or (require_original and row['latest_revision'] is not None)
                 or row['latest_action'] == 'withdraw'
-                or (row['stale_draft'] and row['latest_revision'] is None)
+                or (row['stale_draft'] and row['latest_revision'] is None and not allow_drafts)
                 or (row['revoked_reference'] and row['latest_revision'] is None)):
             resolved[origin] = False
             return False
@@ -103,9 +104,9 @@ def _lineage_current(store, session, conv_id, turn_id, chains, resolved, origina
                     parent_revision != (parent['latest_revision'] or 0)):
                 resolved[origin] = False
                 return False
-            dependencies.append((source_conv, row['parent_id'], False))
+            dependencies.append((source_conv, row['parent_id'], False, allow_drafts))
         if row['latest_revision'] is None:
-            dependencies.extend((item['conversation_id'], item['turn_id'], True)
+            dependencies.extend((item['conversation_id'], item['turn_id'], True, False)
                                 for item in _linked_sources(store, owner, source_conv, source_turn))
         # A correction replaces the original evidence/reply, so the new text
         # cannot inherit the old turn's tool-result links. Its parent still must
@@ -131,3 +132,14 @@ def current_turn_usable(store, session, conv_id, turn_id, chains=None, resolved=
     return _lineage_current(store, session, conv_id, turn_id,
                             {} if chains is None else chains,
                             {} if resolved is None else resolved, False)
+
+
+def dialogue_turn_usable(store, session, conv_id, turn_id, chains=None, resolved=None):
+    """Branch/correction/revocation safe continuity, not factual eligibility.
+
+    Only selected draft revisions may be historical; linked evidence retains the
+    strict original-source rule. Consumers must still fence stale assistant facts.
+    """
+    return _lineage_current(store, session, conv_id, turn_id,
+                            {} if chains is None else chains,
+                            {} if resolved is None else resolved, False, True)

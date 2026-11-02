@@ -543,6 +543,16 @@ Animation was not added: on the owned Swiss fixture, 31 directly calculated dail
   explicit reads/export, labelled with their revisions/corrections, not silently
   inserted into current continuity. An explicit parent selects its branch for
   this turn's context without changing unrelated branches' archived contents.
+- Schema-22 continuity hotfix: a later birth-detail revision no longer erases an
+  earlier user's question from dialogue. Historical requests are labelled as
+  non-current chart evidence; old assistant/chart/tool facts remain fenced.
+  Rebuilt search entries identify these requests with speaker `historical_user`.
+  Pre-hotfix cached derivatives require a **separate, deliberate** owner-scoped
+  repair after a verified backup and with exclusive Store ownership. The
+  `repair-continuity` CLI command processes at most ten matching conversations
+  per call, returns `next_after` for pagination, and uses existing epochs and
+  rebuild queues; it never rewrites archived turns. Do not run it at startup or
+  during deployment without the scoped release/repair authorization.
 - Attachment reads authorize the owner-scoped **reference** before deriving a
   SHA-256 blob path. Startup checks all referenced blob hashes and fails closed
   if bytes are missing/corrupt; shared blobs are removed only after the last

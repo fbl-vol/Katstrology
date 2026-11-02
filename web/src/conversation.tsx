@@ -6,7 +6,7 @@ export type Conversation = { id: string; title: string; active_head: string | nu
   title_origin?: 'placeholder' | 'generated' | 'manual' | 'legacy';
   title_status?: 'waiting' | 'pending' | 'generated' | 'failed' | 'stale' | 'untouched';
   people: { person_id?: string; id?: string; name: string }[]; turn_count?: number;
-  preview?: string | null; preview_speaker?: 'user' | 'assistant' | 'correction' | null;
+  preview?: string | null; preview_speaker?: 'user' | 'historical_user' | 'assistant' | 'correction' | null;
   preview_pending?: boolean };
 
 export function ConversationBrowseList({ conversations, selectedId, zone, onOpen }: {

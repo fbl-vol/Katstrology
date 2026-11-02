@@ -58,7 +58,7 @@ async def main():
                 scroll_owners = tuple(f'reader-chat-scroll-{view}-{theme}' for view in
                                       ('desktop', 'mobile', 'short-mobile') for theme in
                                       ('reading-room', 'blue-hour'))
-                for owner in ('reader-shell', 'reader-people', 'reader-shared', 'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-complete-alt', 'reader-newchat-normal', 'reader-delete', 'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-disconnected', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-siwc', 'reader-siwc-identity', 'reader-siwc-failure', 'reader-output-compat', 'reader-streamed-output', 'reader-incomplete-output', 'reader-budget-reads', 'reader-profile-media', 'reader-profile-media-mobile', 'reader-handoff-file', 'reader-budget-desktop', 'reader-budget-mobile', 'reader-compaction-desktop', 'reader-compaction-mobile', 'reader-markdown-desktop', 'reader-markdown-mobile', 'reader-grounded-desktop', 'reader-grounded-mobile', 'reader-grounded-short-mobile', 'reader-grounded-wide', 'reader-natal', 'reader-natal-mobile', 'reader-natal-unknown', 'reader-natal-polar', 'reader-transit-desktop', 'reader-transit-mobile', 'reader-appearance', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-lilith', 'reader-motion', 'reader-motion-conjunction', 'reader-thinking-normal', 'reader-thinking-reduced', 'reader-browse-mobile', 'reader-browse-wide', 'reader-notebook', 'reader-ordinary-desktop', 'reader-ordinary-mobile', 'reader-review-fixes', 'reader-review-records', 'reader-review-page', 'reader-review-pagination', 'reader-review-journal') + layout_owners + scroll_owners:
+                for owner in ('reader-shell', 'reader-people', 'reader-shared', 'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-complete-alt', 'reader-newchat-normal', 'reader-delete', 'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-disconnected', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-siwc', 'reader-siwc-identity', 'reader-siwc-failure', 'reader-output-compat', 'reader-streamed-output', 'reader-incomplete-output', 'reader-budget-reads', 'reader-continuity-hotfix', 'reader-profile-media', 'reader-profile-media-mobile', 'reader-handoff-file', 'reader-budget-desktop', 'reader-budget-mobile', 'reader-compaction-desktop', 'reader-compaction-mobile', 'reader-markdown-desktop', 'reader-markdown-mobile', 'reader-grounded-desktop', 'reader-grounded-mobile', 'reader-grounded-short-mobile', 'reader-grounded-wide', 'reader-natal', 'reader-natal-mobile', 'reader-natal-unknown', 'reader-natal-polar', 'reader-transit-desktop', 'reader-transit-mobile', 'reader-appearance', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-lilith', 'reader-motion', 'reader-motion-conjunction', 'reader-thinking-normal', 'reader-thinking-reduced', 'reader-browse-mobile', 'reader-browse-wide', 'reader-notebook', 'reader-ordinary-desktop', 'reader-ordinary-mobile', 'reader-review-fixes', 'reader-review-records', 'reader-review-page', 'reader-review-pagination', 'reader-review-journal') + layout_owners + scroll_owners:
                     store.register_local(owner, 'synthetic-browser-password')
                 from m2.people import People
                 from m2.attachments import Attachments
@@ -438,6 +438,19 @@ async def main():
                             label = f"Synthetic provider captured {media['type']} sha256={digest}"
                         else:
                             label = 'Synthetic provider captured text only'
+                        if 'SyntheticContinuityFixture continue' in parts[0]['text']:
+                            prompt = parts[0]['text']
+                            selected = re.search(r'Chart (chart-[a-f0-9]+) source=current', prompt)
+                            if (not selected or
+                                    'SyntheticContinuityFixture original relationship question' not in prompt or
+                                    '"birth_date": "1983-02-12"' not in prompt or
+                                    '"birth_date": "2000-02-12"' in prompt):
+                                raise AssertionError('Reopened thread lost question or selected the stale birth chart')
+                            yield {'type': 'response.output_text.delta',
+                                   'delta': 'Synthetic continuity verified with corrected chart ' + selected.group(1)}, 'req-continuity'
+                            yield {'type': 'response.completed', 'response': {'status': 'completed',
+                                   'output': []}}, 'req-continuity'
+                            return
                         if 'Synthetic slow cancel' in parts[0]['text']:
                             from time import sleep
                             for _ in range(40):
@@ -544,7 +557,7 @@ async def main():
                             from time import time
                             for owner in ('reader-shell', 'reader-people', 'reader-shared',
                                           'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-newchat-normal', 'reader-delete',
-                                          'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-handoff-file',
+                                          'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-handoff-file', 'reader-continuity-hotfix',
                                           'reader-budget-desktop', 'reader-budget-mobile',
                                           'reader-compaction-desktop', 'reader-compaction-mobile',
                                           'reader-markdown-desktop', 'reader-markdown-mobile',

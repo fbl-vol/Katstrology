@@ -16,7 +16,7 @@ from m2.evidence import LocalEmbedder, personal_context, rebuild_vectors, search
 from m2.gateway import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
                         run_turn)
 from m2.local_model import DEFAULT_MODEL, model_at
-from m2.recall import rebuild_one, rebuild_pending, search
+from m2.recall import rebuild_one, rebuild_pending, repair_stale_draft_derivatives, search
 from m2.references import References
 from m2.revisions import correct, export_conversation, select_branch
 from m2.store import Store
@@ -31,7 +31,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     enroll = sub.add_parser('enroll', help='local-workstation user enrollment')
     enroll.add_argument('user')
-    for action in ('demo', 'chat', 'read', 'replay', 'search', 'rebuild', 'index',
+    for action in ('demo', 'chat', 'read', 'replay', 'search', 'rebuild', 'repair-continuity', 'index',
                    'search-evidence', 'get-passage', 'personal-context', 'attach', 'download',
                    'branch', 'correct', 'withdraw', 'export',
                    'delete-conversation', 'delete-conversations', 'delete-attachment',
@@ -49,6 +49,7 @@ def main(argv=None):
     sub.choices['read'].add_argument('--offset', type=int, default=0)
     sub.choices['replay'].add_argument('conversation')
     sub.choices['replay'].add_argument('turn')
+    sub.choices['repair-continuity'].add_argument('--after', default='')
     sub.choices['search'].add_argument('query')
     sub.choices['search-evidence'].add_argument('query')
     sub.choices['search-evidence'].add_argument('--tradition')
@@ -119,6 +120,8 @@ def main(argv=None):
                 output(search(store, session, args.query))
             elif args.command == 'rebuild':
                 output({'rebuilt': rebuild_pending(store, session)})
+            elif args.command == 'repair-continuity':
+                output(repair_stale_draft_derivatives(store, session, after=args.after))
             elif args.command == 'index':
                 output({'rebuild_conversations': rebuild_pending(store, session),
                         'vectors': rebuild_vectors(store, session, LocalEmbedder())})

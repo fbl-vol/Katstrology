@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 type Event = { sequence: number; kind: string; payload: Record<string, unknown> };
-type ArchivedTurn = { status: string; selected_people: { person_id: string; chart_id: string | null;
+type ArchivedTurn = { id: string; parent_id: string | null; status: string; selected_people: { person_id: string; chart_id: string | null;
   draft_revision: number | null; attachment_id: string | null }[];
   events: Event[]; next_event_offset: number | null };
 

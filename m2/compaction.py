@@ -10,7 +10,7 @@ import json
 import psycopg
 
 from m2.prompting import SUMMARY, identity, summary_identity
-from m2.recall import PromptBudgetError, current_text
+from m2.recall import PromptBudgetError, dialogue_projection
 from m2.siwc import ProviderFailure
 from m2.provider_steps import ProviderStep
 
@@ -30,9 +30,12 @@ def digest(value):
 
 def turn_text(store, session, conv_id, turn_id, chains, resolved, turn=None):
     """A single complete turn keeps its user, call/result pairs and reply together."""
-    current = current_text(store, session, conv_id, turn_id, chains, resolved, turn=turn)
-    if current is None:
+    projected = dialogue_projection(store, session, conv_id, turn_id, chains, resolved, turn=turn)
+    if projected is None:
         return None
+    current = projected['text']
+    if not projected['full_evidence']:
+        return current  # Historical user intent and refreshed interpretation, never old tools.
     turn = turn if turn is not None else store.read_turn(session, conv_id, turn_id)
     if turn['corrections']:
         return current  # Never summarize superseded assistant/tool content.

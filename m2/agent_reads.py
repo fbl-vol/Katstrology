@@ -10,7 +10,7 @@ import json
 from m2.charts import Charts
 from m2.advanced import Advanced
 from m2.evidence import LocalEmbedder, search_evidence
-from m2.recall import current_text, search
+from m2.recall import dialogue_text, search
 from m2.references import References
 from m2.transit_views import view as transit_view
 from m2.transits import Transits
@@ -160,7 +160,7 @@ def execute(store, session, name, arguments, selected_charts):
             raise KeyError('Turn not on active branch')
         index = chain.index(arguments['around_turn_id'])
         window = chain[max(0, index - 1):index + 2]
-        texts = [current_text(store, session, conv, turn_id) for turn_id in window]
+        texts = [dialogue_text(store, session, conv, turn_id) for turn_id in window]
         return {'conversation_id': conv, 'turns': [
             {'turn_id': turn_id, 'text': text[:1000], 'truncated': len(text) > 1000}
             for turn_id, text in zip(window, texts) if text is not None],
