@@ -83,3 +83,66 @@ test('normal new chat sends with selected chart after a failed first creation', 
     expect(second.count).toBe(2);
     expect(second.selected[0].chart_id).toBe(selected[0].chart_id);
 });
+
+for (const viewport of [{ name: 'desktop', width: 1440, height: 1024 },
+  { name: 'mobile', width: 390, height: 844 }]) {
+  test(`person picker opens with current choice before its first visible frame on ${viewport.name}`, async ({ page }) => {
+    await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
+      ? route.continue() : route.abort());
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto('/');
+    await page.getByLabel('Username').fill('reader-newchat-normal');
+    await page.getByLabel('Password').fill('synthetic-browser-password');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    // Observe the actual native showModal boundary, without changing its result or delaying interaction.
+    await page.evaluate(() => {
+      const nativeShow = HTMLDialogElement.prototype.showModal;
+      const opened: boolean[] = [];
+      (window as typeof window & { pickerOpenedChecked?: boolean[] }).pickerOpenedChecked = opened;
+      HTMLDialogElement.prototype.showModal = function() {
+        nativeShow.call(this);
+        if (this.getAttribute('aria-labelledby') === 'scope-title') {
+          const person = [...this.querySelectorAll<HTMLLabelElement>('.picker-option')]
+            .find(label => label.textContent?.includes('Synthetic transit reader'))!;
+          opened.push(person.querySelector('input')!.checked);
+        }
+      };
+    });
+    const add = page.getByRole('button', { name: '＋ Add person' });
+    const picker = page.getByRole('dialog', { name: 'Who’s this about?' });
+    const checkbox = picker.getByRole('checkbox', { name: 'Synthetic transit reader' });
+    const chip = page.getByRole('button', { name: 'Remove Synthetic transit reader from new turn' });
+    const firstFrame = async () => page.evaluate(() => (window as typeof window & { pickerOpenedChecked?: boolean[] }).pickerOpenedChecked?.at(-1));
+    mkdirSync(renders, { recursive: true });
+
+    await add.click();
+    expect(await firstFrame()).toBe(false);
+    await checkbox.check();
+    await picker.getByRole('button', { name: 'Use selection' }).click();
+    await expect(chip).toBeVisible();
+    await chip.click();
+    await expect(chip).toHaveCount(0);
+
+    await add.click();
+    expect(await firstFrame()).toBe(false); // A cleared parent must not expose the previous local check.
+    await expect(checkbox).not.toBeChecked();
+    await page.screenshot({ path: resolve(renders, `picker-reopened-${viewport.name}.png`) });
+    await checkbox.check();
+    await picker.getByRole('button', { name: 'Use selection' }).click();
+    await expect(chip).toBeVisible();
+
+    await add.click();
+    expect(await firstFrame()).toBe(true);
+    await checkbox.uncheck();
+    await picker.getByRole('button', { name: 'Cancel' }).click();
+    await expect(chip).toBeVisible(); // Cancel never applies the unsaved edit.
+    await expect(add).toBeFocused();
+    await page.screenshot({ path: resolve(renders, `picker-cancelled-${viewport.name}.png`) });
+    await add.click();
+    expect(await firstFrame()).toBe(true); // Reopening after Cancel restores the committed selection.
+    await expect(checkbox).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(chip).toBeVisible();
+    await expect(add).toBeFocused();
+  });
+}

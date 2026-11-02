@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { Person } from './people';
 
 export type Selection = { person_id: string };
@@ -34,17 +34,17 @@ export function ConversationBrowseList({ conversations, selectedId, zone, onOpen
   })}</>;
 }
 
-export function ScopePicker({ open, people, selected, onClose, onApply }: {
-  open: boolean; people: Person[]; selected: Selection[];
+export function ScopePicker({ people, selected, onClose, onApply }: {
+  people: Person[]; selected: Selection[];
   onClose: () => void; onApply: (selection: Selection[]) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // Mount a fresh picker with the committed selection before exposing the modal.
   const [choice, setChoice] = useState<Selection[]>(selected);
-  useEffect(() => {
-    if (!open) { if (dialog.current?.open) dialog.current.close(); return; }
-    setChoice(selected);
+  useLayoutEffect(() => {
     dialog.current?.showModal();
-  }, [open]);
+    return () => { if (dialog.current?.open) dialog.current.close(); };
+  }, []);
 
   return <dialog ref={dialog} onClose={onClose} aria-labelledby="scope-title"><div className="dialog-body">
     <div className="dialog-top"><h2 id="scope-title">Who’s this about?</h2><button type="button" aria-label="Close person selector" onClick={() => dialog.current?.close()}>×</button></div>

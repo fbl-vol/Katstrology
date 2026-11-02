@@ -725,8 +725,8 @@ function App() {
       setProfileEditorPersonId(created.id); setProfileEditorRequest(current => current + 1);
       setPerson(created); void refreshPeople();
     }} />
-    <ScopePicker open={scopePicker} people={people} selected={selection} onClose={() => setScopePicker(false)}
-      onApply={setSelection} />
+    {scopePicker && <ScopePicker people={people} selected={selection} onClose={() => setScopePicker(false)}
+      onApply={setSelection} />}
   </div>;
 }
 
