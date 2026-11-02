@@ -5,6 +5,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/index.html web/tsconfig.json ./
 COPY web/src ./src
+COPY web/public ./public
 RUN npm run build
 
 FROM postgres:16-bookworm@sha256:cf5d353f55240ecc2f811827a15c7d1f2d562f08019b49dca12b5a59f4ab5962 AS pgclient

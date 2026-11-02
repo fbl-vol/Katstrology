@@ -11,6 +11,8 @@
 !web/tsconfig.json
 !web/src/
 !web/src/**
+!web/public/
+!web/public/**
 m2/__pycache__/
 m2/test_*.py
 probes/test_*.py

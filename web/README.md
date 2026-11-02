@@ -18,6 +18,27 @@ The command above builds into served `web/dist` and binds port 8765. It is **not
 
 For a separately approved local restart from an immutable source checkout, `m2.web_server serve` accepts `--state-directory /absolute/path/to/existing/.local` and `--served-dist /absolute/path/to/verified/dist` (and the existing `--port`). `enroll` accepts the same state directory. The default paths remain this checkout's `.local` and `web/dist`; these arguments are local CLI inputs only, never an HTTP/model option. The state directory contains the owned fixture identity/config and `browser-runtime` files, deletion journal and provider state; do not copy or symlink it into the source checkout. **Before constructing any new `Store` for the real archive, take the separately authorized backup and read-only preflight:** `Store` startup applies migrations. The path switches do not authorize activation, migration, provider access, or reading real archive data during source validation. Tests use only temporary fake configuration or isolated fixtures.
 
+### Android Chrome install assets (online-only source)
+
+`public/manifest.webmanifest` defines the stable same-origin `/` app identity,
+start and scope; the static manifest and 192/512 PNGs are copied into each Vite
+build and served under the existing Host/Origin boundary and `no-store` policy.
+The selected simplified kitten-face artwork from `src/assets/kat-face.svg` is
+rasterized into the checked-in icons with `node web/scripts/generate-install-icons.mjs`
+(using local Chromium; no network). The maskable version has a solid Reading
+Room background and central safe-circle padding. Re-run the generator and inspect
+all three images if the selected face changes; the browser regression compares
+packaged bytes, dimensions, safe padding and MIME types. This does not add a
+service worker, offline cache, native install control, provider enrollment or
+private browser storage. Installed users may need to sign in to Kat again.
+
+Desktop synthetic standalone-media probes cover ordinary login, navigation,
+unsent draft and sign-out at mobile/short-mobile/desktop sizes, but do **not**
+prove that Android Chrome offers a WebAPK, installs the right icon/identity,
+launches without browser toolbar or persists a real device session. Those require
+an explicitly approved later deployment and supported-device check. This source
+work does not authorize rebuilding/restarting a serving instance or publication.
+
 **Appearance** in the sidebar offers nine light and nine dark reading palettes, with Reading Room’s forest/ivory as the default. Selection changes only CSS variables in this browser: it does not alter messages, charts, consent, model requests, the PostgreSQL archive or another browser’s preference. The choice persists in localStorage across navigation, reload and sign-out; if storage is unavailable or the saved value is unknown, Reading Room is used. A CSP-hashed, synchronous theme bootstrap in `index.html` prevents a light flash for saved dark palettes without allowing arbitrary inline scripts. Natal, transit and synastry wheels follow the selected screen palette; the original standalone SVG retains its light fallback, PNG follows the screen and an explicit print SVG uses a light rendition. Synthetic browser checks exercise all eighteen palettes, mobile/desktop layouts, keyboard focus, contrast, file-consent continuity, and light SVG exports; these do not constitute live-user acceptance.
 
 ### Synthetic layout comparison

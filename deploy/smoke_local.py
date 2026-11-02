@@ -130,6 +130,15 @@ def main():
                              '/opt/kat/web/dist/index.html'], env=env).split()[0]
             if sha256(body).hexdigest() != asset:
                 raise RuntimeError('Served home does not match packaged dist')
+            for name in ('manifest.webmanifest', 'icons/kat-192.png',
+                         'icons/kat-512.png', 'icons/kat-512-maskable.png'):
+                status, delivered = response(port, 'katstrology.dk', '/' + name)
+                packaged = command([*compose, 'exec', '-T', 'app', 'sha256sum',
+                                    '/opt/kat/web/dist/' + name], env=env).split()[0]
+                if status != 200 or sha256(delivered).hexdigest() != packaged:
+                    raise RuntimeError('Packaged install asset not served exactly')
+                if response(port, 'wrong.invalid', '/' + name)[0] != 403:
+                    raise RuntimeError('Install asset bypassed Host boundary')
             query = ("SELECT max(version), (SELECT count(*) FROM accounts), "
                      "(SELECT count(*) FROM web_sessions) FROM schema_migrations")
             def state():
