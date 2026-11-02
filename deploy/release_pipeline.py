@@ -90,7 +90,7 @@ def artifact(receipt_path):
 
 def target_config(path):
     target = json.loads(path.read_text())
-    if set(target) != {'ssh_alias', 'project', 'stage', 'password_file', 'ephemeris_dir', 'snapshot_dir', 'origin', 'loopback_port'}:
+    if set(target) != {'ssh_alias', 'project', 'stage', 'password_file', 'ephemeris_dir', 'snapshot_dir', 'origin', 'loopback_port', 'db_image'}:
         raise ValueError('Target fields differ from release contract')
     if not ALIAS.fullmatch(target['ssh_alias']) or not PROJECT.fullmatch(target['project']):
         raise ValueError('SSH alias/project invalid')
@@ -100,6 +100,8 @@ def target_config(path):
             raise ValueError('Target path must be an absolute /srv path without traversal')
     if target['stage'] == target['snapshot_dir'] or target['stage'].startswith(target['snapshot_dir'] + '/') or target['snapshot_dir'].startswith(target['stage'] + '/'):
         raise ValueError('Snapshot must be independent of release staging')
+    if not IMAGE.fullmatch(target['db_image']):
+        raise ValueError('Installed DB image must be an immutable runtime config ID')
     if not re.fullmatch(r'https://[a-z0-9.-]+', target['origin']) or target['loopback_port'] not in range(1024, 65536):
         raise ValueError('Invalid public origin or loopback port')
     return target
@@ -160,10 +162,11 @@ def verify_public(origin, assets, opener=None):
         raise ValueError('Public HTTP redirect differs from exact HTTPS origin')
     if get(origin + '/api/session')[0] != 401:
         raise ValueError('Public anonymous session boundary differs')
-    for headers in ({'Host': 'wrong.invalid'}, {'Origin': 'https://wrong.invalid'},
-                    {'Sec-Fetch-Site': 'cross-site'}):
+    if get(origin + '/api/session', {'Host': 'wrong.invalid'})[0] != 421:
+        raise ValueError('Public edge wrong-Host denial differs')
+    for headers in ({'Origin': 'https://wrong.invalid'}, {'Sec-Fetch-Site': 'cross-site'}):
         if get(origin + '/api/session', headers)[0] != 403:
-            raise ValueError('Public Host/Origin/fetch-site guard differs')
+            raise ValueError('Public Origin/fetch-site guard differs')
     for name, expected in assets.items():
         path = '/' if name == 'index.html' else '/' + name
         status, _, body = get(origin + path)

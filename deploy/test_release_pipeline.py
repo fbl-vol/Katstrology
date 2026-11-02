@@ -68,7 +68,7 @@ def effective_config(target, image):
                  {'type': 'volume', 'source': 'siwc_credentials', 'target': '/var/lib/kat/browser-runtime/siwc'},
                  {'type': 'bind', 'source': target['ephemeris_dir'], 'target': '/opt/kat/.local/ephe', 'read_only': True},
              ], 'networks': {'private': None, 'outbound': None}},
-        'db': {'image': 'synthetic-db-id', 'ports': None, 'volumes': [
+        'db': {'image': target['db_image'], 'ports': None, 'volumes': [
             {'type': 'volume', 'source': 'pgdata', 'target': '/var/lib/postgresql/data'}],
             'secrets': [{'source': 'db_password', 'target': '/run/secrets/db_password'}],
             'environment': {'POSTGRES_DB': 'kat', 'POSTGRES_USER': 'kat',
@@ -113,7 +113,8 @@ def synthetic_target():
     return {'ssh_alias': 'synthetic-alias', 'project': 'kat-synthetic',
             'stage': '/srv/synthetic-release', 'password_file': '/srv/synthetic-secret',
             'ephemeris_dir': '/srv/synthetic-ephe', 'snapshot_dir': '/srv/synthetic-snapshot',
-            'origin': 'https://example.invalid', 'loopback_port': 28765}
+            'origin': 'https://example.invalid', 'loopback_port': 28765,
+            'db_image': 'sha256:' + 'e' * 64}
 
 
 class ReleasePlanTests(unittest.TestCase):
@@ -199,6 +200,7 @@ class ReleasePlanTests(unittest.TestCase):
             (stage / 'image.tar').write_bytes(payload)
             (stage / 'compose.yaml').write_text('synthetic compose')
             target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': directory}
+            (stage / 'runtime.yaml').write_text(release_remote.installed_db_override(target))
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
                     'artifact': {'config_digest': 'sha256:' + 'b' * 64,
                                  'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
@@ -235,6 +237,49 @@ class ReleasePlanTests(unittest.TestCase):
                     self.assertFalse(any('load' in call or 'stop' in call for call in calls))
                     self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'staged')
 
+    def test_installed_db_config_pin_works_without_source_registry_alias(self):
+        with TemporaryDirectory() as directory:
+            stage = Path(directory) / 'stage'
+            stage.mkdir()
+            target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': directory}
+            image = 'sha256:' + 'b' * 64
+            payload = b'synthetic archive'
+            plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
+                    'artifact': {'config_digest': image, 'image_archive_sha256': sha256(payload).hexdigest(),
+                                 'commit': 'c' * 40}}
+            (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
+            (stage / 'image.tar').write_bytes(payload)
+            config = effective_config(target, image)
+            commands = []
+            def docker(*argv, **_kwargs):
+                commands.append(argv)
+                if 'config' in argv:
+                    effective = json.loads(json.dumps(config))
+                    if str(stage / 'runtime.yaml') not in argv:
+                        effective['services']['db']['image'] = 'postgres:16-bookworm@sha256:' + 'f' * 64
+                    return json.dumps(effective)
+                if 'ps' in argv: return 'existing-app' if argv[-1] == 'app' else 'existing-db'
+                if argv[:3] == ('docker', 'inspect', 'existing-app'):
+                    return json.dumps([runtime_inspect(config, target)])
+                if argv[:3] == ('docker', 'inspect', 'existing-db'):
+                    return json.dumps([runtime_inspect(config, target, app=False)])
+                if argv[:3] == ('docker', 'image', 'inspect'):
+                    if not argv[-1].startswith('sha256:'):
+                        raise subprocess.CalledProcessError(1, argv)  # Alias absent; never pull/retag.
+                    return json.dumps([{'Id': argv[-1], 'Config': {
+                        'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
+                if argv[:2] == ('docker', 'load'): return ''
+                raise AssertionError(argv)
+            with patch.object(release_remote, 'run', side_effect=docker), \
+                 patch.object(release_remote, 'check_snapshot', return_value=Path(directory)):
+                for action in ('compose', 'preflight'):
+                    with patch.object(release_remote, 'REQUEST', {'action': action, 'target': target,
+                          'plan': plan, **({'compose': 'synthetic compose'} if action == 'compose' else {})}, create=True):
+                        release_remote.main()
+            self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'preflight_ok')
+            self.assertTrue(any(str(stage / 'runtime.yaml') in argv for argv in commands))
+            self.assertFalse(any('stop' in argv or 'pull' in argv or 'tag' in argv for argv in commands))
+
     def test_missing_snapshot_refuses_while_old_app_is_running(self):
         with TemporaryDirectory() as directory:
             stage = Path(directory) / 'stage'
@@ -244,6 +289,7 @@ class ReleasePlanTests(unittest.TestCase):
             (stage / 'compose.yaml').write_text('synthetic compose')
             target = synthetic_target() | {'stage': str(stage),
                                           'snapshot_dir': str(Path(directory) / 'missing')}
+            (stage / 'runtime.yaml').write_text(release_remote.installed_db_override(target))
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(b'synthetic compose').hexdigest(),
                     'artifact': {'config_digest': 'sha256:' + 'b' * 64,
                                  'image_archive_sha256': sha256(payload).hexdigest(), 'commit': 'c' * 40}}
@@ -298,6 +344,7 @@ class ReleasePlanTests(unittest.TestCase):
             target = synthetic_target() | {'stage': str(stage), 'snapshot_dir': directory}
             compose = b'synthetic compose'
             (stage / 'compose.yaml').write_bytes(compose)
+            (stage / 'runtime.yaml').write_text(release_remote.installed_db_override(target))
             plan = {'plan_sha256': 'a' * 64, 'compose_sha256': sha256(compose).hexdigest(),
                     'artifact': {'config_digest': 'sha256:' + 'b' * 64}}
             config = effective_config(target, plan['artifact']['config_digest'])
@@ -351,14 +398,15 @@ class ReleasePlanTests(unittest.TestCase):
             def __exit__(self, *_args): pass
             def read(self, _limit): return self.body
         class Opener:
-            def __init__(self): self.calls = []; self.bad_asset = False
+            def __init__(self): self.calls = []; self.bad_asset = False; self.bad_host = False
             def open(self, request, timeout):
                 self.calls.append((request.full_url, dict(request.header_items())))
                 if request.full_url.startswith('http://'):
                     return Response(308, headers={'Location': origin + '/'})
                 if request.full_url.endswith('/api/session'):
-                    return Response(403 if any(key in dict(request.header_items()) for key in
-                        ('Host', 'Origin', 'Sec-fetch-site')) else 401)
+                    headers = dict(request.header_items())
+                    return Response((403 if self.bad_host else 421) if 'Host' in headers else
+                                    403 if 'Origin' in headers or 'Sec-fetch-site' in headers else 401)
                 path = request.full_url.removeprefix(origin + '/') or 'index.html'
                 body = {'index.html': b'home', 'assets/app.js': b'javascript',
                         'manifest.webmanifest': b'manifest', 'icons/kat-192.png': b'icon192',
@@ -370,6 +418,10 @@ class ReleasePlanTests(unittest.TestCase):
         self.assertTrue(all(url.startswith(origin) for url, _ in opener.calls[1:]))
         opener.bad_asset = True
         with self.assertRaisesRegex(ValueError, 'asset differs'):
+            pipeline.verify_public(origin, assets, opener=opener)
+        opener.bad_asset = False
+        opener.bad_host = True
+        with self.assertRaisesRegex(ValueError, 'wrong-Host'):
             pipeline.verify_public(origin, assets, opener=opener)
 
     def test_successful_fake_ssh_orchestration_and_public_failure_receipt(self):

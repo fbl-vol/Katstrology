@@ -66,8 +66,11 @@ Keep a private, untracked JSON target file (mode 0600) with exactly these keys:
 `ssh_alias` (configured OpenSSH key alias, no user@host), `project` (the existing
 Compose project), `stage` (a **new**, absent `/srv/...` directory per attempt),
 `password_file` (existing app-owned 0400 path), `ephemeris_dir` (existing licensed
-read-only directory), `snapshot_dir` (pre-existing independent `/srv/...` directory
-owned by app UID 10001, distinct from staging and all serving volumes), `origin`
+read-only directory), `db_image` (the **inspected installed immutable DB runtime
+config ID**, `sha256:...`, supplied under the exact approval; not a registry tag
+or the source template RepoDigest), `snapshot_dir` (pre-existing independent
+`/srv/...` directory owned by app UID 10001, distinct from staging and all serving
+volumes), `origin`
 (exact HTTPS deployment origin) and `loopback_port` (the existing loopback host
 port). The server must already have the correct image-platform runtime, Compose,
 Docker permissions and an SSH public key installed for the configured alias.
@@ -90,8 +93,12 @@ python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <s
 ```
 
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
-receipt refuses replay. It stages the approved archive via the SSH alias, checks
-the effective Compose project **against the running app and DB** (actual state,
+receipt refuses replay. It stages the approved archive via the SSH alias and
+writes a stage-local DB-image-only Compose override from the approved installed
+`db_image`, without pulling/retagging/recreating the DB. A source template registry
+alias may not exist after archive import; the installed config ID must exist and
+match the unchanged DB container. It checks the resulting effective Compose
+project **against the running app and DB** (actual state,
 credential, ephemeris and DB mounts; command/origin, runtime flags, network and
 loopback route), loaded immutable config ID, and independent app-owned empty
 snapshot destination before stopping **only the app**. Unsupported runtime
@@ -100,8 +107,9 @@ switches to fresh volumes or a different port. It invokes the existing quiesced
 `deployment_backup` API against the existing DB/attachment state and independent
 deletion journal/tip, verifying snapshot schema before `compose up --no-deps app`.
 It hashes every image asset against both loopback and the **public HTTPS origin**,
-including the manifest and icons; it checks anonymous/denied Host/Origin/fetch-site
-routes and exact HTTP→HTTPS redirect without disabling TLS certificate checks.
+including the manifest and icons; it checks anonymous session 401, edge wrong-Host
+**421** (distinct from app loopback wrong-Host 403), Origin/fetch-site 403 and
+exact HTTP→HTTPS redirect without disabling TLS certificate checks.
 A `verified` receipt requires **all** checks. A failed public check leaves the
 receipt at `app_activated_local_verified_public_incomplete`: inspect the edge,
 do not claim success or replay the app activation. No DB rollback, data copy,

@@ -83,6 +83,13 @@ def check_snapshot(target, planned, serving_mounts):
     return root
 
 
+def installed_db_override(target):
+    image = target['db_image']
+    if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
+        raise ValueError('Installed DB requires an immutable config ID')
+    return f'services:\n  db:\n    image: {image}\n'
+
+
 def main():
     target, planned, action = REQUEST['target'], REQUEST['plan'], REQUEST['action']
     stage = Path(target['stage'])
@@ -93,7 +100,8 @@ def main():
     environment = {**os.environ, 'KAT_APP_IMAGE': image,
                    'KAT_DB_PASSWORD_FILE': target['password_file'],
                    'KAT_EPHE_DIR': target['ephemeris_dir']}
-    compose = ['docker', 'compose', '-f', str(stage / 'compose.yaml'), '-p', project]
+    compose = ['docker', 'compose', '-f', str(stage / 'compose.yaml'),
+               '-f', str(stage / 'runtime.yaml'), '-p', project]
 
     def c(*args, timeout=120):
         return run(*compose, *args, env=environment, timeout=timeout)
@@ -120,6 +128,8 @@ def main():
             raise ValueError('Unexpected stage')
         (stage / 'compose.yaml').write_text(REQUEST['compose'])
         (stage / 'compose.yaml').chmod(0o600)
+        (stage / 'runtime.yaml').write_text(installed_db_override(target))
+        (stage / 'runtime.yaml').chmod(0o600)
     elif action == 'preflight':
         if json.loads(marker.read_text()) != {'plan_sha256': planned['plan_sha256'], 'phase': 'staged'}:
             raise ValueError('Unexpected stage')
@@ -127,10 +137,12 @@ def main():
         with archive.open('rb') as source:
             if hashlib.file_digest(source, 'sha256').hexdigest() != planned['artifact']['image_archive_sha256']:
                 raise ValueError('Archive differs from approved image')
-        if hashlib.sha256((stage / 'compose.yaml').read_bytes()).hexdigest() != planned['compose_sha256']:
-            raise ValueError('Compose mismatch')
+        if (hashlib.sha256((stage / 'compose.yaml').read_bytes()).hexdigest() != planned['compose_sha256']
+                or (stage / 'runtime.yaml').read_text() != installed_db_override(target)):
+            raise ValueError('Compose or installed DB override mismatch')
         config = json.loads(c('config', '--format', 'json'))
-        if config['name'] != project or config['services']['app']['image'] != image:
+        if (config['name'] != project or config['services']['app']['image'] != image
+                or config['services']['db']['image'] != target['db_image']):
             raise ValueError('Effective project/image mismatch')
         services = config['services']
         command = services['app']['command']
@@ -172,6 +184,7 @@ def main():
         previous_image = (stage / 'previous-image').read_text().strip()
         db_image = (stage / 'previous-db-image').read_text().strip()
         if (hashlib.sha256((stage / 'compose.yaml').read_bytes()).hexdigest() != planned['compose_sha256']
+                or (stage / 'runtime.yaml').read_text() != installed_db_override(target)
                 or c('ps', '-q', 'app') != app_id or c('ps', '-q', 'db') != db_id):
             raise ValueError('Serving owner or Compose changed after preflight')
         config = json.loads(c('config', '--format', 'json'))
