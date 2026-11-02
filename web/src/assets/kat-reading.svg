@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" role="img" aria-label="Reading-room kitten new-conversation mascot" data-kitten="reading-kitten" data-motion="off"><title>Reading-room kitten new-conversation mascot</title><path class="fur" d="M113 184C92 197 85 233 96 267H222C231 236 218 200 193 185Z"/><path class="fur" d="M104 274C53 283 25 254 40 230C48 217 65 222 69 232C53 227 47 241 55 249C67 260 86 255 101 252Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" role="img" aria-label="Reading-room kitten new-conversation mascot" data-kitten="reading-kitten" data-motion="off"><title>Reading-room kitten new-conversation mascot</title><path class="fur" d="M113 184C92 197 85 233 96 267H222C231 236 218 200 193 185Z"/><path class="fur tail" d="M104 274C53 283 25 254 40 230C48 217 65 222 69 232C53 227 47 241 55 249C67 260 86 255 101 252Z"/>
 <g class="kitten-head">
 <path class="fur" d="M94 112C88 99 82 72 87 54Q88 49 93 54L122 79Q151 69 181 80L211 55Q216 50 219 57C225 79 221 103 215 115C225 128 226 141 220 151L227 157L217 162L222 171L209 174C195 192 176 200 153 201C128 201 107 194 94 177L82 174L87 165L77 160L88 154C81 140 85 124 94 112Z"/>
 <path d="M96 102Q90 78 94 66L116 86Q103 88 96 102ZM188 87L211 67Q216 86 209 105Q202 94 188 87Z" fill="#594052"/>
@@ -16,5 +16,5 @@
 <path d="M158 291L154 320L161 315L168 320L165 291" fill="#96728e"/>
 <ellipse class="fur" cx="113" cy="216" rx="19" ry="13"/><ellipse class="fur" cx="204" cy="216" rx="19" ry="13"/>
 <path class="fur-line" d="M107 214V219M115 214V219M198 214V219M206 214V219"/>
-<path d="M221 263Q222 269 228 270Q222 271 221 277Q220 271 214 270Q220 269 221 263Z" fill="#c7a264"/>
+<path class="star" d="M221 263Q222 269 228 270Q222 271 221 277Q220 271 214 270Q220 269 221 263Z" fill="#c7a264"/>
 </svg>

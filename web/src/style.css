@@ -203,10 +203,15 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .reading-kitten .fur{fill:#15121b;stroke:#8e759b;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
 .reading-kitten .fur-line{fill:none;stroke:#685273;stroke-width:1.6;stroke-linecap:round}
 .reading-kitten .iris{fill:#e6c178}.reading-kitten .pupil{fill:#15121b}.reading-kitten .glint{fill:#fff9e9}
-.reading-kitten .eye{transform-box:fill-box;transform-origin:center}
+.reading-kitten .eye,.reading-kitten .star{transform-box:fill-box;transform-origin:center}
+.reading-kitten .tail{transform-box:view-box;transform-origin:102px 264px}
 .reading-kitten svg[data-motion="on"] .eye{animation:kat-blink 8s infinite}
+.reading-kitten svg[data-motion="on"] .tail{animation:kat-tail 10s ease-in-out infinite}
+.reading-kitten svg[data-motion="on"] .star{animation:kat-star 11s ease-in-out infinite}
 @keyframes kat-blink{0%,65%,70%,100%{transform:scaleY(1)}67%{transform:scaleY(.06)}}
-@media(prefers-reduced-motion:reduce){.reading-kitten svg[data-motion="on"] .eye{animation:none}}
+@keyframes kat-tail{0%,66%,100%{transform:rotate(0)}75%{transform:rotate(-2deg)}85%{transform:rotate(1deg)}}
+@keyframes kat-star{0%,76%,100%{transform:translateY(0);opacity:.8}86%{transform:translateY(-2px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.reading-kitten svg[data-motion="on"] :is(.eye,.tail,.star){animation:none}}
 @media(max-width:700px){.reading-kitten{width:88px;height:88px;margin-bottom:6px}}
 @media(max-width:700px) and (max-height:620px){.reading-kitten{width:68px;height:68px}.chat-reading-grid .welcome{margin-top:14px}}
 .transit-motion{margin:18px 0;padding:12px 16px;border:1px solid var(--line);border-radius:9px;background:var(--white)}

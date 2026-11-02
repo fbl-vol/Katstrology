@@ -72,6 +72,7 @@ test('normal brand reuses New conversation from saved thread and every route', a
       const mobile = view.width < 700;
       await sidebarButton(page, 'Settings', mobile);
       await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+      await expect(page.locator('.reading-kitten svg')).toHaveAttribute('data-motion', 'off');
       await brandHome(page, mobile);
 
       await sidebarButton(page, '＋ Create chart', mobile);
@@ -90,9 +91,14 @@ test('normal brand reuses New conversation from saved thread and every route', a
       const kitten = page.locator('.welcome .reading-kitten svg');
       await expect(kitten).toBeVisible();
       await expect(kitten).toHaveAttribute('data-motion', 'on');
+      for (const [part, name] of [['.eye', 'kat-blink'], ['.tail', 'kat-tail'], ['.star', 'kat-star']]) {
+        expect(await kitten.locator(part).first().evaluate(node => getComputedStyle(node).animationName)).toBe(name);
+      }
       expect(await kitten.locator('.iris').first().evaluate(node => getComputedStyle(node).fill)).toBe('rgb(230, 193, 120)');
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      expect(await kitten.locator('.eye').first().evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+      for (const part of ['.eye', '.tail', '.star']) {
+        expect(await kitten.locator(part).first().evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+      }
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       expect(creates).toBe(1);
       expect(await page.evaluate(() => (window as Window & { brandDocument?: string }).brandDocument)).toBe('original');
