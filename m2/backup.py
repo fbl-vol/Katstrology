@@ -145,6 +145,16 @@ def verify_reference_contents(store):
         for row in store.db.execute(f'SELECT {content}, {digest} FROM {table}'):
             if sha256(row[content].encode('utf-8')).hexdigest() != row[digest]:
                 raise RuntimeError('Stored reference checksum mismatch')
+    for row in store.db.execute('''
+        SELECT b.raw_source,b.transcript,b.raw_sha256,b.transcript_sha256,
+               b.normalized_sha256,o.content_sha256
+        FROM reference_book_sources b JOIN reference_originals o
+          ON (o.owner_id=b.owner_id AND o.source_id=b.source_id)
+    '''):
+        if (sha256(row['raw_source']).hexdigest() != row['raw_sha256'] or
+                sha256(row['transcript']).hexdigest() != row['transcript_sha256'] or
+                row['normalized_sha256'] != row['content_sha256']):
+            raise RuntimeError('Stored book package checksum mismatch')
 
 
 def backup(store, destination, dump_database=dump_owned):

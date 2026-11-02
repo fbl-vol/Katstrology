@@ -113,6 +113,9 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
         fields = ('kind', 'source_id', 'passage_id', 'conversation_id', 'speaker',
                   'author', 'title', 'edition', 'tradition', 'technique', 'language',
                   'rights_basis', 'approval', 'source_kind', 'keyword_match', 'score',
+                  'ordinal', 'page_start', 'page_end', 'printed_page_start',
+                  'printed_page_end', 'source_locator_start', 'source_locator_end',
+                  'parent_section', 'review_status',
                   'excerpt')
         projected = {**result, 'results': [
             {key: row[key] for key in fields if key in row}
