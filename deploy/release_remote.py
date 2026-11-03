@@ -598,7 +598,15 @@ def release_phase():
         check_snapshot(target, planned, app['Mounts'] + db['Mounts'])
         if release_files(target) != json.loads((stage / 'files.before.json').read_text()):
             raise ValueError('Canonical release files drifted after preflight')
-        if 'ci_admission' in REQUEST:
+        if 'bootstrap_permit' in REQUEST:
+            permit = REQUEST['bootstrap_permit']
+            if (permit['old_image'] != previous_image
+                    or permit['old_source_sha256'] != file_hash(stage / 'source.before.tar')
+                    or permit['plan_sha256'] != planned['plan_sha256']
+                    or permit['settled_existing_work'] is not True):
+                raise ValueError('One-time stopped-owner adoption scope differs')
+            advance('preflight_ok', 'quiescing')
+        elif 'ci_admission' in REQUEST:
             observed = maintenance(app_id, 'status', planned['attempt'])
             if observed['phase'] != 'open' or observed['attempt'] is not None:
                 raise ValueError('Runtime already fenced; no implicit bootstrap')
@@ -624,6 +632,10 @@ def release_phase():
                 raise ValueError('Stopped app identity changed')
             snapshot_root = check_snapshot(target, planned, stopped['Mounts'])
         except (ValueError, OSError):
+            if 'ci_admission' in REQUEST:
+                # After stop, a restart would have a new process/fence identity.
+                # Keep CI halted rather than report the old process as usable.
+                raise
             original = json.loads(run('docker', 'inspect', app_id))[0]
             if (original['Image'] != previous_image
                     or original['Config']['Labels'].get('com.docker.compose.project') != project
@@ -637,6 +649,13 @@ def release_phase():
                 raise RuntimeError('Old app restart unconfirmed')
             advance('quiescing', 'recovered_old_app')
             return {'phase': action, 'status': 'recovered_old_app'}
+        if 'bootstrap_permit' in REQUEST:
+            # Only the local-root, consumed one-time adoption permit reaches here.
+            # Neither forced-command request schema accepts a bootstrap field.
+            script = ("import asyncio,sys; from m2.release_drain import Admission; "
+                      "gate=Admission('/var/lib/kat/browser-runtime/release-fence.json'); "
+                      "asyncio.run(gate.drain(sys.argv[1]))")
+            c('run', '--rm', '--no-deps', '-T', 'app', 'python', '-c', script, planned['attempt'])
         with (stage / 'state.before.json').open('x') as output:
             json.dump(preservation(c, running=False), output)
             output.flush()

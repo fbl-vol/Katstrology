@@ -1,0 +1,100 @@
+name: Trusted Kat release
+on:
+  workflow_call:
+permissions:
+  contents: read
+# Also serialize this reusable authority if another caller tries to invoke it.
+concurrency:
+  group: kat-trusted-release
+  cancel-in-progress: false
+jobs:
+  qualify:
+    uses: ./.github/workflows/qualify.yml
+    permissions:
+      contents: read
+  attest:
+    name: attest
+    needs: qualify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && github.run_attempt == 1 && vars.KAT_CI_TARGET_SCOPE != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # Obtain the short-lived GitHub identity for native keyless signing.
+      attestations: write # Publish only the hash-bound canonical manifest attestation.
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11.16'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          artifact-ids: ${{ needs.qualify.outputs.artifact-id }}
+          path: .local/ci-package
+          merge-multiple: true
+      - name: Bind the qualified bytes to the enrolled public scope
+        env:
+          KAT_CI_TARGET_SCOPE: ${{ vars.KAT_CI_TARGET_SCOPE }}
+        run: |
+          python -c 'import os,pathlib; pathlib.Path(".local/target-scope.json").write_text(os.environ["KAT_CI_TARGET_SCOPE"])'
+          python -m deploy.release_ci prepare --receipt .local/ci-package/receipt.json --manifest .local/ci-package/manifest.json --target-scope .local/target-scope.json --run-id "$GITHUB_RUN_ID"
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        id: attest
+        with:
+          subject-path: .local/ci-package/manifest.json
+      - name: Retain the exact native bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: cp -- "$BUNDLE_PATH" .local/ci-package/bundle.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: release-${{ github.sha }}
+          path: .local/ci-package/
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+  deploy:
+    name: deploy
+    needs: attest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && github.run_attempt == 1 && vars.KAT_AUTOMATION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    environment: kat-production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11.16'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          artifact-ids: ${{ needs.attest.outputs.artifact-id }}
+          path: .local/ci-package
+          merge-multiple: true
+      - name: Constrained admission, drain, snapshot, promotion and public verification
+        env:
+          KAT_AUTOMATION_ENABLED: ${{ vars.KAT_AUTOMATION_ENABLED }}
+          KAT_CI_SSH_HOST: ${{ vars.KAT_CI_SSH_HOST }}
+          KAT_CI_SSH_USER: ${{ vars.KAT_CI_SSH_USER }}
+          KAT_CI_KNOWN_HOSTS: ${{ vars.KAT_CI_KNOWN_HOSTS }}
+          KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}
+        run: python -m deploy.ci_transport
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .local/release-result.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

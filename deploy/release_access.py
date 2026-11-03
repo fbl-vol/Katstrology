@@ -234,7 +234,8 @@ def dispatch(request, policy, input_stream):
         return dispatch_locked(request, policy, input_stream, action, plan)
 
 
-def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission=None):
+def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission=None,
+                    bootstrap_permit=None):
     target = policy['target'] | {'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])}
     stage = Path(target['stage'])
     owner = Path(target['stage_root']) / 'active-attempt'
@@ -258,6 +259,8 @@ def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission
     phase.REQUEST = {'action': action, 'target': target, 'plan': plan}
     if ci_admission is not None:
         phase.REQUEST['ci_admission'] = ci_admission
+    if bootstrap_permit is not None:
+        phase.REQUEST['bootstrap_permit'] = bootstrap_permit
     if action == 'compose':
         phase.REQUEST['compose'] = protected(policy['compose_file']).read_text()
     return phase.main()

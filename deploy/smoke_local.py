@@ -92,7 +92,10 @@ def main():
         ephe = stage / 'empty-ephe'
         ephe.mkdir()
         override = stage / 'override.yaml'
-        override.write_text(f'name: {project}\nservices:\n  app:\n    ports: !override\n      - "127.0.0.1:{port}:8765"\n')
+        override.write_text(f'name: {project}\nservices:\n  app:\n    ports: !override\n'
+                            f'      - "127.0.0.1:{port}:8765"\n'
+                            '    volumes:\n      - release_verification:/verification\n'
+                            'volumes:\n  release_verification:\n')
         env = {**os.environ, 'KAT_APP_IMAGE': image,
                'KAT_DB_PASSWORD_FILE': str(password), 'KAT_EPHE_DIR': str(ephe)}
         compose = ['docker', 'compose', '-f', str(COMPOSE), '-f', str(override),
@@ -112,6 +115,14 @@ def main():
             if subprocess.run(['docker', 'volume', 'inspect', volume['name']],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 raise RuntimeError('Smoke project unexpectedly has an existing volume')
+        # A cold hosted BuildKit cache need not register the DB base as a local
+        # runnable image. Pull only this source-template digest before Compose.
+        db_image = config['services']['db']['image']
+        if '@sha256:' not in db_image:
+            raise ValueError('Synthetic DB must retain the pinned source image')
+        if subprocess.run(['docker', 'image', 'inspect', db_image], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode:
+            command(['docker', 'pull', db_image])
         # Synthetic-only file: owner UID matches the read-only app bind mount.
         command(['docker', 'run', '--rm', '--network', 'none', '--user', '0',
                  '--mount', f'type=bind,src={stage},dst=/synthetic',
@@ -151,6 +162,8 @@ def main():
             await_session(port)
             if state() != expected:
                 raise RuntimeError('Restart changed the current empty schema')
+            from deploy.smoke_state import verify
+            state_checks = verify(command, compose, env, image, volumes['release_verification']['name'])
         finally:
             if started:
                 command([*compose, 'down', '--volumes', '--remove-orphans'], env=env)
@@ -164,7 +177,7 @@ def main():
                       'project': project, 'host_port': port, 'schema': current_schema_version(),
                       'empty_accounts': True, 'unauthenticated_401': True,
                       'invalid_host_403': True, 'packaged_dist_matched': True,
-                      'restart': 'passed', 'cleanup': 'passed'}))
+                      'restart': 'passed', 'state_checks': state_checks, 'cleanup': 'passed'}))
 
 
 if __name__ == '__main__':

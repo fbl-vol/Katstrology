@@ -1,7 +1,10 @@
 # Personal production candidate (source and local fixture preparation only)
 
-This directory is not an activation instruction or approval. The existing public
-maintenance page remains served until a separately scoped app release. Do not run
+For the disabled-until-adopted keyless workflow, runtime drain, native qualification
+and one-time bootstrap contract, see [Unattended releases](AUTOMATION.md).
+
+This directory is not an activation instruction or approval. These source files do
+not change the existing served deployment without a separately scoped release. Do not run
 this Compose project on a shared host, change Caddy, copy an account or move any
 private data without that authorization. No visitor signup or public-browser OAuth
 is supported. Local `serve` and local HTTP127.0.0.1 ChatGPT registration remain

@@ -56,9 +56,20 @@ def clean_environment():
                                   'AZURE_', 'AWS_', 'GOOGLE_', 'SIWC_')) and
            key.upper() not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY') and
            not key.startswith('DOCKER_')}
+    docker_host = 'unix:///var/run/docker.sock'
+    hosted_socket = os.environ.get('KAT_HOSTED_DOCKER_SOCKET')
+    if hosted_socket is not None:
+        hosted_socket = hosted_socket.removeprefix('unix://')
+        # The pinned setup-docker action owns a separate local daemon. Never
+        # accept a TCP/remote Docker override or use this on the user's fixture.
+        if (os.environ.get('GITHUB_ACTIONS') != 'true'
+                or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted'
+                or not Path(hosted_socket).is_absolute()
+                or not Path(hosted_socket).is_socket()):
+            raise ValueError('Explicit hosted-runner local Docker socket required')
+        docker_host = 'unix://' + hosted_socket
     env.update(PYTHONDONTWRITEBYTECODE='1', OPENBLAS_NUM_THREADS='2',
-               NO_PROXY='127.0.0.1,127.0.0.2,localhost',
-               DOCKER_HOST='unix:///var/run/docker.sock')
+               NO_PROXY='127.0.0.1,127.0.0.2,localhost', DOCKER_HOST=docker_host)
     return env
 
 
@@ -165,7 +176,7 @@ def main():
     selection.add_argument('--profiles', nargs='+', choices=PROFILES,
                            help='Run selected profiles sequentially, sharing fixture and run-local builds')
     parser.add_argument('--execute', action='store_true', help='Create isolated fixture and run selected profile')
-    parser.add_argument('--tests', nargs='+', default=[], help='Explicit m2.test_* unittest selectors (backend only)')
+    parser.add_argument('--tests', nargs='+', default=[], help='Explicit m2.test_* or deploy.test_* unittest selectors (backend only)')
     parser.add_argument('--browser-grep', help='Playwright title filter (browser profiles only)')
     parser.add_argument('--private-layout-reference', action='store_true',
                         help='Explicitly compare with an available approved private mockup and historical CSS')
@@ -177,8 +188,8 @@ def main():
     else:
         selected = (args.profile,)
     if args.tests and ('backend' not in selected or any(not re.fullmatch(
-            r'm2\.test_[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+){0,2}', name) for name in args.tests)):
-        parser.error('--tests requires a backend profile and m2.test_* selectors')
+            r'(?:m2|deploy)\.test_[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+){0,2}', name) for name in args.tests)):
+        parser.error('--tests requires a backend profile and m2.test_* or deploy.test_* selectors')
     if args.browser_grep and not any(profile in selected for profile in PROFILES[2:]):
         parser.error('--browser-grep requires a browser profile')
     if args.private_layout_reference and 'browser' not in selected:

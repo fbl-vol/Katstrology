@@ -55,13 +55,14 @@ def file_hash(path):
     return sha256(Path(path).read_bytes()).hexdigest()
 
 
-def read_policy(path=POLICY):
+def read_policy(path=POLICY, *, enrollment=False):
     policy = json.loads(protected(path).read_text())
     fields = {'contract', 'enabled', 'repository', 'repository_id', 'signer_workflow',
               'signer_sha', 'caller_workflow', 'qualification_job', 'verifier',
               'verifier_sha256', 'trusted_root', 'trusted_root_sha256', 'helper_sha256',
               'max_age_seconds', 'transitions'}
-    if (set(policy) != fields or policy['contract'] != 1 or policy['enabled'] is not True
+    if (set(policy) != fields or policy['contract'] != 1
+            or type(policy['enabled']) is not bool or (not enrollment and not policy['enabled'])
             or policy['repository'] != REPOSITORY or policy['repository_id'] != REPOSITORY_ID
             or not re.fullmatch(r'[a-f0-9]{40}', policy['signer_sha'])
             or not 60 <= policy['max_age_seconds'] <= 86400):
@@ -242,7 +243,8 @@ def dispatch(request, policy, manual, access, input_stream):
                 'manifest_sha256': digest, 'policy_sha256': policy_digest}))
             return result
         witness = json.loads(protected(stage / 'ci-admission.json').read_text())
-        if witness['manifest_sha256'] != digest or witness['policy_sha256'] != policy_digest:
+        if (witness.get('mode') == 'bootstrap' or witness['manifest_sha256'] != digest
+                or witness['policy_sha256'] != policy_digest):
             raise ValueError('CI admission witness differs')
         # The common target lock, active-attempt and durable phases fence both modes.
         if action == 'complete':

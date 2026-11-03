@@ -1,0 +1,68 @@
+name: Candidate qualification
+on:
+  workflow_call:
+    outputs:
+      artifact-id:
+        value: ${{ jobs.candidate.outputs.artifact-id }}
+permissions:
+  contents: read
+# Distinct from caller/release locks, so nested reusable calls cannot deadlock.
+concurrency:
+  group: kat-qualification-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    name: candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11.16'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.4'
+          package-manager-cache: false
+      - uses: docker/setup-docker-action@e43656e248c0bd0647d3f5c195d116aacf6fcaf4 # v4
+        id: docker
+        with:
+          version: v29.7.2
+          set-host: true
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'
+      - name: Pin native Docker CLI plugins
+        run: python -m deploy.hosted_tools --execute
+      - name: Prepare public test dependencies
+        run: |
+          python -m venv .venv-swiss
+          .venv-swiss/bin/python -m pip install -r m2/requirements.txt -r probes/requirements-swiss.txt
+          npm ci --prefix web --no-audit --no-fund
+          cd web && npx playwright install --with-deps chromium
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Prepare hash-pinned public numerical files
+        run: .venv-swiss/bin/python -m deploy.prepare_ci_inputs
+      - name: All isolated suites and native build-once Compose qualification
+        id: qualify
+        env:
+          KAT_HOSTED_DOCKER_SOCKET: ${{ steps.docker.outputs.sock }}
+        run: |
+          .venv-swiss/bin/python -m deploy.qualify --execute
+          printf 'package=.local/fresh-production/package/%s\n' "${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: candidate-${{ github.sha }}
+          path: |
+            ${{ steps.qualify.outputs.package }}/receipt.json
+            ${{ steps.qualify.outputs.package }}/qualification.json
+            ${{ steps.qualify.outputs.package }}/kat-production-amd64.tar
+            ${{ steps.qualify.outputs.package }}/kat-public-source.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          include-hidden-files: true

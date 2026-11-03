@@ -1,0 +1,6 @@
+# Ownership visibility. Enforcement is a separately configured repository rule.
+/.github/ @fbl-vol
+/deploy/ @fbl-vol
+/m2/release_*.py @fbl-vol
+/m2/web_server.py @fbl-vol
+/m2/chat_jobs.py @fbl-vol
