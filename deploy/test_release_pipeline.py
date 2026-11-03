@@ -440,13 +440,15 @@ class ReleasePlanTests(unittest.TestCase):
             def __exit__(self, *_args): pass
             def read(self, _limit): return self.body
         class Opener:
-            def __init__(self): self.calls = []; self.bad_asset = False; self.bad_host = False
+            def __init__(self): self.calls = []; self.bad_asset = False; self.bad_host = False; self.bad_origin = False
             def open(self, request, timeout):
                 self.calls.append((request.full_url, dict(request.header_items())))
                 if request.full_url.startswith('http://'):
                     return Response(308, headers={'Location': origin + '/'})
                 if request.full_url.endswith('/api/session'):
                     headers = dict(request.header_items())
+                    if self.bad_origin and 'Origin' in headers:
+                        return Response(200)
                     return Response((403 if self.bad_host else 421) if 'Host' in headers else
                                     403 if 'Origin' in headers or 'Sec-fetch-site' in headers else 401)
                 path = request.full_url.removeprefix(origin + '/') or 'index.html'
@@ -464,6 +466,10 @@ class ReleasePlanTests(unittest.TestCase):
         opener.bad_asset = False
         opener.bad_host = True
         with self.assertRaisesRegex(ValueError, 'wrong-Host'):
+            pipeline.verify_public(origin, assets, opener=opener)
+        opener.bad_host = False
+        opener.bad_origin = True
+        with self.assertRaisesRegex(ValueError, 'Origin/fetch-site'):
             pipeline.verify_public(origin, assets, opener=opener)
 
     def test_successful_fake_ssh_orchestration_and_public_failure_receipt(self):

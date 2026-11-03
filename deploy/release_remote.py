@@ -4,6 +4,7 @@ The trusted server policy supplies REQUEST after forced-command validation; neve
 execute this module with client-provided Python or a writable Compose template.
 """
 
+import errno
 import hashlib
 import json
 import os
@@ -12,8 +13,9 @@ import re
 import stat
 import subprocess
 import tarfile
-from urllib.error import HTTPError
-from urllib.request import Request, ProxyHandler, build_opener
+from time import monotonic, sleep
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, ProxyHandler, build_opener
 
 
 SERVER_ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8',
@@ -279,7 +281,53 @@ def check_canonical_config(compose, target, expected):
         raise ValueError('Canonical effective Compose config differs from policy')
 
 
-def quarantine(target, planned):
+LOCAL_READINESS_SECONDS = 90.0
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        return None
+
+
+def readiness_timeout(deadline):
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Local anonymous readiness deadline exceeded')
+    return min(3.0, remaining)
+
+
+def await_local_readiness(opener, request, check_owner):
+    """Only safe local anonymous GET polling, never a retry of a release effect."""
+    started = monotonic()
+    deadline = started + LOCAL_READINESS_SECONDS
+    attempts = 0
+    while True:
+        readiness_timeout(deadline)
+        check_owner(deadline)  # Identity/ownership failures are permanent, not startup.
+        attempts += 1
+        timeout = readiness_timeout(deadline)
+        try:
+            response = opener.open(request, timeout=timeout)
+        except HTTPError as error:
+            response = error
+        except (URLError, OSError) as error:
+            reason = error.reason if isinstance(error, URLError) else error
+            if not (isinstance(reason, TimeoutError) or
+                    isinstance(reason, OSError) and reason.errno == errno.ECONNREFUSED):
+                raise  # DNS, permission, protocol and other transport failures stay fatal.
+            response = None
+        if response is not None:
+            with response:
+                status = response.status
+            if status == 401:
+                check_owner(deadline)
+                return {'attempts': attempts, 'seconds': round(monotonic() - started, 3)}
+            if status != 503:
+                raise ValueError('Permanent anonymous readiness/authority response')
+        sleep(min(1.0, readiness_timeout(deadline)))
+
+
+def quarantine(target, planned, *, failure_type=None):
     """Contain only this exact owned deployment; never restore data or guess an owner."""
     stage = Path(target['stage'])
     marker = json.loads((stage / 'phase.json').read_text())
@@ -287,6 +335,15 @@ def quarantine(target, planned):
         raise ValueError('Containment attempt differs')
     phase = marker['phase']
     outcome = {'status': 'halted', 'phase': phase, 'serving': 'unknown'}
+    if failure_type is None:
+        try:
+            prior = json.loads((stage / 'failure.json').read_text())
+            if isinstance(prior, dict) and prior.get('phase') == phase:
+                failure_type = prior.get('failure_type')
+        except (OSError, ValueError):
+            pass  # Missing/partial diagnostics must not prevent exact-owned containment.
+    if failure_type is not None:
+        outcome['failure_type'] = failure_type  # Type only, never messages/URLs/credentials.
     try:
         outcome['files'] = release_files(target)
     except (Exception, KeyboardInterrupt):
@@ -335,11 +392,11 @@ def quarantine(target, planned):
 def main():
     try:
         return release_phase()
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as error:
         if REQUEST['action'] not in ('quiesce_and_snapshot', 'promote_release',
                 'activate_app_only', 'verify_serving_path', 'complete'):
             raise
-        return quarantine(REQUEST['target'], REQUEST['plan'])
+        return quarantine(REQUEST['target'], REQUEST['plan'], failure_type=type(error).__name__)
 
 
 def release_phase():
@@ -566,7 +623,24 @@ def release_phase():
             raise ValueError('Not activated')
         from urllib.parse import urlsplit
         host = urlsplit(target['origin']).netloc
-        opener = build_opener(ProxyHandler({}))
+        opener = build_opener(ProxyHandler({}), NoRedirect())
+        expected_container = c('ps', '-q', 'app', timeout=3)
+        if not expected_container:
+            raise ValueError('Activated app owner missing')
+        config = json.loads(c('config', '--format', 'json', timeout=3))
+
+        def check_ready_owner(deadline):
+            if c('ps', '-q', 'app', timeout=readiness_timeout(deadline)) != expected_container:
+                raise ValueError('Activated app owner changed during readiness')
+            info = json.loads(run('docker', 'inspect', expected_container,
+                                  timeout=readiness_timeout(deadline)))[0]
+            if info['Image'] != image:
+                raise ValueError('Activated image changed during readiness')
+            check_existing(info, config, 'app', project)
+
+        readiness = await_local_readiness(opener,
+            Request(f"http://127.0.0.1:{target['loopback_port']}/api/session", headers={'Host': host}),
+            check_ready_owner)
 
         def fetch(path):
             request = Request(f"http://127.0.0.1:{target['loopback_port']}{path}", headers={'Host': host})
@@ -604,7 +678,7 @@ def release_phase():
             if code != 200 or hashlib.sha256(body).hexdigest() != expected:
                 raise ValueError('Served asset differs from packaged image')
         advance('app_started', 'local_verified')
-        return {'phase': action, 'status': 'ok', 'assets': assets}
+        return {'phase': action, 'status': 'ok', 'assets': assets, 'readiness': readiness}
     elif action == 'complete':
         if release_files(target) != json.loads((stage / 'files.promoted.json').read_text()):
             raise ValueError('Final source/selection drift')

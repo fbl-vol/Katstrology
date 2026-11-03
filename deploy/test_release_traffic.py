@@ -37,6 +37,9 @@ class ReleaseTrafficTests(unittest.TestCase):
                 self.assertEqual(release.phase('activate_app_only')['status'], 'ok')
                 before = sessions()
                 with auth.client() as client:
+                    for _ in range(3):
+                        self.assertEqual(client.get('/api/session').status_code, 401)
+                    self.assertEqual(sessions(), before, 'Anonymous readiness must not create a web session')
                     response = client.post('/api/login', headers={'Origin': test_web_auth.ORIGIN},
                         json={'username': 'alice', 'password': 'synthetic-password-alice'})
                     self.assertEqual(response.status_code, 200)

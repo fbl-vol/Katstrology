@@ -182,6 +182,21 @@ Promote the matching source archive and canonical image selection while the app 
 stopped, preserving every unrelated env byte. Source/config replacement and Docker
 activation are distinct durable phases, **not an atomic transaction**. Drift or
 partial promotion halts with originals/snapshot retained; it never restores old data.
+Docker `up --wait` means running here, not HTTP-ready: there is no app healthcheck.
+Before definitive serving checks, an explicit local readiness boundary polls ONLY
+anonymous `GET /api/session` at the fixed loopback origin/Host, with no cookies,
+authorization, proxy or redirects. The 90-second monotonic deadline includes owner
+checks; probes and each Docker identity query are bounded to the remaining time
+and at most three seconds. Exactly the activated container/image/mount/runtime
+identity is required before every probe and again on success.
+
+Only connection refusal, HTTP response timeout and explicit 503 are transient;
+normal anonymous 401 ends polling. Unexpected 200/403/404/redirect, other transport
+failures and any identity/ownership failure are fatal without readiness retry.
+Timeout or a real verification failure retains exact-owned quarantine/unknown-state
+semantics, never another activation, credential/provider call or old-data restore.
+This is safe read-only readiness polling, not a retry of a deployment phase.
+
 It hashes every image asset against both loopback and the **public HTTPS origin**,
 including the manifest and icons; it checks anonymous session 401, edge wrong-Host
 **421** (distinct from app loopback wrong-Host 403), Origin/fetch-site 403 and
@@ -298,7 +313,13 @@ implied. Preparation/build qualification and signing wait are outside execution.
 Image loading has its own bounded preflight budget rather than an outer SSH timeout
 shorter than Docker load. Activation includes the final quiesced scan and has a
 bounded 600-second controller budget; this is a failure bound, not an expected
-deployment duration. No credential/network retry is hidden inside the runner.
+deployment duration. Local serving verification has a separate 900-second outer SSH
+budget to cover the 90-second readiness window plus bounded owner queries, asset
+listing and up to 64 definitive asset requests with eight-second HTTP timeouts. Healthy readiness has
+no unconditional delay. Readiness attempts/elapsed seconds are recorded in the
+controller receipt when reported by the helper. Definitive Host/Origin/assets and
+public TLS checks are never folded into startup polling or retried as readiness;
+no activation/credential/provider/mutating network retry is hidden in the runner.
 
 On a halt, preserve `phase.json`, `failure.json`, `files.before.json`,
 `files.promoted.json` when present, `env.before`, `source.before.tar`, previous
@@ -317,14 +338,17 @@ Do not use the installation-verification approval for an old version as a new
 release approval. No signing private key belongs on the server or runner.
 
 Offline focused checks (no SSH server/provider/user fixture):
-`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest deploy.test_release_pipeline deploy.test_release_access deploy.test_release_promotion`.
+`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy -p 'test_*.py'`.
 Use the shared local execution lock where required by the checkout. These checks
 include real OpenSSH ephemeral signing and real Compose config, but Docker lifecycle
 and public HTTP are synthetic; they do not prove target installation or full live
 release. The fixed state/authority scripts also run on newly owned synthetic files.
 `deploy.test_release_traffic` additionally exercises a real synthetic HTTP login
 and PostgreSQL session write during verification, but runs ONLY with an explicit
-fresh owned isolated fixture. Without it that one integration test is skipped;
+fresh owned isolated fixture. Readiness regressions exercise delayed/never-ready,
+permanent identity/authority/asset failures, exact-owned quarantine and one-time
+activation under a controlled clock. Without an isolated DB the one HTTP/PG
+integration test is skipped;
 never let it fall back to the user's database. Fixture setup/cleanup can reuse
 this checkout's existing isolated-validation helpers; no real provider is involved.
 
