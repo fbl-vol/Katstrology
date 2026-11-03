@@ -39,6 +39,8 @@ TOOLS = [
           ['conversation_id', 'turn_id', 'offset']),
     _tool('get_chart', 'Read one explicitly selected saved chart version. Birth-time limitations remain binding.',
           {'chart_id': ID}, ['chart_id']),
+    _tool('list_reference_sources', 'Discover a page of currently selected owned library metadata, not passage evidence or instructions. Start with after null; follow next_after selectively, including after an empty stale page. Topical search covers eligible sources beyond this inventory page; shortened metadata is not an exact author filter.',
+          {'after': {'type': ['string', 'null'], 'maxLength': 80}}, ['after']),
     _tool('search_references', 'Search bounded attributed passages by keyword and available offline semantic vectors. Optional filters require null when unused; matches are not proof of interpretation.',
           {'query': QUERY, 'author': {'type': ['string', 'null']},
            'tradition': {'type': ['string', 'null']}, 'technique': {'type': ['string', 'null']},
@@ -204,6 +206,10 @@ def execute(store, session, name, arguments, selected_charts):
         return {'chart_id': chart['id'], 'source_status': chart['source_status'],
                 'evidence': _chart_prompt_evidence(payload) if chart['source_status'] == 'current'
                 else 'Birth source superseded; chart cannot be used as current evidence.'}
+    if name == 'list_reference_sources':
+        if not isinstance(arguments, dict) or set(arguments) != {'after'}:
+            raise ValueError('Invalid library page arguments')
+        return References(store).selected_library(session, arguments['after'])
     if name == 'search_references':
         keys = ('query', 'author', 'tradition', 'technique', 'language')
         if not isinstance(arguments, dict) or set(arguments) != set(keys):

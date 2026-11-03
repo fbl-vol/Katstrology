@@ -15,6 +15,7 @@ from m2.attachments import Attachments
 from m2.evidence import LocalEmbedder, search_evidence
 from m2.recall import CONTEXT_TOKENS, REPLY_RESERVE, PromptBudgetError, assemble_prompt
 from m2.prompting import HOSTED, LOCAL, identity
+from m2.references import References
 from m2.provider_steps import ProviderFlush, ProviderStep
 from m2.tool_answers import _chart_prompt_evidence, chart_answer, event_answer, reference_answer
 from m2.selected_results import selected_evidence
@@ -242,6 +243,11 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         tool_definitions = json.dumps(TOOLS) if getattr(model, 'read_tools', False) else ''
         tool_result_reserve = (min(4096, max(512, model.context_limit // 32))
                                if tool_definitions and getattr(model, 'context_limit', None) else 0)
+        # Metadata discovery is not a passage read or an interpretation. Keep it
+        # in the measured untrusted context, including every compaction render.
+        library = (References(store).selected_library(session)
+                   if prompt_mode == 'hosted' and tool_definitions else None)
+        reference_context = json.dumps(library, ensure_ascii=False) if library is not None else ''
         instruction_tokens = (len(model.tokenize((HOSTED + tool_definitions).encode(),
                                                 add_bos=True, special=True))
                               if prompt_mode == 'hosted' else 0)
@@ -258,7 +264,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                                    instruction_tokens=instruction_tokens,
                                    recent_texts=recent, summary_override=summary,
                                    summary_covered_ids=covered, strict=recent is not None,
-                                   additional_reserve=tool_result_reserve)
+                                   additional_reserve=tool_result_reserve,
+                                   reference_context=reference_context)
 
         try:
             if prompt_mode == 'hosted' and getattr(model, 'capacity', None):
@@ -288,6 +295,11 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         budget.update({**identity(prompt_mode), 'model_provider': model_provider, 'model_slug': model_slug,
                        'selected_profiles': selected_names, 'chart_file': file_evidence,
                        'clock_anchor': clock_anchor})
+        if library is not None:
+            # Archive bounded discovery identity, not duplicate untrusted titles
+            # alongside potentially large selected chart/profile metadata.
+            budget['selected_library'] = {'source_ids': [row['source_id'] for row in library['sources']],
+                                          'next_after': library['next_after'], 'metadata_only': True}
         if tool_definitions:
             budget['read_policy'] = {'count_limit': None,
                 'max_model_evidence_bytes': MAX_MODEL_EVIDENCE_BYTES}

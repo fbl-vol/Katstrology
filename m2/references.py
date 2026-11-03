@@ -176,6 +176,40 @@ class References:
         """Exclude revoked content immediately, including after an older-backup restore."""
         self.store.ledger.revoke_reference(self.store, session, source_id)
 
+    def selected_library(self, session, after=None):
+        """One bounded metadata page, never originals/passages or model-issued selection.
+
+        The cursor advances over inspected rows even when chat provenance is stale.
+        An empty page with a cursor therefore does not mean the library is empty.
+        """
+        owner = self.store.owner(session)
+        if after is not None:
+            self.store._id(after)
+        limit = 4
+        rows = self.store.db.execute('''
+            SELECT s.id AS source_id,s.author,s.title,s.edition,s.tradition,s.technique,
+                   s.language,s.source_conversation_id,s.source_turn_id
+            FROM reference_sources s
+            WHERE s.owner_id=%s AND s.approval='selected' AND s.id>%s
+              AND EXISTS (SELECT 1 FROM reference_passages p
+                  WHERE p.owner_id=s.owner_id AND p.source_id=s.id)
+            ORDER BY s.id LIMIT %s
+        ''', (owner, after or '', limit + 1)).fetchall()
+        sources, chains, resolved = [], {}, {}
+        for row in rows[:limit]:
+            if row['source_conversation_id'] and not source_turn_current(
+                    self.store, session, row['source_conversation_id'], row['source_turn_id'],
+                    chains, resolved):
+                continue
+            entry = {'source_id': row['source_id'], 'metadata_shortened': False}
+            for key in ('author', 'title', 'edition', 'tradition', 'technique', 'language'):
+                entry[key] = row[key][:96]
+                entry['metadata_shortened'] |= len(row[key]) > 96
+            sources.append(entry)
+        return {'sources': sources, 'next_after': rows[limit - 1]['source_id'] if len(rows) > limit else None,
+                'page_limit': limit, 'scope': 'currently selected owned sources with eligible provenance',
+                'metadata_only': True}
+
     def readable_passage(self, session, source_id, passage_id):
         """Single eligibility boundary for CLI, MCP and model passage reads."""
         row = self.get_passage(session, source_id, passage_id)
