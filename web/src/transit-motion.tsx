@@ -55,10 +55,10 @@ function MotionWheel({ chart, motion, frame }: { chart: Chart; motion: Motion; f
   const time = timestamp.toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short',
     year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const id = `motion-${chart.id}`;
-  return <div className="motion-view"><p><strong>{time} UTC</strong> · chosen interval compressed into 20 seconds. Natal positions stay fixed.</p>
+  return <div className="motion-view"><p><strong>{time} UTC</strong> · the chosen dates play over 20 seconds. Natal positions stay fixed.</p>
     <div className="natal-wheel-scroll"><svg className="natal-wheel" viewBox="0 0 480 480" role="img"
       aria-labelledby={`${id}-title ${id}-desc`}>
-      <title id={`${id}-title`}>Sampled transiting planets around the fixed natal chart at {time} UTC</title>
+      <title id={`${id}-title`}>Transiting planets around the fixed natal chart at {time} UTC</title>
       <desc id={`${id}-desc`}>{motion.qualification} Outer glyphs are transiting planets; their lines lead to the shown longitude on the middle ring. Glyphs may shift to avoid overlaps. Inner marks are natal positions. Exact positions require the dated transit view.</desc>
       <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />
       {[190, 156, 106, 71].map(radius => <circle key={radius} cx="240" cy="240" r={radius}
@@ -140,7 +140,7 @@ export function TransitMotion({ chart }: { chart: Chart }) {
       if (result.status !== 'supported') { setError('This selected natal is no longer current or has no exact birth time. Update the chart before playing transits.'); return; }
       setMotion(result); frameRef.current = 0; setFrame(0);
     } catch {
-      if (version === request.current) setError('Dated samples could not be loaded. Check the UTC dates and try again; no chart was changed.');
+      if (version === request.current) setError('Transits could not be loaded. Check the UTC dates and try again; no chart was changed.');
     } finally { if (version === request.current) setBusy(false); }
   }
 
@@ -151,24 +151,24 @@ export function TransitMotion({ chart }: { chart: Chart }) {
   }
 
   return <details className="transit-motion" onToggle={event => { if (!event.currentTarget.open) setRunning(false); }}>
-    <summary>Play dated transits (optional)</summary>
-    <p>Choose 1–7 UTC days for a fixed natal and moving outer planets. Samples load only when requested; this does not send a message.</p>
+    <summary>Transits over time</summary>
+    <p>Choose 1–7 UTC days to see transiting planets move around the fixed birth chart. Nothing loads or sends a message until you choose Show transits.</p>
     <form onSubmit={event => void load(event)}><label>From (UTC)<input type="date" required min="1900-01-01" max="2099-12-30"
       value={from} onChange={event => changeDate('from', event.target.value)} /></label>
       <label>To (UTC)<input type="date" required min="1900-01-02" max="2099-12-31"
         value={to} onChange={event => changeDate('to', event.target.value)} /></label>
-      <button type="submit" disabled={busy}>{busy ? 'Loading samples…' : 'Load dated samples'}</button></form>
+      <button type="submit" disabled={busy}>{busy ? 'Loading transits…' : 'Show transits'}</button></form>
     {error && <p className="error" role="alert">{error}</p>}
     {motion && <div ref={view}>
-      <p>15-minute Swiss samples; intermediate motion is interpolated, not an exact ephemeris reading. For exact degrees use Sky at a date. No model or provider request.</p>
+      <p>Motion between calculated times is approximate. Use Sky at a date for exact positions. This view does not send a message.</p>
       <div className="motion-controls"><button type="button" disabled={reduced} onClick={() => {
         if (frameRef.current >= motion.longitudes.length - 1) { frameRef.current = 0; setFrame(0); }
         setRunning(!running);
       }}>{running ? 'Pause' : frame >= motion.longitudes.length - 1 ? 'Replay' : 'Play'}</button>
-      <label>Scrub dated samples<input type="range" min="0" max={motion.longitudes.length - 1} step="0.01"
+      <label>Transit date<input type="range" min="0" max={motion.longitudes.length - 1} step="0.01"
         aria-valuetext={`${new Date(Date.parse(motion.start_utc) + frame * motion.step_seconds * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`}
         value={frame} onChange={event => { setRunning(false); frameRef.current = Number(event.target.value); setFrame(frameRef.current); }} /></label></div>
-      {reduced && <p role="status">Reduced motion: autoplay and Play are disabled. Use the date scrubber to inspect a still frame.</p>}
+      {reduced && <p role="status">Reduced motion is on. Use the time slider to view each moment.</p>}
       <MotionWheel chart={chart} motion={motion} frame={frame} />
     </div>}
   </details>;

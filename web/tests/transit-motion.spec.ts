@@ -6,6 +6,8 @@ const renders = resolve(import.meta.dirname, '../../.local/post-deployment-featu
 
 test('on-demand dated transits keep natal fixed and stop or scrub without sending', async ({ page }) => {
   test.setTimeout(90000);
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
   mkdirSync(renders, { recursive: true });
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-motion');
@@ -37,18 +39,20 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await panel.getByLabel('To (UTC)').fill('2024-04-08');
   expect(samples).toBe(0);
   const response = page.waitForResponse(item => item.url().includes('/transit-frames') && item.status() === 200);
-  await panel.getByRole('button', { name: 'Load dated samples' }).click();
+  await panel.getByRole('button', { name: 'Show transits' }).click();
   expect((await response).status()).toBe(200);
-  await expect(panel.getByRole('img', { name: /Sampled transiting planets around the fixed natal chart/ })).toBeVisible();
+  await expect(panel.getByRole('img', { name: /Transiting planets around the fixed natal chart/ })).toBeVisible();
+  await panel.locator('.motion-controls').scrollIntoViewIfNeeded();
   await panel.getByRole('button', { name: 'Play', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Pause' })).toBeVisible();
+  expect(pageErrors).toEqual([]);
   await panel.getByRole('button', { name: 'Pause' }).click();
   await panel.getByRole('button', { name: 'Play', exact: true }).click();
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(panel.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(samples).toBe(1); expect(sends).toBe(0);
   const savedNatal = await charts.locator('.natal-tables').first().innerText();
-  const slider = panel.getByRole('slider', { name: 'Scrub dated samples' });
+  const slider = panel.getByRole('slider', { name: 'Transit date' });
   await slider.focus(); await page.keyboard.press('End');
   await expect(slider).toHaveAttribute('aria-valuetext', /2024-04-08 00:00 UTC/);
   expect(await charts.locator('.natal-tables').first().innerText()).toBe(savedNatal);
@@ -65,10 +69,49 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(panel.getByRole('button', { name: 'Replay' })).toBeDisabled();
-  await expect(panel.getByText('Reduced motion: autoplay and Play are disabled.')).toBeVisible();
+  await expect(panel.getByText('Reduced motion is on. Use the time slider to view each moment.')).toBeVisible();
   await slider.focus(); await page.keyboard.press('Home');
   await expect(slider).toHaveAttribute('aria-valuetext', /2024-04-01 00:00 UTC/);
   expect(sends).toBe(0);
+});
+
+test('empty, loading and failed transit controls retain dates without an automatic retry', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 640 });
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-clock-desktop');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
+  await page.getByRole('tab', { name: 'Charts' }).click();
+  const panel = page.locator('.transit-motion');
+  let requests = 0;
+  page.on('request', request => { if (request.url().includes('/transit-frames')) requests++; });
+  await expect(panel).not.toHaveAttribute('open');
+  expect(requests).toBe(0);
+  await panel.locator('summary').click();
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('transits-empty-short.png') });
+  await panel.getByLabel('From (UTC)').fill('2026-01-01');
+  await panel.getByLabel('To (UTC)').fill('2026-01-03');
+  let release!: () => void;
+  let arrived!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const seen = new Promise<void>(resolve => { arrived = resolve; });
+  await page.route('**/api/charts/*/transit-frames?*', async route => {
+    arrived(); await gate;
+    await route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' });
+  });
+  await panel.getByRole('button', { name: 'Show transits' }).click();
+  await seen;
+  await expect(panel.getByRole('button', { name: 'Loading transits…' })).toBeDisabled();
+  await page.screenshot({ path: test.info().outputPath('transits-loading-short.png') });
+  release();
+  await expect(panel.getByRole('alert')).toContainText('Transits could not be loaded');
+  await expect(panel.getByLabel('From (UTC)')).toHaveValue('2026-01-01');
+  await expect(panel.getByLabel('To (UTC)')).toHaveValue('2026-01-03');
+  expect(requests).toBe(1);
+  await page.screenshot({ path: test.info().outputPath('transits-error-short.png') });
 });
 
 test('conjunction scrub leaves each moving glyph visible at its linked longitude', async ({ page }) => {
@@ -95,10 +138,10 @@ test('conjunction scrub leaves each moving glyph visible at its linked longitude
   await panel.getByLabel('From (UTC)').fill('2024-04-02');
   await panel.getByLabel('To (UTC)').fill('2024-04-09');
   const response = page.waitForResponse(item => item.url().includes('/transit-frames') && item.status() === 200);
-  await panel.getByRole('button', { name: 'Load dated samples' }).click();
+  await panel.getByRole('button', { name: 'Show transits' }).click();
   const frames = await (await response).json() as { bodies: string[]; longitudes: number[][] };
   expect(frames.longitudes).toHaveLength(673);
-  const slider = panel.getByRole('slider', { name: 'Scrub dated samples' });
+  const slider = panel.getByRole('slider', { name: 'Transit date' });
   // Use the native range setter so React receives a real input event at the exact Swiss sample.
   await slider.evaluate((input: HTMLInputElement) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '648');
