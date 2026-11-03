@@ -434,8 +434,8 @@ test('return to the same archived thread after correcting a saved birth year ret
   const update = page.getByRole('region', { name: 'Generate a chart' });
   await expect(update.getByLabel('Birth date')).toBeVisible({ timeout: 10000 });
   await update.getByLabel('Birth date').fill('1983-02-12');
-  await update.getByLabel('Birthplace search').fill('Copenhagen');
-  await update.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
+  await expect(update.getByLabel('Birthplace search')).toHaveValue('Copenhagen, Capital Region, Denmark');
+  await expect(update.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
   const posted = page.waitForResponse(response => response.request().method() === 'POST' &&
     /\/api\/people\/[^/]+\/generate$/.test(new URL(response.url()).pathname));
   await update.getByRole('button', { name: 'Generate chart' }).click();
