@@ -201,6 +201,39 @@ class ChatHttpTests(DatabaseCase):
         self.assertEqual(self.events()[-1]['kind'], 'complete')
         self.assertEqual(len(self.responses()), 1)
 
+    def test_release_fences_effectful_get_and_new_send_without_cancelling_accepted_turn(self):
+        self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
+        entered, release = Event(), Event()
+        original = self.transport.response_events
+
+        def gated(token, body):
+            entered.set()
+            if not release.wait(15):
+                raise RuntimeError('Synthetic release gate watchdog')
+            yield from original(token, body)
+
+        self.transport.response_events = gated
+        payload = self.message()
+        self.assertEqual(self.post('/api/conversations/thread/turns', payload).status_code, 202)
+        gate = self.app.state.runtime.admission
+        try:
+            self.assertTrue(entered.wait(8))
+            result = self.client.portal.call(gate.drain, 'd' * 32, 0.02)
+            self.assertEqual(result['phase'], 'fenced')
+            before = len(self.transport.calls)
+            for response in (self.client.get('/api/siwc/models'),
+                             self.post('/api/conversations/thread/turns', self.message('late'))):
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json(), {'error': 'release_maintenance'})
+            self.assertEqual(len(self.transport.calls), before)
+            self.assertFalse(self.app.state.runtime.chat.jobs[('alice', 'thread', 'first')].cancel.is_set())
+        finally:
+            release.set()
+            self.client.portal.call(gate.resume, 'd' * 32)
+        self.assertEqual(self.events()[-1]['kind'], 'complete')
+        self.assertEqual(self.post('/api/conversations/thread/turns', payload).status_code, 202)
+        self.assertEqual(len(self.responses()), 1)
+
     def test_first_nonempty_word_commits_before_provider_resumes(self):
         self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
         entered, release = Event(), Event()

@@ -1,6 +1,5 @@
 """Idempotent turn ACK, committed SSE cursor, cancellation and owned export."""
 
-import asyncio
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -75,7 +74,7 @@ async def send(request):
     if not bridge:
         return json_response({'error': 'chatgpt_plan_permission_required'}, 409)
     try:
-        admission = await asyncio.to_thread(bridge.admit, session.owner_id, MODEL)
+        admission = await runtime.offload(bridge.admit, session.owner_id, MODEL)
     except ProviderFailure as failure:
         code = ('chatgpt_plan_permission_required' if failure.reason ==
                 'chatgpt_plan_permission_required' else

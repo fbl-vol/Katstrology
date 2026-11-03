@@ -78,14 +78,14 @@ class ChatJobs:
         if job:
             if job.fingerprint != fingerprint:
                 raise ValueError('Turn ID reused with changed input or selection')
-            return await job.ack
+            return await asyncio.shield(job.ack)
         job = TurnJob(owner, conv_id, turn_id, fingerprint)
         self.jobs[key] = job
-        asyncio.create_task(self._run(job, session, request, selected_people, parent_id,
+        self.runtime.spawn(self._run(job, session, request, selected_people, parent_id,
                                       revision_kind, replaces_turn_id, mode, model_slug,
                                       chart_file, reporting_zone, resolve_active, archived_selection,
                                       admission, selected_result))
-        return await job.ack
+        return await asyncio.shield(job.ack)
 
     async def _run(self, job, session, request, selected_people, parent_id,
                    revision_kind, replaces_turn_id, mode, model_slug, chart_file,
@@ -165,14 +165,14 @@ class ChatJobs:
             close = getattr(model, 'close', None)
             if close:
                 try:
-                    await asyncio.to_thread(close)
+                    await self.runtime.offload(close)
                 except Exception:
                     pass
 
         job.finish(status)
         if (status == 'complete' and mode == 'chatgpt' and archived_selection is None
                 and not request.startswith((CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX))):
-            asyncio.create_task(self._title(session, job.conversation_id, job.turn_id))
+            self.runtime.spawn(self._title(session, job.conversation_id, job.turn_id))
         if status == 'complete':
             self._schedule_rebuild(session, job.conversation_id)
         if len(self.jobs) > 64:
@@ -211,12 +211,12 @@ class ChatJobs:
                     if next_task is not None:
                         raise RuntimeError('Provider stream switched before its read completed')
                     if active_stream is not None:
-                        await asyncio.to_thread(active_stream.close)
+                        await self.runtime.offload(active_stream.close)
                     active_stream = step.stream
                 # A shielded read may remain in flight while the Store worker
                 # commits a timer-flushed suffix. Never read a stream twice at once.
                 if next_task is None:
-                    next_task = asyncio.create_task(asyncio.to_thread(next_provider, active_stream))
+                    next_task = self.runtime.spawn(self.runtime.offload(next_provider, active_stream))
                 try:
                     if step.flush_pending:
                         response = await asyncio.wait_for(asyncio.shield(next_task), timeout=0.15)
@@ -240,7 +240,7 @@ class ChatJobs:
                 pass
             if active_stream is not None:
                 try:
-                    await asyncio.to_thread(active_stream.close)
+                    await self.runtime.offload(active_stream.close)
                 except Exception:
                     pass
 
@@ -249,7 +249,7 @@ class ChatJobs:
         previous = self.rebuilds.get(key)
         if previous and not previous.done():
             return
-        task = asyncio.create_task(self._rebuild(session, conversation_id))
+        task = self.runtime.spawn(self._rebuild(session, conversation_id))
         self.rebuilds[key] = task
         task.add_done_callback(lambda finished: self.rebuilds.pop(key, None)
                                if self.rebuilds.get(key) is finished else None)
@@ -278,7 +278,7 @@ class ChatJobs:
             if not source:
                 return
             try:
-                title = await asyncio.to_thread(generate_title, self.runtime.siwc,
+                title = await self.runtime.offload(generate_title, self.runtime.siwc,
                                                 session.owner_id, source)
             except Exception:
                 # An optional title request cannot change a completed chat or replay it.

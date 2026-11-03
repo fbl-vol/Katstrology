@@ -1,6 +1,5 @@
 """Provider settings stay separate from the local workspace account/session."""
 
-import asyncio
 from hashlib import sha256
 from urllib.parse import parse_qs
 
@@ -85,7 +84,7 @@ async def models(request):
     bridge = request.app.state.runtime.siwc
     if not bridge:
         raise ValueError('ChatGPT plan is disabled')
-    result = await asyncio.to_thread(bridge.models, session.owner_id)
+    result = await request.app.state.runtime.offload(bridge.models, session.owner_id)
     return json_response({'models': [{**item, 'file_input_supported':
                                       item['slug'] in VISION_MODELS} for item in result],
                           'chat_available': any(item['slug'] == MODEL for item in result)})
@@ -99,7 +98,7 @@ async def choose(request):
     payload = await json_body(request)
     if set(payload) != {'client_id'} or not isinstance(payload['client_id'], str):
         raise ValueError('Invalid saved account')
-    return json_response(await asyncio.to_thread(bridge.choose, session.owner_id,
+    return json_response(await request.app.state.runtime.offload(bridge.choose, session.owner_id,
                                                   payload['client_id']))
 
 
@@ -108,7 +107,7 @@ async def disconnect(request):
     bridge = request.app.state.runtime.siwc
     if not bridge:
         raise ValueError('ChatGPT plan is disabled')
-    return json_response(await asyncio.to_thread(bridge.revoke, session.owner_id))
+    return json_response(await request.app.state.runtime.offload(bridge.revoke, session.owner_id))
 
 
 routes = [Route('/api/siwc/status', status),

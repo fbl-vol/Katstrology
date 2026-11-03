@@ -27,6 +27,7 @@ from m2.deletion import ReferencedPersonAttachment, Tombstones
 from m2.local_fixture import ROOT, fixture_dsn
 from m2.product_policy import public_defaults
 from m2.store import Store, MAX_MESSAGE
+from m2.release_drain import Admission, AdmissionBoundary, serve_control, SOCKET
 from m2.web_auth import SESSION_HOURS, WebAuth
 
 
@@ -45,7 +46,8 @@ class Forbidden(Exception):
 class BrowserRuntime:
     """One Store, on one worker thread; requests never share its transaction."""
 
-    def __init__(self, dsn, files, ledger, siwc_factory=None, siwc_root=None, clock=None):
+    def __init__(self, dsn, files, ledger, siwc_factory=None, siwc_root=None, clock=None,
+                 maintenance=False):
         from m2.app_clock import utc_now
         self.dsn, self.files, self.ledger = dsn, files, ledger
         self.clock = clock or utc_now
@@ -56,6 +58,9 @@ class BrowserRuntime:
         self.active_tokens = {}
         self.chat = None
         self.siwc = None
+        self.admission = Admission(Path(files).parent / 'release-fence.json' if maintenance else None)
+        self.maintenance = maintenance
+        self.control_server = None
 
     async def start(self):
         def connect():
@@ -72,6 +77,8 @@ class BrowserRuntime:
             self.chat = ChatJobs(self)
             if self.siwc_factory:
                 self.siwc = await self.execute(lambda: self.siwc_factory(self.siwc_root))
+            if self.maintenance:
+                self.control_server = await serve_control(self.admission)
         except BaseException:
             if self.store:
                 await self.execute(self.store.close)
@@ -79,8 +86,13 @@ class BrowserRuntime:
             raise
 
     async def execute(self, operation):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self.executor, operation)
+        return await self.admission.worker(self.executor, operation)
+
+    async def offload(self, operation, *args):
+        return await self.admission.worker(None, lambda: operation(*args))
+
+    def spawn(self, coroutine):
+        return self.admission.spawn(coroutine)
 
     async def call(self, operation):
         return await self.execute(lambda: operation(self.store, self.auth))
@@ -96,9 +108,16 @@ class BrowserRuntime:
         return None
 
     async def stop(self):
+        if self.control_server:
+            self.control_server.close()
+            await self.control_server.wait_closed()
+            Path(SOCKET).unlink(missing_ok=True)
         if self.chat:
             self.chat.cancel_all()
         try:
+            # A cancelled coroutine can still have an executor/provider call running.
+            while self.admission.pending:
+                await asyncio.gather(*tuple(self.admission.pending), return_exceptions=True)
             if self.store:
                 await self.execute(lambda: (self.siwc.close() if self.siwc else None,
                                             self.store.close()))
@@ -288,7 +307,8 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
     if not (dist / 'index.html').is_file():
         raise FileNotFoundError('Build web app first: npm --prefix web run build')
     runtime = BrowserRuntime(dsn, files, ledger, siwc_factory,
-                             siwc_root or Path(files).parent / 'siwc', clock=clock)
+                             siwc_root or Path(files).parent / 'siwc', clock=clock,
+                             maintenance=deployment)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -336,6 +356,7 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
                                         KeyError: on_error, ValueError: on_error,
                                         ReferencedPersonAttachment: on_error,
                                         RuntimeError: on_error, Exception: on_error})
+    app.add_middleware(AdmissionBoundary, admission=runtime.admission)
     app.add_middleware(LocalBoundary, origin=origin, deployment=deployment)
     app.state.runtime = runtime
     app.state.port = port

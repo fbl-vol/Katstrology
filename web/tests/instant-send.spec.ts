@@ -349,6 +349,28 @@ test('a committed creation with lost response retries the same conversation and 
   expect(created[0]).toBe(created[1]);
 });
 
+test('release maintenance preserves the pending identity and newer draft without automatic resend', async ({ page }) => {
+  await signIn(page, 'reader-instant-normal');
+  const ids: string[] = [];
+  await page.route('**/api/conversations/*/turns', async route => {
+    if (route.request().method() !== 'POST') { await route.continue(); return; }
+    ids.push(route.request().postDataJSON().id);
+    if (ids.length === 1) await route.fulfill({ status: 503, contentType: 'application/json',
+      body: '{"error":"release_maintenance"}' });
+    else await route.continue();
+  });
+  await send(page, 'Keep this message through the update', 'Send');
+  await expect(page.locator('.local-pending')).toContainText('Kat is updating');
+  await page.getByLabel('Message Kat').fill('A newer unsent draft');
+  expect(ids).toHaveLength(1);
+  await page.getByRole('button', { name: 'Retry this message' }).click();
+  await expect(page.locator('.local-pending')).toHaveCount(0);
+  await expect(page.getByLabel('Message Kat')).toHaveValue('A newer unsent draft');
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toBe(ids[1]);
+  await expect(page.locator('.turn-card')).toHaveCount(1);
+});
+
 test('a rejected plan keeps the user bubble and reuses the same identity after retry', async ({ page }) => {
   await signIn(page, 'reader-instant-normal');
   const ids: string[] = [];

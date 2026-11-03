@@ -113,6 +113,8 @@ class HistoryPerformanceTests(DatabaseCase):
         self.complete('first')
 
         class Runtime:
+            spawn = staticmethod(asyncio.create_task)
+
             def __init__(self, store):
                 self.store = store
 

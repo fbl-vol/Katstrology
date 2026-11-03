@@ -240,6 +240,8 @@ export function useArchiveChat(workspace: Workspace | null,
           error.code === 'selected_account_changed' ?
             'Your ChatGPT account changed before this message was saved. Check your connection, then retry.' :
             'Connect an eligible ChatGPT plan, then retry this message.', true);
+      } else if (error instanceof ApiError && error.code === 'release_maintenance') {
+        failPending('Kat is updating. Your message is still here. Retry this same message in a moment.');
       } else if (error instanceof ApiError && error.status === 400) {
         failPending('This message or its selected context was not accepted. Review your selection before trying again.');
       } else {
