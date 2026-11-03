@@ -81,6 +81,15 @@ test('conversation actions fit general and person contexts and dismiss without c
     }
     await opener.click();
     page.once('dialog', dialog => dialog.dismiss());
+    await menu.getByRole('button', { name: 'Rename' }).click();
+    await expect(menu).not.toHaveAttribute('open');
+    await opener.click();
+    const exportDownload = page.waitForEvent('download');
+    await menu.getByRole('button', { name: 'Export original JSONL' }).click();
+    await exportDownload;
+    await expect(menu).not.toHaveAttribute('open');
+    await opener.click();
+    page.once('dialog', dialog => dialog.dismiss());
     await menu.getByRole('button', { name: 'Delete conversation' }).click();
     await expect(menu).not.toHaveAttribute('open');
     await expect(page.getByRole('region', { name: 'Conversation', exact: true })).toBeVisible();
