@@ -5,8 +5,9 @@ not Kat's source endorsement, interpretive usefulness or a real provider's choic
 The selected **test** source is a single English OpenStax *Astronomy* 4.2
 paragraph, CC BY 4.0 (manifest, original and attribution in `data/` and
 `THIRD-PARTY-NOTICES.md`). It explains seasonal geometry, not modern Western
-interpretation. No private books, real conversations, hosted inference or extra
-model training are in the evaluation.
+interpretation. The public synthetic tests contain no private books, real conversations,
+hosted inference or model training. A separate private, local-only check is
+summarized without its content below.
 
 | Property | Reproducible local check | Limit |
 | --- | --- | --- |
@@ -48,6 +49,33 @@ remain incomplete. These labels and scores are **toy synthetic relevance only**:
 they do not establish Danish book quality, claim support, calibrated abstention,
 CPU/RAM fitness on the old target, or complete real-library coverage. Query and
 embedding scoring cannot substitute for a human reading each cited claim.
+
+## Fresh private offline check (content-free summary only)
+
+A separate unserved, newly owned local PostgreSQL/files fixture authenticated
+and imported **only the two previously approved immutable packages** (186 +
+432 passages), selected them **only inside that disposable fixture**, and
+indexed all 618 with the pinned public CPU model and windowed model key on
+schema 23. The originals were checked against their prior hashes. No PDF,
+query, passage, vector or detailed trace was put in this document, Pi output,
+public Git or a provider request. The private detail remains locally 0600
+inside a 0700 directory for human inspection; the scratch container and
+credential file were removed after ownership checks.
+
+On 11 provisional tests, four mechanical self-lookups hit in both keyword and
+hybrid mode; two Danish paraphrases had no keyword match but did produce
+semantic-only suggestions. The deliberately absent query had no keyword match
+and still produced suggestions (not support). A short two-author keyword query
+returned only one author in ten results, while hybrid returned both; this is a
+measured ranking limitation, not proof either source supports the question.
+Median local elapsed per query was 415 ms keyword and 403 ms hybrid (max 488
+and 499 ms); import/index/query together took 183 s on this PC. These numbers
+are not target-CPU capacity or an independent Danish relevance judgment.
+Full human OCR, locator, source-usefulness and claim-support review remains
+required before treating book passages as reliable interpretation. Private
+book selection for ordinary ChatGPT reads has a distinct bounded-excerpt
+egress/privacy decision, despite source readiness; do not infer consent to
+hosted embedding or send an entire book to a model.
 
 The current small corpus cannot answer most natal, house, progression, synastry or
 personal questions with interpretive citations. A missing/irrelevant source should
