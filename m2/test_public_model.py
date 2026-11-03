@@ -3,6 +3,9 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+
+import onnxruntime as ort
 
 from m2.evidence import LocalEmbedder
 from m2.public_model import CACHE_FOLDER, FILES, REVISION, stage_cache
@@ -21,7 +24,10 @@ class PublicModelTests(unittest.TestCase):
             files = {p.relative_to(target).as_posix() for p in target.rglob('*') if p.is_file()}
             self.assertEqual(files, {f'{CACHE_FOLDER}/refs/main'} | {
                 f'{CACHE_FOLDER}/snapshots/{REVISION}/{name}' for name in FILES})
-            self.assertEqual(len(LocalEmbedder(cache_dir=target).query('synthetic offline check')), 384)
+            with patch('m2.evidence.ort.disable_telemetry_events',
+                       wraps=ort.disable_telemetry_events) as disable:
+                self.assertEqual(len(LocalEmbedder(cache_dir=target).query('synthetic offline check')), 384)
+                disable.assert_called_once_with()
 
             (target / CACHE_FOLDER / 'snapshots' / REVISION / 'config.json').write_text('{}')
             with self.assertRaisesRegex(ValueError, 'config.json'):

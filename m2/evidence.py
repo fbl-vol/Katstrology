@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastembed import TextEmbedding
 import numpy as np
+import onnxruntime as ort
 from tokenizers import Tokenizer
 
 from m2.provenance import source_turn_current
@@ -23,6 +24,7 @@ MAX_REFERENCE_SCAN = 2400  # bound work when many newer sources are stale
 class LocalEmbedder:
     def __init__(self, cache_dir=None):
         cache = cache_dir or Path(__file__).resolve().parents[1] / '.local/models/fastembed'
+        ort.disable_telemetry_events()
         self.model = TextEmbedding(MODEL, cache_dir=str(cache),
                                    local_files_only=True, threads=2,
                                    providers=['CPUExecutionProvider'])

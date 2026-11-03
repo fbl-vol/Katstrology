@@ -225,7 +225,9 @@ PY
 
 Normal indexing/query uses `local_files_only=True` and CPU-only inference,
 and fails rather than silently contacting a provider if that cache is absent.
-The container also forces HF offline/telemetry-disabled operation. The published
+The container forces HF offline/telemetry-disabled operation; the embedder
+explicitly disables ONNX Runtime telemetry events before loading. A network-none
+image smoke checks inference without outbound network. The published
 model is an **English retrieval baseline**, not a validated Danish or specialist
 reader; synthetic Danish ranking is recorded in `RAG-EVALUATION.md`. No embedding
 text was uploaded. No pgvector extension or tenant-aware ANN index is claimed.
