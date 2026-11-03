@@ -147,6 +147,37 @@ for (const viewport of [{ name: 'short-mobile', size: { width: 390, height: 560 
   });
 }
 
+test('theme-color follows selected reading surfaces, not palette previews, and survives reload', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const chrome = page.locator('meta[name="theme-color"]');
+  await expect(chrome).toHaveAttribute('content', '#f5f3ec');
+  await page.getByLabel('Username').fill('reader-appearance');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const picker = page.getByRole('region', { name: 'Appearance' });
+  let current = '#f5f3ec';
+  for (const { name, id, paper, mode } of [
+    { name: /Peony/, id: 'peony', paper: '#fff6f8', mode: 'light' },
+    { name: /Blue Hour/, id: 'blue-hour', paper: '#192238', mode: 'dark' },
+    { name: /Moonstone/, id: 'moonstone', paper: '#292631', mode: 'dark' },
+  ]) {
+    await expect(chrome).toHaveAttribute('content', current);
+    await picker.getByRole('button', { name }).click();
+    await expect(chrome).toHaveAttribute('content', paper);
+    current = paper;
+    expect(await page.evaluate(() => ({ theme: document.documentElement.dataset.theme,
+      paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+      mode: getComputedStyle(document.documentElement).colorScheme })))
+      .toEqual({ theme: id, paper, mode });
+  }
+  await page.reload();
+  await expect(chrome).toHaveAttribute('content', '#292631');
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('moonstone');
+});
+
 test('Settings themes are keyboard operable and return focus on back' , async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-appearance');
@@ -217,6 +248,7 @@ test('the CSP-pinned bootstrap applies dark mode before the React bundle can run
   expect(response!.headers()['content-security-policy']).toContain(`'sha256-${digest}'`);
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('moonstone');
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#292631');
 });
 
 test('storage access denial still leaves a usable Reading Room login', async ({ page }) => {
@@ -226,6 +258,15 @@ test('storage access denial still leaves a usable Reading Room login', async ({ 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Welcome to Kat.' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('reading-room');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f3ec');
+  await page.getByLabel('Username').fill('reader-appearance');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#192238');
+  await page.reload();
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f3ec');
 });
 
 test('invalid preference returns to Reading Room before app paint', async ({ page }) => {
@@ -234,4 +275,5 @@ test('invalid preference returns to Reading Room before app paint', async ({ pag
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('reading-room');
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('light');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f3ec');
 });

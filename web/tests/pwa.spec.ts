@@ -16,7 +16,7 @@ const icons = [
 test('normal installed-app assets are immutable build copies with scoped online-only identity', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest');
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#183a2e');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f5f3ec');
   const response = await page.request.get('/manifest.webmanifest');
   expect(response.status()).toBe(200);
   expect(response.headers()['content-type']).toContain('application/manifest+json');
@@ -26,7 +26,7 @@ test('normal installed-app assets are immutable build copies with scoped online-
   const manifest = JSON.parse(bytes.toString());
   expect(manifest).toMatchObject({ id: '/', name: 'Katstrology', short_name: 'Kat',
     start_url: '/', scope: '/', display: 'standalone',
-    theme_color: '#183a2e', background_color: '#f5f3ec' });
+    theme_color: '#f5f3ec', background_color: '#f5f3ec' });
   expect(manifest).not.toHaveProperty('serviceworker');
   expect(manifest.icons).toEqual(icons.map(({ src, size, purpose }) => ({
     src, sizes: `${size}x${size}`, type: 'image/png', purpose,
