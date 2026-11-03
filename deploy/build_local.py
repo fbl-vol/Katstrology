@@ -4,14 +4,18 @@ Never uploads, loads another host, serves, or uses Docker runtime credentials.
 Run from a clean committed public-only checkout. Output stays in ignored .local.
 """
 
+import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tarfile
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from m2.public_model import stage_cache
 
 
 def run(*args):
@@ -27,20 +31,28 @@ def file_hash(path):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Package identified app with verified public CPU model')
+    parser.add_argument('--public-model-cache', type=Path,
+                        default=ROOT / '.local/models/fastembed',
+                        help='Pinned public FastEmbed cache only; no credentials or private indexes')
+    args = parser.parse_args()
     if run('git', 'status', '--porcelain', '--untracked-files=all'):
         raise RuntimeError('Only a clean committed source tip may be packaged')
     commit, tree = run('git', 'rev-parse', 'HEAD'), run('git', 'rev-parse', 'HEAD^{tree}')
     output = ROOT / '.local/fresh-production/package' / commit[:12]
-    output.mkdir(parents=True, exist_ok=False)
-    source = output / 'kat-public-source.tar'
-    image = output / 'kat-production-amd64.tar'
-    with source.open('wb') as stream:
-        subprocess.run(['git', 'archive', '--format=tar', 'HEAD'], cwd=ROOT,
-                       stdout=stream, check=True)
-    tag = f'kat-production-local:{commit[:12]}'
-    subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--pull=false',
-                    '--label', f'org.opencontainers.image.revision={commit}',
-                    '-t', tag, '.'], cwd=ROOT, check=True)
+    with TemporaryDirectory(prefix='kat-public-model-', dir=ROOT / '.local') as model_context:
+        model_manifest = stage_cache(args.public_model_cache, model_context)
+        output.mkdir(parents=True, exist_ok=False)
+        source = output / 'kat-public-source.tar'
+        image = output / 'kat-production-amd64.tar'
+        with source.open('wb') as stream:
+            subprocess.run(['git', 'archive', '--format=tar', 'HEAD'], cwd=ROOT,
+                           stdout=stream, check=True)
+        tag = f'kat-production-local:{commit[:12]}'
+        subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--pull=false',
+                        '--build-context', f'public-model={model_context}',
+                        '--label', f'org.opencontainers.image.revision={commit}',
+                        '-t', tag, '.'], cwd=ROOT, check=True)
     image_id = run('docker', 'image', 'inspect', tag, '--format', '{{.Id}}')
     architecture = run('docker', 'image', 'inspect', tag, '--format', '{{.Os}}/{{.Architecture}}')
     if architecture != 'linux/amd64':
@@ -69,7 +81,8 @@ def main():
         config = blob(config_digest)
         if config.get('config', {}).get('Labels', {}).get('org.opencontainers.image.revision') != commit:
             raise RuntimeError('Saved archive does not identify the committed source')
-    receipt = {'commit': commit, 'tree': tree, 'architecture': architecture,
+    receipt = {'commit': commit, 'tree': tree, 'public_model': model_manifest,
+               'architecture': architecture,
                'image_id': image_id, 'config_digest': config_digest,
                'image_archive_sha256': file_hash(image),
                'source_offer_sha256': file_hash(source),

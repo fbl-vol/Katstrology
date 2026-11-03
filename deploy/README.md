@@ -16,7 +16,16 @@ registration route, even if a provider is enabled.
 ## Build and identity
 
 `python3 deploy/build_local.py` accepts only a clean committed public checkout and
-produces an ignored `.local/fresh-production/package/<tip>/` containing an amd64
+requires the pinned public BGE CPU model snapshot in `.local/models/fastembed`
+(or an explicitly supplied `--public-model-cache` directory with the identical
+verified public revision). It stages only five allowed SHA-256/size-checked files
+into a temporary Docker build context, never the whole HF cache. Missing or
+changed weights fail before any accepted receipt; the image smoke loads the model
+with offline-only CPU execution. The cache source is preparation input, not an
+app volume or credential. The package receipt identifies its model revision and
+per-file hashes; the checked-in `m2/public_model.py` and
+`m2/public-model-LICENSE.txt` supply the manifest and upstream MIT notice.
+`build_local.py` produces an ignored `.local/fresh-production/package/<tip>/` containing an amd64
 Docker image archive, `git archive` corresponding source offer and a receipt with
 SHA, tree, OS/arch, inspected image config ID and both file SHA-256 digests. It
 compares the saved archive manifest/config with the inspected ID; do not treat a
@@ -26,8 +35,10 @@ PostgreSQL bases are pinned by digest; browser dependencies use `npm ci` and the
 Python application pins direct versions. **Transitive Python wheel hashes are not
 locked, and a rebuild is not guaranteed byte-identical.** Audit resolution and
 licenses before promotion; refresh pinned bases through a separate review. See
-`THIRD-PARTY-NOTICES.md` and `docs/PUBLICATION.md`. No ephemeris, model cache,
-real credentials, account state or journal is in the image or source offer.
+`THIRD-PARTY-NOTICES.md` and `docs/PUBLICATION.md`. The image contains only
+the pinned public model files, not private data or indexes; no ephemeris, real
+credentials, account state or journal is in the image or source offer. The
+source offer includes the public model manifest/licence, never its binary cache.
 Check the actual old server CPU, base pulls and archive config ID in its separately
 authorized private preflight, not by assuming this local build can run there.
 

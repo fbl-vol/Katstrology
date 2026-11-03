@@ -10,19 +10,19 @@ from fastembed import TextEmbedding
 import numpy as np
 
 from m2.provenance import source_turn_current
+from m2.public_model import MODEL, REVISION
 from m2.recall import search as search_history
 
 
-MODEL_ID = 'BAAI/bge-small-en-v1.5:fastembed-0.9.1'
+MODEL_ID = f'{MODEL}@{REVISION}:fastembed-0.9.1:prefix2048'
 CANDIDATE_LIMIT = 240
 MAX_REFERENCE_SCAN = 2400  # bound work when many newer sources are stale
 
 
 class LocalEmbedder:
-    def __init__(self):
-        self.model = TextEmbedding('BAAI/bge-small-en-v1.5',
-                                   cache_dir=str(Path(__file__).resolve().parents[1] /
-                                                 '.local/models/fastembed'),
+    def __init__(self, cache_dir=None):
+        cache = cache_dir or Path(__file__).resolve().parents[1] / '.local/models/fastembed'
+        self.model = TextEmbedding(MODEL, cache_dir=str(cache),
                                    local_files_only=True, threads=2,
                                    providers=['CPUExecutionProvider'])
 

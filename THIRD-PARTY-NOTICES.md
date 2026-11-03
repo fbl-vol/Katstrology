@@ -22,6 +22,20 @@ interpretive endorsement.
 
 `web/src/assets/kat-astro-forms.woff` and `kat-astro-sun.woff` are subsets of Noto Sans Symbols and Noto Sans Symbols 2 respectively. Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols). The font software remains under the [SIL Open Font License 1.1](web/src/assets/OFL-Noto.txt); the original font project and its preferred sources are at [notofonts/symbols](https://github.com/notofonts/symbols). Subsetting/WOFF conversion changes the font files, not their license.
 
+## Packaged public CPU embedding model
+
+The release image includes only the five checksum-pinned files of
+[Qdrant/bge-small-en-v1.5-onnx-Q](https://huggingface.co/Qdrant/bge-small-en-v1.5-onnx-Q)
+at revision `aa8f8b060edb00e03bfdd08813a2949946c8ba55`, a quantized
+ONNX port of [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5).
+Both upstream model cards declare MIT; the upstream FlagEmbedding licence text
+and copyright notice are preserved in [`m2/public-model-LICENSE.txt`](m2/public-model-LICENSE.txt)
+and copied into the image. `m2/public_model.py` identifies every shipped file,
+its SHA-256, size and the exact public revision. Weights are not checked into Git,
+and the builder cannot include unrelated Hugging Face cache files, private books,
+vector indexes or credentials. Model scores are retrieval hints, not citation
+support or verified multilingual quality.
+
 ## Installed software
 
 - The browser dependencies are declared in [`web/package.json`](web/package.json), with exact resolved versions and reported package licenses in [`web/package-lock.json`](web/package-lock.json). They are installed with `npm ci` rather than vendored here. The locked JavaScript packages report MIT, ISC, BSD-3-Clause or Apache-2.0 licenses; retain their individual notices when distributing a built bundle.
