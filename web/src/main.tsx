@@ -5,6 +5,7 @@ import { useArchiveChat, type SelectedResult } from './archive';
 import { LocalPendingMessage } from './local-pending';
 import { ConversationBrowseList, ScopeChips, ScopePicker, type Conversation, type Selection } from './conversation';
 import { ContextChart } from './context-chart';
+import { ConversationMenu } from './conversation-menu';
 import { TurnCard, type Turn, type TurnActions } from './turns';
 import { CreatePersonDialog, PersonDetail, type Person } from './people';
 import { useProvider } from './provider';
@@ -658,10 +659,10 @@ function App() {
         aria-label={conversation ? 'Conversation' : 'New conversation'}>
         <div className={`chat-reading-grid${selection.length ? ' has-chart-context' : ''}`}>
         {conversation ? <div className="messages"><div className="conversation-toolbar"><span>{conversation.people.map(item => item.name).join(' & ') || 'General'} · one archived thread</span>
-          <details className="conversation-menu"><summary>Conversation options</summary><div className="conversation-controls">
+          <ConversationMenu>
             <button onClick={() => void renameConversation()} disabled={archive.busy}>Rename</button>
             <button onClick={() => void exportConversation()}>Export original JSONL</button>
-            <button onClick={() => void deleteConversation()} disabled={archive.busy}>Delete conversation</button></div></details></div>
+            <button onClick={() => void deleteConversation()} disabled={archive.busy}>Delete conversation</button></ConversationMenu></div>
           {archive.turns.length ? archive.turns.map(turn => <TurnCard key={turn.id} turn={turn} people={people} workspace={workspace}
             conversationId={conversation.id} activeHead={conversation.active_head} actions={turnActions}
             eventFailure={archive.eventFailures[turn.id]} />) : !archive.localPending && <p className="conversation-empty">This conversation has no messages yet. Its selected people are ready.</p>}

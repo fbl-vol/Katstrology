@@ -79,7 +79,8 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .chat-scroll-page .composer textarea{resize:none;max-height:none;overflow:hidden;min-height:45px}
 .conversation-menu{position:relative;margin-left:auto;flex:none}
 .conversation-menu>summary{cursor:pointer;color:var(--link);font-size:11px;min-height:36px;align-content:center}
-.conversation-menu .conversation-controls{position:absolute;top:100%;right:0;z-index:18;width:min(220px,85vw);display:grid;gap:3px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--white);box-shadow:0 8px 25px var(--overlay)}
+.conversation-menu .conversation-controls{position:absolute;top:100%;right:0;z-index:18;width:min(220px,85vw);max-height:min(280px,55dvh);overflow:auto;display:grid;gap:3px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--white);box-shadow:0 8px 25px var(--overlay)}
+@media(max-width:700px){.conversation-menu{width:100%;margin-left:0}.conversation-menu .conversation-controls{left:0;right:auto;width:min(220px,100%)}}
 .conversation-menu .conversation-controls button{text-align:left;padding:7px 9px}
 .turn-state{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:11px}
 .turn-context{font-size:11px;color:var(--muted);margin:0}
