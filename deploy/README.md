@@ -20,8 +20,13 @@ requires the pinned public BGE CPU model snapshot in `.local/models/fastembed`
 (or an explicitly supplied `--public-model-cache` directory with the identical
 verified public revision). It stages only five allowed SHA-256/size-checked files
 into a temporary Docker build context, never the whole HF cache. Missing or
-changed weights fail before any accepted receipt; the image smoke loads the model
-with offline-only CPU execution. The cache source is preparation input, not an
+changed weights fail before any accepted receipt; runtime repeats the same
+read-only identity check once per embedder and binds inference to the verified
+snapshot using FastEmbed's local `specific_model_path`. Only newly staged
+public paths receive 0755 directory/0644 file modes; the original cache is
+untouched. The build smoke loads the model with offline-only CPU execution
+**after** switching to runtime UID 10001. Final packaged testing also uses
+nonroot, read-only, network-none execution. The cache source is preparation input, not an
 app volume or credential. The package receipt identifies its model revision and
 per-file hashes; the checked-in `m2/public_model.py` and
 `m2/public-model-LICENSE.txt` supply the manifest and upstream MIT notice.

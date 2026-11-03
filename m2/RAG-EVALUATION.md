@@ -34,6 +34,20 @@ English/Danish. The no-answer query was separate. **Top-3 labelled hits:**
 | CPU semantic alone | 3 | 3 | 1 | Returns a ranking regardless of support |
 | Bounded hybrid | 3 | 3 | 1 | `semantic_suggestions_only`, never evidence of entailment |
 
+The bilingual test above expects **Danish passages**, so it does **not** test
+Danish questions over the actual English-only private books. A separate
+independently labelled **English-only synthetic** six-passage check used four
+Danish questions (direct, paraphrase, multi-factor, and a stationery distractor)
+plus a Danish no-answer question. All six indexed passages declare `en`;
+none is a translation or private excerpt. Keyword found **0/4** labelled
+answers. CPU semantic and hybrid placed the direct and paraphrase answers
+**first**, the distractor answer **second**, and the multi-factor answer
+**fourth** (thus **3/4 top-3**, not 4/4). All four hybrid statuses were
+`semantic_suggestions_only`. The no-answer case was `not_found` for keyword
+and still produced semantic-only suggestions; neither ranking nor score
+certifies support. This tiny fixture is diagnostic, **not** English-book or
+Danish-query quality acceptance; the private 11-query checks remain provisional.
+
 On seven passages, indexing took **375 ms** and eight mixed-mode query checks
 **288 ms** on this workstation. A second **618-passage** synthetic owner corpus
 indexed all 618 vectors in **15,465 ms**; one older interpretive match behind

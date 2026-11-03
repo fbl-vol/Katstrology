@@ -136,3 +136,70 @@ class RagRetrievalTests(DatabaseCase):
         self.assertEqual(no_answer['keyword'], 'not_found')
         self.assertEqual(no_answer['hybrid'], 'semantic_suggestions_only')
         self.assertGreaterEqual(hits['hybrid']['en'], 2)
+
+    def test_danish_questions_against_english_only_synthetic_sources(self):
+        refs = References(self.store)
+        refs.add_source(self.alice, 'english-only', 'Synthetic Author', 'English-only notes',
+                        'synthetic edition', 'western', 'general', 'synthetic exercise',
+                        'synthetic rights', language='en')
+        passages = {
+            'season': 'The tilt of Earth changes the angle of sunlight, causing seasons.',
+            'birth-time': 'An unknown birth time cannot establish an exact rising sign or house.',
+            'return': 'A return window can be described without inventing a precise birth time.',
+            'combined': 'When birth time is unknown, a return window may be discussed '
+                        'without claiming an exact rising sign.',
+            'pen-catalog': 'The Axial Tilt stationery collection sells colored pens '
+                           'and invoices, not astronomical observations.',
+            'billing': 'Rising Sign is a bookshop billing schedule with timestamps, '
+                       'not a natal chart calculation.',
+        }
+        for passage_id, content in passages.items():
+            refs.add_passage(self.alice, 'english-only', passage_id, passage_id, content)
+        cases = (
+            ('exact', 'Hvad betyder ukendt fødselstid for ascendanten?', 'birth-time'),
+            ('paraphrase', 'Hvorfor skifter vi mellem sommer og vinter?', 'season'),
+            ('multi-factor', 'Hvis fødselstidspunktet mangler, kan man beskrive et '
+                             'returvindue uden at påstå en præcis ascendant?', 'combined'),
+            ('distractor', 'Hvad skaber årstiderne, snarere end navnet på farvepenne?', 'season'),
+            ('no-answer', 'Hvilket klinisk forsøg beviser en kur mod søvnløshed?', None),
+        )
+
+        embedder = LocalEmbedder()
+        self.assertEqual(rebuild_vectors(self.store, self.alice, embedder,
+                                         limit=10)['references_indexed'], len(passages))
+        vectors = self.store.db.execute('''SELECT p.id AS passage_id,v.embedding,s.language
+            FROM reference_passages p JOIN reference_vectors v
+              ON (v.owner_id=p.owner_id AND v.source_id=p.source_id AND v.passage_id=p.id)
+            JOIN reference_sources s ON (s.owner_id=p.owner_id AND s.id=p.source_id)
+            WHERE p.owner_id=%s AND p.source_id=%s''', ('alice', 'english-only')).fetchall()
+        self.assertEqual(len(vectors), len(passages))
+        self.assertEqual({row['language'] for row in vectors}, {'en'})
+        measured = {}
+        for label, question, expected in cases:
+            keyword = search_evidence(self.store, self.alice, question,
+                                      limit=6, include_history=False)
+            hybrid = search_evidence(self.store, self.alice, question, embedder,
+                                     limit=6, include_history=False)
+            query_vector = np.array(embedder.query(question))
+            semantic = [row['passage_id'] for row in sorted(vectors,
+                key=lambda row: float(np.dot(query_vector, np.array(row['embedding']))),
+                reverse=True)]
+            ranks = {
+                'keyword': [row['passage_id'] for row in keyword['results']
+                            if row['keyword_match']],
+                'semantic': semantic,
+                'hybrid': [row['passage_id'] for row in hybrid['results']],
+            }
+            measured[label] = {
+                'rank': {mode: (items.index(expected) + 1 if expected in items else None)
+                         for mode, items in ranks.items()} if expected else None,
+                'keyword_status': keyword['evidence_status'],
+                'hybrid_status': hybrid['evidence_status'],
+            }
+            self.assertFalse(hybrid['reference_scan_truncated'])
+            self.assertFalse(hybrid['semantic_index_incomplete'])
+        print('RAG_DANISH_TO_ENGLISH_SYNTHETIC=' + json.dumps(measured, sort_keys=True),
+              flush=True)
+        self.assertEqual(measured['no-answer']['keyword_status'], 'not_found')
+        self.assertIn(measured['no-answer']['hybrid_status'],
+                      ('not_found', 'semantic_suggestions_only'))

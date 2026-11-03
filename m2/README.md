@@ -223,8 +223,13 @@ TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='.local/models/fastembed',
 PY
 ```
 
-Normal indexing/query uses `local_files_only=True` and CPU-only inference,
-and fails rather than silently contacting a provider if that cache is absent.
+Each embedder instance checks the cache's `refs/main` revision and hashes/sizes
+of all five pinned public files, then passes the verified snapshot directory to
+FastEmbed's `specific_model_path` with `local_files_only=True` and CPU-only
+inference. A moved ref, mismatched tokenizer/weights or absent cache fails
+**before encoding**, rather than silently indexing different vectors under the
+same `MODEL_ID` or contacting a provider. The 66 MiB check runs once per instance,
+not on each query/passage; snapshots are treated as immutable while in use.
 The container forces HF offline/telemetry-disabled operation; the embedder
 explicitly disables ONNX Runtime telemetry events before loading. A network-none
 image smoke checks inference without outbound network. The published

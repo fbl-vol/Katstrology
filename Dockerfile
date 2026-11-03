@@ -31,7 +31,6 @@ COPY m2/data ./m2/data
 # This named build context is mandatory; a missing cache must fail the build.
 COPY --from=public-model /models--Qdrant--bge-small-en-v1.5-onnx-Q /opt/kat/.local/models/fastembed/models--Qdrant--bge-small-en-v1.5-onnx-Q
 COPY m2/public-model-LICENSE.txt ./m2/
-RUN HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 python -c 'from m2.evidence import LocalEmbedder; assert len(LocalEmbedder().query("public model smoke")) == 384'
 COPY probes/*.py ./probes/
 COPY --from=browser /build/web/dist ./web/dist
 RUN pg_dump --version && pg_restore --version
@@ -43,5 +42,7 @@ RUN groupadd --gid 10001 kat && useradd --uid 10001 --gid kat --home-dir /opt/ka
       /var/lib/kat/browser-runtime/files /var/lib/kat/browser-runtime/deletions \
       /var/lib/kat/browser-runtime/siwc
 USER 10001:10001
+# Fail the build if the final runtime user cannot read the exact offline model.
+RUN python -c 'from m2.evidence import LocalEmbedder; assert len(LocalEmbedder().query("public model smoke")) == 384'
 EXPOSE 8765
 CMD ["python", "-m", "m2.web_server", "serve"]

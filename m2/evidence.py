@@ -12,7 +12,7 @@ import onnxruntime as ort
 from tokenizers import Tokenizer
 
 from m2.provenance import source_turn_current
-from m2.public_model import MODEL, REVISION
+from m2.public_model import MODEL, REVISION, verified_snapshot
 from m2.recall import search as search_history
 
 
@@ -24,8 +24,10 @@ MAX_REFERENCE_SCAN = 2400  # bound work when many newer sources are stale
 class LocalEmbedder:
     def __init__(self, cache_dir=None):
         cache = cache_dir or Path(__file__).resolve().parents[1] / '.local/models/fastembed'
+        snapshot = verified_snapshot(cache)
         ort.disable_telemetry_events()
         self.model = TextEmbedding(MODEL, cache_dir=str(cache),
+                                   specific_model_path=str(snapshot),
                                    local_files_only=True, threads=2,
                                    providers=['CPUExecutionProvider'])
         # FastEmbed truncates at 512 tokens. Use its exact tokenizer without

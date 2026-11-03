@@ -31,9 +31,9 @@ def file_hash(path):
     return digest.hexdigest()
 
 
-def stage_cache(source_cache, destination):
-    """Verify exact public bytes, then stage regular files with a fixed HF snapshot ref."""
-    source = Path(source_cache) / CACHE_FOLDER
+def verified_snapshot(cache_dir):
+    """Read-only identity check for the exact public revision and model bytes."""
+    source = Path(cache_dir) / CACHE_FOLDER
     ref = source / 'refs/main'
     if not source.is_dir() or not ref.is_file() or ref.read_text().strip() != REVISION:
         raise ValueError('Pinned public model revision is unavailable offline')
@@ -42,7 +42,12 @@ def stage_cache(source_cache, destination):
         path = snapshot / name
         if not path.is_file() or path.stat().st_size != size or file_hash(path) != digest:
             raise ValueError(f'Pinned public model file unavailable or mismatched: {name}')
+    return snapshot.resolve(strict=True)
 
+
+def stage_cache(source_cache, destination):
+    """Stage only verified public files, never the surrounding Hugging Face cache."""
+    snapshot = verified_snapshot(source_cache)
     target = Path(destination) / CACHE_FOLDER
     (target / 'refs').mkdir(parents=True)
     (target / 'snapshots' / REVISION).mkdir(parents=True)
@@ -52,6 +57,11 @@ def stage_cache(source_cache, destination):
         copyfile(snapshot / name, output)
         if file_hash(output) != digest:
             raise ValueError(f'Staged public model file changed: {name}')
+        output.chmod(0o644)
+    (target / 'refs/main').chmod(0o644)
+    for directory in (target / 'refs', target / 'snapshots' / REVISION,
+                      target / 'snapshots', target):
+        directory.chmod(0o755)
     return {'model': MODEL, 'repository': REPOSITORY, 'revision': REVISION,
             'licence': 'MIT', 'files': {name: {'sha256': digest, 'bytes': size}
                                        for name, (digest, size) in FILES.items()}}
