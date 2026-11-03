@@ -183,7 +183,8 @@ test('watchlist pagination started before an edit cannot append a stale page', a
   const form = records.getByRole('form', { name: 'Edit saved item' });
   await form.getByLabel('Private note (optional)').fill('Edited before stale page');
   await form.getByRole('button', { name: 'Save item' }).click();
-  await expect(records.getByText('Edited before stale page')).toBeVisible();
+  await expect(form).toBeHidden();
+  await expect(records.locator('ul > li').first()).toContainText('Edited before stale page');
   release(); await done;
   await page.unroute('**/api/people/transit-person/watchlist?offset=20');
   await expect(records.locator('ul > li')).toHaveCount(20);
