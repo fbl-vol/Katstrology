@@ -313,7 +313,8 @@ def await_local_readiness(opener, request, check_owner):
         except (URLError, OSError) as error:
             reason = error.reason if isinstance(error, URLError) else error
             if not (isinstance(reason, TimeoutError) or
-                    isinstance(reason, OSError) and reason.errno == errno.ECONNREFUSED):
+                    isinstance(reason, OSError) and reason.errno in (
+                        errno.ECONNREFUSED, errno.ECONNRESET)):
                 raise  # DNS, permission, protocol and other transport failures stay fatal.
             response = None
         if response is not None:

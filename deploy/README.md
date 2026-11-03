@@ -190,9 +190,12 @@ checks; probes and each Docker identity query are bounded to the remaining time
 and at most three seconds. Exactly the activated container/image/mount/runtime
 identity is required before every probe and again on success.
 
-Only connection refusal, HTTP response timeout and explicit 503 are transient;
-normal anonymous 401 ends polling. Unexpected 200/403/404/redirect, other transport
-failures and any identity/ownership failure are fatal without readiness retry.
+Only connection refusal (ECONNREFUSED), connection reset (ECONNRESET, 104 on Linux),
+HTTP response timeout and explicit 503 are transient inside this initial anonymous
+local boundary. Docker loopback forwarding can accept then reset while the exact
+running app has not yet bound its listener. Normal anonymous 401 ends polling;
+subsequent definitive session/Host/assets/public checks never inherit reset retries.
+Unexpected 200/403/404/redirect, other transport failures and any identity/ownership failure are fatal without readiness retry.
 Timeout or a real verification failure retains exact-owned quarantine/unknown-state
 semantics, never another activation, credential/provider call or old-data restore.
 This is safe read-only readiness polling, not a retry of a deployment phase.

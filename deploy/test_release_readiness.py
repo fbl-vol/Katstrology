@@ -110,13 +110,72 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(result['readiness']['attempts'], 2)
         self.assertEqual(sum('up' in args for args in self.release.calls), 1)
 
-    def test_other_transport_error_is_fatal_without_polling(self):
-        self.events = [URLError(PermissionError(13, 'synthetic transport refusal'))]
+    def test_bare_and_wrapped_reset104_then_401_retry_only_initial_anonymous_readiness(self):
+        for error in (ConnectionResetError(104, 'synthetic cold forwarding reset'),
+                      URLError(ConnectionResetError(104, 'synthetic wrapped reset'))):
+            with self.subTest(error=type(error).__name__):
+                self.fixture()
+                self.events = [error, 401]
+                result = self.verify()
+                self.assertEqual(result['status'], 'ok')
+                self.assertEqual(result['readiness']['attempts'], 2)
+                self.assertTrue(self.release.running)
+                self.assertEqual(len(self.clock.sleeps), 1)
+                self.assertEqual(sum('up' in args for args in self.release.calls), 1)
+
+    def test_repeated_reset104_exhausts_existing_deadline_and_quarantines_without_reactivation(self):
+        self.events = [ConnectionResetError(104, 'synthetic repeated cold reset') for _ in range(10)]
         result = self.verify()
         self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['failure_type'], 'TimeoutError')
         self.assertFalse(self.release.running)
-        self.assertEqual(len(self.requests), 1)
+        self.assertGreaterEqual(self.clock.value, 3.0)
+        self.assertGreater(len(self.requests), 1)
+        self.assertEqual(sum('up' in args for args in self.release.calls), 1)
+        self.assertTrue((self.release.root / 'active-attempt').exists())
+
+    def test_reset_does_not_hide_owner_drift_on_next_probe_or_after_ready_response(self):
+        for after_ready in (False, True):
+            with self.subTest(after_ready=after_ready):
+                self.fixture()
+                original = self.open
+                def changing_owner(request, timeout):
+                    response = original(request, timeout)
+                    self.release.image = 'sha256:' + 'f' * 64
+                    if not after_ready:
+                        raise ConnectionResetError(104, 'synthetic reset before owner recheck')
+                    return response
+                with patch.object(self, 'open', side_effect=changing_owner):
+                    result = self.verify()
+                self.assertEqual(result['status'], 'halted')
+                self.assertIn('unknown', result['serving'])
+                self.assertTrue(self.release.running, 'Must not stop a different image')
+                self.assertEqual(len(self.requests), 1)
+
+    def test_reset_after_initial_401_is_fatal_definitive_verification_not_readiness(self):
+        self.events = [401, ConnectionResetError(104, 'synthetic definitive session reset')]
+        result = self.verify()
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['failure_type'], 'ConnectionResetError')
+        self.assertFalse(self.release.running)
+        self.assertEqual(len(self.requests), 2)
         self.assertEqual(self.clock.sleeps, [])
+        self.assertEqual(sum('up' in args for args in self.release.calls), 1)
+
+    def test_other_transport_error_is_fatal_without_polling(self):
+        for error in (URLError(PermissionError(13, 'synthetic transport refusal')),
+                      ConnectionAbortedError(103, 'synthetic aborted connection'),
+                      BrokenPipeError(32, 'synthetic broken pipe'),
+                      ConnectionResetError(105, 'synthetic reset class but different errno'),
+                      URLError('synthetic Connection reset by peer without errno')):
+            with self.subTest(error=repr(error)):
+                self.fixture()
+                self.events = [error]
+                result = self.verify()
+                self.assertEqual(result['status'], 'halted')
+                self.assertFalse(self.release.running)
+                self.assertEqual(len(self.requests), 1)
+                self.assertEqual(self.clock.sleeps, [])
 
     def test_never_ready_deadline_quarantines_exact_app_without_reactivation(self):
         self.never_ready = True
@@ -132,7 +191,7 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(self.release.phase('quarantine')['failure_type'], 'TimeoutError')
 
     def test_permanent_anonymous_status_and_redirect_fail_without_polling(self):
-        for status in (200, 403, 302):
+        for status in (200, 403, 404, 302):
             with self.subTest(status=status):
                 self.fixture()
                 self.events = [status]
