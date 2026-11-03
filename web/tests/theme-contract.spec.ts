@@ -17,7 +17,7 @@ test('every registered palette declares the full semantic contract and preview',
   expect(new Set(themes.map(theme => theme.id)).size).toBe(themes.length);
   expect(new Set(blocks.map(block => block[1]))).toEqual(new Set(themes.map(theme => theme.id)));
   const html = readFileSync(resolve(import.meta.dirname, '../index.html'), 'utf8');
-  const prepaint = html.match(/dataset\.theme=\[([^\]]+)\]\.includes\(t\)/)?.[1];
+  const prepaint = html.match(/dataset\.theme\s*=\s*\[([^\]]+)\]\.includes\([^)]*\)/)?.[1];
   expect(prepaint, 'Prepaint allowlist must be explicit').toBeTruthy();
   expect(new Set([...prepaint!.matchAll(/'([^']+)'/g)].map(match => match[1])))
     .toEqual(new Set(themes.map(theme => theme.id)));
