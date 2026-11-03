@@ -188,6 +188,7 @@ for path in sorted((root/'files').rglob('*')):
 print(json.dumps({'files_sha256':files.hexdigest(),
     'host_sha256':digest(root/'siwc/host.json'),
     'journal_sha256':digest(root/'deletions/deletions.jsonl'),
+    'journal_bytes':(root/'deletions/deletions.jsonl').stat().st_size,
     'tip_sha256':digest(root/'deletions/deletions.jsonl.tip')}))
 '''
 
@@ -232,6 +233,50 @@ def preservation(c, *, running):
         aggregates[table] = c('exec', '-T', 'db', 'psql', '-U', 'kat', '-d', 'kat', '-At', '-c', query).splitlines()[-1]
     command = ('exec', '-T', 'app') if running else ('run', '--rm', '--no-deps', '-T', 'app')
     return {'database': aggregates, 'state': json.loads(c(*command, 'python', '-c', STATE_FINGERPRINT))}
+
+
+POST_START_INTEGRITY = '''from pathlib import Path
+from hashlib import sha256,file_digest
+root=Path('/var/lib/kat/browser-runtime')
+baseline_journal_bytes=BASELINE_BYTES
+host=root/'siwc/host.json'
+journal=root/'deletions/deletions.jsonl'
+for path in (host,journal,journal.with_name(journal.name+'.tip')):
+    if not path.is_file() or path.is_symlink(): raise ValueError('Required identity/authority file missing')
+with host.open('rb') as stream:
+    if file_digest(stream,'sha256').hexdigest()!='BASELINE_HOST': raise ValueError('Host identity changed')
+# Active users may append deletions and atomically advance the tip. Compare only
+# the retained, immutable prefix; never equate a new tip or new rows with damage.
+with journal.open('rb') as stream:
+    remaining=baseline_journal_bytes
+    digest=sha256()
+    while remaining:
+        block=stream.read(min(remaining,1024*1024))
+        if not block: raise ValueError('Retained authority prefix truncated')
+        digest.update(block)
+        remaining-=len(block)
+    if digest.hexdigest()!='BASELINE_HASH': raise ValueError('Retained authority prefix changed')
+'''
+
+
+def post_start_integrity(c, baseline):
+    size = baseline['journal_bytes']
+    if (not isinstance(size, int) or isinstance(size, bool) or size <= 0
+            or any(not re.fullmatch('[a-f0-9]{64}', baseline[key])
+                   for key in ('journal_sha256', 'host_sha256'))):
+        raise ValueError('Invalid retained identity/authority baseline')
+    script = POST_START_INTEGRITY.replace('BASELINE_BYTES', str(size)).replace(
+        'BASELINE_HASH', baseline['journal_sha256']).replace('BASELINE_HOST', baseline['host_sha256'])
+    c('exec', '-T', 'app', 'python', '-c', script)
+
+
+def check_canonical_config(compose, target, expected):
+    # Evaluate the persisted file as a future fresh Compose process would. Policy
+    # overrides must NOT mask missing/wrong canonical secret or ephemeris paths.
+    observed = json.loads(run(*compose[:2], '--env-file', target['release_env_file'],
+                              *compose[2:], 'config', '--format', 'json', env=SERVER_ENV))
+    if observed != expected:
+        raise ValueError('Canonical effective Compose config differs from policy')
 
 
 def quarantine(target, planned):
@@ -392,6 +437,9 @@ def release_phase():
         files = release_files(target)
         if files['selected_image'] != app['Image']:
             raise ValueError('Canonical selection differs from running app')
+        canonical_expected = config | {'services': config['services'] | {
+            'app': services['app'] | {'image': app['Image']}}}
+        check_canonical_config(compose, target, canonical_expected)
         source_archive(stage / 'source.tar', planned)
         durable_text(stage / 'files.before.json', json.dumps(files))
         for key, name in (('release_env_file', 'env.before'), ('source_offer_file', 'source.before.tar')):
@@ -491,6 +539,7 @@ def release_phase():
                     'source_sha256': planned['artifact']['source_offer_sha256']}
         if release_files(target) != expected:
             raise ValueError('Promotion did not commit exact source/config')
+        check_canonical_config(compose, target, json.loads(c('config', '--format', 'json')))
         with (stage / 'files.promoted.json').open('x') as output:
             json.dump(expected, output)
             output.flush()
@@ -499,6 +548,12 @@ def release_phase():
     elif action == 'activate_app_only':
         if release_files(target) != json.loads((stage / 'files.promoted.json').read_text()):
             raise ValueError('Promoted source/selection mismatch')
+        if c('ps', '-q', 'app'):
+            raise ValueError('Preservation equality requires the app to remain quiesced')
+        # Last full equality boundary BEFORE public traffic can write rows/files.
+        # No new proxy/maintenance authority is needed for this app-only release.
+        if preservation(c, running=False) != json.loads((stage / 'state.before.json').read_text()):
+            raise ValueError('Quiesced archive/files/host/deletion authority changed')
         advance('promoted', 'activating')
         c('up', '--no-deps', '-d', '--wait', '--wait-timeout', '90', 'app')
         container = c('ps', '-q', 'app')
@@ -563,8 +618,7 @@ def release_phase():
         owner = Path(target['stage_root']) / 'active-attempt'
         if owner.read_text().strip() != planned['attempt']:
             raise ValueError('Active release ownership changed')
-        if preservation(c, running=True) != json.loads((stage / 'state.before.json').read_text()):
-            raise ValueError('Archive/files/host/deletion authority changed during release')
+        post_start_integrity(c, json.loads((stage / 'state.before.json').read_text())['state'])
         advance('local_verified', 'completed')
         owner.unlink()
         sync_directory(owner.parent)

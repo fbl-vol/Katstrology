@@ -27,7 +27,8 @@ class OwnedRelease:
         self.stage.mkdir()
         self.env = root / '.env'
         self.source = root / 'public-source.tar'
-        self.original_env = ('# previous KAT_APP_IMAGE=' + self.old + '\nKAT_APP_IMAGE=' + self.old + '\nOTHER=untouched\n').encode()
+        self.original_env = ('# previous KAT_APP_IMAGE=' + self.old + '\nKAT_APP_IMAGE=' + self.old +
+                             '\nKAT_DB_PASSWORD_FILE=/srv/synthetic-secret\nKAT_EPHE_DIR=/srv/synthetic-ephe\nOTHER=untouched\n').encode()
         self.env.write_bytes(self.original_env)
         self.source.write_bytes(b'old source')
         self.source_bytes = source_payload()
@@ -54,7 +55,10 @@ class OwnedRelease:
     def docker(self, *args, **kwargs):
         self.calls.append(args)
         if 'config' in args:
-            return json.dumps(self.config)
+            config = json.loads(json.dumps(self.config))
+            if '--env-file' in args:
+                config['services']['app']['image'] = remote.selected_image(self.env.read_bytes())
+            return json.dumps(config)
         if 'ps' in args:
             return 'db-id' if args[-1] == 'db' else 'app-id' if self.running or '-aq' in args else ''
         if args[:3] == ('docker', 'inspect', 'app-id'):
@@ -73,7 +77,10 @@ class OwnedRelease:
             self.running = False
             return ''
         if remote.STATE_FINGERPRINT in args:
-            return json.dumps({'files_sha256': 'stable', 'host_sha256': 'stable', 'journal_sha256': 'stable'})
+            return json.dumps({'files_sha256': '0' * 64, 'host_sha256': '1' * 64,
+                               'journal_sha256': '2' * 64, 'journal_bytes': 123})
+        if args[-1].startswith('from pathlib import Path') and 'baseline_journal_bytes=' in args[-1]:
+            return ''
         if args[-1].startswith('from pathlib import Path') and 'Tombstones(journal)' in args[-1]:
             return ''
         if 'run' in args:
@@ -230,6 +237,66 @@ class PromotionTests(unittest.TestCase):
                         access.dispatch(request, policy, BytesIO())
                     self.assertEqual(list(Path(policy['target']['stage_root']).iterdir()), [])
 
+    def test_normal_post_start_write_does_not_quarantine_healthy_app(self):
+        with TemporaryDirectory() as directory:
+            release = OwnedRelease(Path(directory))
+            sessions = 0
+            def current_state(*args, **kwargs):
+                return {'database': {'web_sessions': sessions}, 'state': {
+                    'host_sha256': '1' * 64, 'journal_sha256': '2' * 64, 'journal_bytes': 123}}
+            with patch.object(remote, 'preservation', side_effect=current_state):
+                release.snapshot()
+                release.phase('promote_release')
+                release.phase('activate_app_only')
+                sessions = 1
+                (release.stage / 'phase.json').write_text(json.dumps({'plan_sha256': release.plan['plan_sha256'], 'phase': 'local_verified'}))
+                result = release.phase('complete')
+            self.assertEqual(result['status'], 'ok')
+            self.assertTrue(release.running)
+            self.assertFalse((release.root / 'active-attempt').exists())
+
+    def test_canonical_effective_config_roundtrip_and_refusal_before_effects(self):
+        compose = Path(remote.__file__).with_name('compose.yaml').read_bytes()
+        for mode in ('valid', 'wrong-password', 'wrong-ephe', 'missing-password', 'missing-ephe'):
+            with self.subTest(mode=mode), TemporaryDirectory() as directory:
+                release = OwnedRelease(Path(directory))
+                release.target['origin'] = 'https://katstrology.dk'  # Source template's fixed origin, no HTTP request.
+                (release.stage / 'compose.yaml').write_bytes(compose)
+                release.plan['compose_sha256'] = sha256(compose).hexdigest()
+                canonical = release.original_env
+                if mode.startswith('wrong'):
+                    canonical = canonical.replace(b'/srv/synthetic-secret' if mode.endswith('password') else b'/srv/synthetic-ephe', b'/srv/wrong')
+                if mode.startswith('missing'):
+                    canonical = b'\n'.join(line for line in canonical.split(b'\n') if not line.startswith(
+                        b'KAT_DB_PASSWORD_FILE=' if mode.endswith('password') else b'KAT_EPHE_DIR='))
+                release.env.write_bytes(canonical)
+                native = subprocess.check_output
+                fake_docker = release.docker
+                def docker(*args, **kwargs):
+                    if 'config' in args:
+                        return native(args, env={**kwargs['env'], 'HOME': str(Path.home())}, text=True, stderr=subprocess.DEVNULL)
+                    return fake_docker(*args, **kwargs)
+                command = ['docker', 'compose', '-f', str(release.stage / 'compose.yaml'),
+                           '-f', str(release.stage / 'runtime.yaml'), '-p', release.target['project'], 'config', '--format', 'json']
+                release.config = json.loads(native(command, text=True, env={**remote.SERVER_ENV,
+                    'KAT_APP_IMAGE': release.new, 'KAT_DB_PASSWORD_FILE': release.target['password_file'],
+                    'KAT_EPHE_DIR': release.target['ephemeris_dir'], 'HOME': str(Path.home())}))
+                release.docker = docker
+                if mode == 'valid':
+                    release.snapshot()
+                    self.assertEqual(release.phase('promote_release')['status'], 'ok')
+                    persisted = json.loads(native(['docker', 'compose', '--env-file', str(release.env), *command[2:]],
+                        text=True, env={**remote.SERVER_ENV, 'HOME': str(Path.home())}))
+                    self.assertEqual(persisted, release.config)
+                    self.assertIn(b'# previous KAT_APP_IMAGE=' + release.old.encode(), release.env.read_bytes())
+                    self.assertIn(b'OTHER=untouched', release.env.read_bytes())
+                else:
+                    with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                        release.phase('preflight')
+                    self.assertTrue(release.running)
+                    self.assertEqual(release.env.read_bytes(), canonical)
+                    self.assertFalse(any('load' in args or 'stop' in args or 'up' in args for args in release.calls))
+
     def test_source_upload_rejects_truncation_trailing_tamper_and_symlinks(self):
         for body in (b'sour', b'source!extra', b'changed'):
             with self.subTest(body=body), TemporaryDirectory() as directory:
@@ -264,19 +331,18 @@ class PromotionTests(unittest.TestCase):
             self.assertFalse(release.running)
             self.assertEqual(result['files'], 'unavailable; inspect protected originals')
 
-    def test_failed_preservation_comparison_quarantines_instead_of_completing(self):
+    def test_failed_quiesced_preservation_quarantines_before_exposure(self):
         with TemporaryDirectory() as directory:
             release = OwnedRelease(Path(directory))
             release.snapshot()
             release.phase('promote_release')
-            release.phase('activate_app_only')
-            (release.stage / 'phase.json').write_text(json.dumps({'plan_sha256': release.plan['plan_sha256'], 'phase': 'local_verified'}))
             with patch.object(remote, 'preservation', return_value={'changed': True}):
-                result = release.phase('complete')
+                result = release.phase('activate_app_only')
             self.assertEqual(result['status'], 'halted')
             self.assertFalse(release.running)
+            self.assertFalse(any('up' in args for args in release.calls))
             self.assertTrue((release.root / 'active-attempt').exists())
-            self.assertEqual(json.loads((release.stage / 'phase.json').read_text())['phase'], 'local_verified')
+            self.assertEqual(json.loads((release.stage / 'phase.json').read_text())['phase'], 'promoted')
 
     def test_fixed_state_and_authority_scripts_on_owned_synthetic_files(self):
         from m2.deletion import Tombstones
@@ -290,7 +356,7 @@ class PromotionTests(unittest.TestCase):
             Tombstones(journal).verify()
             code = remote.STATE_FINGERPRINT.replace('/var/lib/kat/browser-runtime', str(root))
             before = json.loads(subprocess.check_output(['python3', '-c', code], text=True))
-            self.assertEqual(set(before), {'files_sha256', 'host_sha256', 'journal_sha256', 'tip_sha256'})
+            self.assertEqual(set(before), {'files_sha256', 'host_sha256', 'journal_sha256', 'journal_bytes', 'tip_sha256'})
             self.assertNotIn('synthetic attachment', json.dumps(before))
             retained = Path(directory) / 'verification'
             retained.mkdir()
@@ -307,6 +373,37 @@ class PromotionTests(unittest.TestCase):
             result = subprocess.run(['python3', '-c', code], capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(journal.exists(), 'A missing journal must never be initialized by retention')
+
+    def test_online_integrity_allows_append_but_refuses_prefix_or_host_damage(self):
+        from m2.deletion import Tombstones
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / 'runtime'
+            for name in ('files', 'siwc'):
+                (root / name).mkdir(parents=True, mode=0o700)
+            host = root / 'siwc/host.json'
+            host.write_bytes(b'synthetic stable host')
+            journal = root / 'deletions/deletions.jsonl'
+            ledger = Tombstones(journal)
+            code = remote.STATE_FINGERPRINT.replace('/var/lib/kat/browser-runtime', str(root))
+            baseline = json.loads(subprocess.check_output(['python3', '-c', code], text=True))
+            def execute(*args):
+                script = args[-1].replace('/var/lib/kat/browser-runtime', str(root))
+                subprocess.run(['python3', '-c', script], check=True, capture_output=True)
+            remote.post_start_integrity(execute, baseline)
+            ledger._append({'owner': 'synthetic-alice', 'conversation': 'synthetic-deletion'})
+            self.assertTrue(ledger.contains('synthetic-alice', 'synthetic-deletion'))
+            self.assertGreater(journal.stat().st_size, baseline['journal_bytes'])
+            self.assertNotEqual(pipeline.digest(journal.with_name(journal.name + '.tip')), baseline['tip_sha256'])
+            remote.post_start_integrity(execute, baseline)
+            host.write_bytes(b'changed host')
+            with self.assertRaises(subprocess.CalledProcessError):
+                remote.post_start_integrity(execute, baseline)
+            host.write_bytes(b'synthetic stable host')
+            content = journal.read_bytes()
+            for damaged in (b'X' + content[1:], content[:baseline['journal_bytes'] - 1]):
+                journal.write_bytes(damaged)
+                with self.assertRaises(subprocess.CalledProcessError):
+                    remote.post_start_integrity(execute, baseline)
 
     def test_preparation_creates_private_unsigned_plan_without_ssh(self):
         with TemporaryDirectory() as directory:

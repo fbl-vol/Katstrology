@@ -170,7 +170,12 @@ switches to fresh volumes or a different port. It invokes the existing quiesced
 deletion journal/tip, verifying snapshot schema before `compose up --no-deps app`.
 Before stop it also verifies the actual DB schema matches the signed package,
 canonical selected image equals the running image, source tar safety, and retains
-original env/source bytes and hashes. This is strictly a **same-schema app release**,
+original env/source bytes and hashes. A separate native Compose evaluation uses
+the canonical env file with NO policy KAT_* environment overrides; its full effective
+configuration must match the intended configuration (old image before promotion,
+new image after). Missing/conflicting persisted secret or ephemeris paths refuse
+before image load/stop, rather than being masked by the helper's trusted overrides.
+This is strictly a **same-schema app release**,
 not a migration or model/CPU qualification workflow. After quiesced backup, retain
 an independent journal/tip copy outside the snapshot and ongoing serving volumes.
 Promote the matching source archive and canonical image selection while the app is
@@ -181,10 +186,19 @@ It hashes every image asset against both loopback and the **public HTTPS origin*
 including the manifest and icons; it checks anonymous session 401, edge wrong-Host
 **421** (distinct from app loopback wrong-Host 403), Origin/fetch-site 403 and
 exact HTTP→HTTPS redirect without disabling TLS certificate checks.
-A `verified` receipt requires **all** checks plus unchanged archive aggregates,
-attachment/host/deletion hashes, DB-container identity and exact promoted files.
-Aggregate/hash evidence stays server-local; credentials and private rows never
-enter controller output. No credential re-enrollment or provider request is made.
+Full archive aggregates and attachment/host/deletion hashes must remain equal at
+the LAST QUIESCED boundary immediately before app activation. Once the app reopens,
+normal logins/chats/saves/deletions may legitimately change rows, files and the tip;
+these are NOT compared to the old quiesced totals during public verification.
+Post-exposure integrity checks instead retain stable host identity and the exact
+append-only journal baseline prefix (refusing truncation/overwrite), with required
+journal/tip files present; new journal appends/tip advances are allowed. Current
+mutable tip consistency is not attested against a potentially concurrent writer.
+A `verified` receipt still requires all serving checks, DB-container identity,
+exact promoted files and those traffic-compatible integrity checks. No new edge
+maintenance/service authority is introduced. Aggregate/hash evidence stays
+server-local; credentials and private rows never enter controller output.
+No credential re-enrollment or provider request is made.
 The source archive is promoted on-host; Git publication and any public download
 route remain separately owned (this tool does not create/change edge routes).
 A failed public check triggers a signed `quarantine`, not activation retry. It
@@ -282,7 +296,9 @@ unconfirmed serving state. Per-phase elapsed seconds cover preparation of framed
 uploads and execution, not human signing wait; no runtime performance guarantee is
 implied. Preparation/build qualification and signing wait are outside execution.
 Image loading has its own bounded preflight budget rather than an outer SSH timeout
-shorter than Docker load. No credential/network retry is hidden inside the runner.
+shorter than Docker load. Activation includes the final quiesced scan and has a
+bounded 600-second controller budget; this is a failure bound, not an expected
+deployment duration. No credential/network retry is hidden inside the runner.
 
 On a halt, preserve `phase.json`, `failure.json`, `files.before.json`,
 `files.promoted.json` when present, `env.before`, `source.before.tar`, previous
@@ -306,6 +322,11 @@ Use the shared local execution lock where required by the checkout. These checks
 include real OpenSSH ephemeral signing and real Compose config, but Docker lifecycle
 and public HTTP are synthetic; they do not prove target installation or full live
 release. The fixed state/authority scripts also run on newly owned synthetic files.
+`deploy.test_release_traffic` additionally exercises a real synthetic HTTP login
+and PostgreSQL session write during verification, but runs ONLY with an explicit
+fresh owned isolated fixture. Without it that one integration test is skipped;
+never let it fall back to the user's database. Fixture setup/cleanup can reuse
+this checkout's existing isolated-validation helpers; no real provider is involved.
 
 ## Accounts and selected model
 

@@ -168,7 +168,7 @@ def remote(alias, request, upload=None, *, ssh_config=None):
         try:
             result = subprocess.run(command, stdin=framed, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, timeout=UPLOAD_TIMEOUT if upload is not None else
-                {'preflight': 720, 'quiesce_and_snapshot': 600}.get(request['action'], PHASE_TIMEOUT))
+                {'preflight': 720, 'quiesce_and_snapshot': 600, 'activate_app_only': 600}.get(request['action'], PHASE_TIMEOUT))
         except subprocess.TimeoutExpired:
             raise RuntimeError('Restricted remote phase failed; timed out without retry') from None
         if result.returncode or len(result.stdout) > 16384:

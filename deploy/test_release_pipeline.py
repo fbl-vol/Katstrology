@@ -310,6 +310,7 @@ class ReleasePlanTests(unittest.TestCase):
                  patch.object(release_remote, 'release_files', return_value={'selected_image': 'sha256:' + 'd' * 64,
                      'env_sha256': sha256(b'original').hexdigest(), 'source_sha256': sha256(b'original').hexdigest()}), \
                  patch.object(release_remote, 'source_archive'), \
+                 patch.object(release_remote, 'check_canonical_config'), \
                  patch.object(release_remote, 'check_snapshot', return_value=Path(directory)):
                 for action in ('compose', 'preflight'):
                     with patch.object(release_remote, 'REQUEST', {'action': action, 'target': target,
@@ -540,7 +541,11 @@ class ReleasePlanTests(unittest.TestCase):
             def docker(*argv, **_kwargs):
                 nonlocal running, image
                 calls.append(argv)
-                if 'config' in argv: return json.dumps(config)
+                if 'config' in argv:
+                    observed = json.loads(json.dumps(config))
+                    if '--env-file' in argv:
+                        observed['services']['app']['image'] = release_remote.selected_image(env_file.read_bytes())
+                    return json.dumps(observed)
                 if 'ps' in argv: return 'existing-db' if argv[-1] == 'db' else ('existing-app' if running else '')
                 if argv[:3] == ('docker', 'inspect', 'existing-app'):
                     app = runtime_inspect(config, target)
@@ -558,7 +563,10 @@ class ReleasePlanTests(unittest.TestCase):
                     running = False
                     return ''
                 if release_remote.STATE_FINGERPRINT in argv:
-                    return json.dumps({'files': 'stable', 'host': 'stable', 'deletions': 'stable'})
+                    return json.dumps({'files_sha256': '0' * 64, 'host_sha256': '1' * 64,
+                                       'journal_sha256': '2' * 64, 'journal_bytes': 123})
+                if argv[-1].startswith('from pathlib import Path') and 'baseline_journal_bytes=' in argv[-1]:
+                    return ''
                 if argv[-1].startswith('from pathlib import Path') and 'Tombstones(journal)' in argv[-1]:
                     return ''
                 if 'run' in argv:
