@@ -25,6 +25,8 @@ class FixedEmbedder:
     def document(self, _):
         return [1.0, 0.0]
 
+    passage = document
+
     def query(self, _):
         return [1.0, 0.0]
 

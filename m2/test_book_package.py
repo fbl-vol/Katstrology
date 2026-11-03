@@ -89,6 +89,12 @@ class PackageTests(DatabaseCase):
         self.assertEqual(read['start_offset'], last['start'])
         self.assertEqual(read['end_offset'], last['end'])
         self.assertEqual(read['neighbors']['previous'], manifest['passages'][-2]['id'])
+        neighbor = execute(self.store, self.alice, 'get_reference_passage', {
+            'source_id': source, 'passage_id': read['neighbors']['previous']}, set())
+        self.assertEqual(neighbor['content'], manifest['passages'][-2]['content'])
+        self.assertEqual(neighbor['parent_section'], read['parent_section'])
+        self.assertEqual(neighbor['neighbors']['next'], last['id'])
+        self.assertLess(len(neighbor['content']) + len(read['content']), len(text))
         crossing = next(p for p in manifest['passages'] if p['page_end'] > p['page_start'])
         self.assertEqual(crossing['parent_section'], 'Synthetic observations')
         self.assertEqual(refs.get_passage(self.alice, source, crossing['id'])['content'],

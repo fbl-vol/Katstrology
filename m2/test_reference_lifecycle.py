@@ -290,6 +290,7 @@ class ReferenceLifecycleTests(DatabaseCase):
         class FailedEmbedding:
             def document(self, text):
                 raise RuntimeError('synthetic offline model failure')
+            passage = document
         with self.assertRaisesRegex(RuntimeError, 'offline model failure'):
             rebuild_vectors(self.store, self.alice, FailedEmbedding())
         self.assertEqual(refs.get_passage(self.alice, 'embed-source', 'p1')['content'], text)

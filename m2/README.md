@@ -209,10 +209,11 @@ provider, external client, large model or general numerical faithfulness.
 **Only owned synthetic fixture content.** The offline embedding candidate is
 [FastEmbed BAAI/bge-small-en-v1.5](https://qdrant.github.io/fastembed/examples/Supported_Models/)
 (English, 384 dimensions, ~67 MB ONNX, MIT according to its model listing).
-The model cache occupied 65 MiB here; after adding MCP and FastEmbed the local
-Python environment grew from 157 to 315 MiB. Available memory exceeded 6 GiB
-during assessment. Run this one-time public model download **without any
-personal text** if the cache is absent (no Hugging Face token needed):
+The five pinned public cache files occupy about 65 MiB; the release image
+ships only those files and their MIT notice after exact SHA-256 verification
+(`m2/public_model.py`, `THIRD-PARTY-NOTICES.md`, `deploy/README.md`). The cache
+can be prepared separately **without any personal text** if absent (no Hugging
+Face token needed); the packager will refuse any different public revision:
 
 ```bash
 OPENBLAS_NUM_THREADS=2 .venv-swiss/bin/python - <<'PY'
@@ -222,31 +223,35 @@ TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='.local/models/fastembed',
 PY
 ```
 
-Normal indexing/query uses `local_files_only=True` and fails rather than
-silently contacting a provider if that cache is absent. This model is an
-**English retrieval experiment**, not a validated Danish or specialist reader.
-No embedding text was uploaded; `m2/evaluate.py` used only authored synthetic
-fixtures. No pgvector extension or tenant-aware ANN index is claimed. The
-hybrid view ranks PostgreSQL keyword hits plus offline semantic scores over at
-most **120 eligible reference and 120 current-history candidates**, returning source
-IDs, speaker/source kind, provenance, rights/approval status, match flags,
-pending-conversation count and truncation flags. With `--person <owned-id>`
+Normal indexing/query uses `local_files_only=True` and CPU-only inference,
+and fails rather than silently contacting a provider if that cache is absent.
+The container also forces HF offline/telemetry-disabled operation. The published
+model is an **English retrieval baseline**, not a validated Danish or specialist
+reader; synthetic Danish ranking is recorded in `RAG-EVALUATION.md`. No embedding
+text was uploaded. No pgvector extension or tenant-aware ANN index is claimed.
+The hybrid view scans at most **2,400 raw reference passages**
+and **240 current-history candidates**, with bounded return count and explicit
+truncation/partial-index flags. A reference passage is embedded across at most
+384-token windows with one pooled vector; legacy history vectors still cover
+at most the first 2,048 characters and may have tokenizer truncation. The
+model revision and window scheme are part of `MODEL_ID`, so previous vectors
+must be deliberately rebuilt after source upgrade; keyword search continues
+until then. Search results label index coverage, source identity, provenance,
+rights/approval, match status and locator/review uncertainty. With `--person <owned-id>`
 (or the MCP person filter), unattributed general conversation history is
 excluded rather than guessed to belong to that person; separately selected
 reference passages remain general sources, not personal claims. A semantic suggestion is **not**
 evidence that a claim is true; if no direct keyword hit exists, the deterministic
 answer explicitly declines a supported assertion. `index` rebuilds at most ten
 vectors per call and retains originals after a derivative failure. Keyword and
-owner-scoped passage reads still work if vectors are unavailable. Long corpora
-may miss older semantic-only matches outside the candidate cap. Reference
-eligibility is checked while paging through at most **1,200 raw passages**;
-120 newer stale passages no longer hide an older current keyword match. If the
-scan limit is hit without finding one, `incomplete_candidate_scan` and
-`reference_scan_truncated` distinguish that limit from an exhaustive `not_found`.
-Vector rebuilding similarly pages/filter-checks before indexing up to ten
-current references, scans at most 1,200 raw candidates per call and reports
-`reference_scan_truncated` when the index may still be starved. No corpus-wide
-semantic recall or complete indexing guarantee is claimed beyond that bound.
+owner-scoped passage reads still work if vectors are unavailable. Long corpora may still miss older semantic-only matches beyond the **2,400**
+raw-candidate scan bound. A 618-passage, >240-distractor synthetic corpus is
+covered by this bound, not a guarantee for a larger real library. When it is
+hit, `incomplete_candidate_scan` and `reference_scan_truncated` distinguish
+that limit from an exhaustive `not_found`. Vector rebuilding similarly
+pages/filter-checks before indexing up to ten current references and reports
+its 2,400-row scan truncation. No corpus-wide semantic recall or complete
+indexing guarantee is claimed beyond that bound.
 
 With the owned PG16 fixture running, run the small seed and use the IDs in its
 mode-0600 JSON output. Its login/password and all names are synthetic:

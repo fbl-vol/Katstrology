@@ -8,13 +8,14 @@ from pathlib import Path
 
 from fastembed import TextEmbedding
 import numpy as np
+from tokenizers import Tokenizer
 
 from m2.provenance import source_turn_current
 from m2.public_model import MODEL, REVISION
 from m2.recall import search as search_history
 
 
-MODEL_ID = f'{MODEL}@{REVISION}:fastembed-0.9.1:prefix2048'
+MODEL_ID = f'{MODEL}@{REVISION}:fastembed-0.9.1:passage384tokens-v1'
 CANDIDATE_LIMIT = 240
 MAX_REFERENCE_SCAN = 2400  # bound work when many newer sources are stale
 
@@ -25,6 +26,26 @@ class LocalEmbedder:
         self.model = TextEmbedding(MODEL, cache_dir=str(cache),
                                    local_files_only=True, threads=2,
                                    providers=['CPUExecutionProvider'])
+        # FastEmbed truncates at 512 tokens. Use its exact tokenizer without
+        # truncation to cover every admitted reference passage in small windows.
+        self.full_tokenizer = Tokenizer.from_str(self.model.model.tokenizer.to_str())
+        self.full_tokenizer.no_truncation()
+
+    def passage(self, text):
+        offsets = self.full_tokenizer.encode(text, add_special_tokens=False).offsets
+        ends = [offsets[index][1] for index in range(383, len(offsets), 384)]
+        windows = []
+        start = 0
+        for end in ends + [len(text)]:
+            if end > start:
+                windows.append(text[start:end])
+            start = end
+        if any(len(self.full_tokenizer.encode(window).ids) > 512 for window in windows):
+            raise ValueError('Reference passage window exceeds model token capacity')
+        vectors = np.array(list(self.model.embed(windows or [text], batch_size=8)))
+        mean = vectors.mean(axis=0)
+        norm = np.linalg.norm(mean)
+        return (mean / norm).tolist() if norm else [0.0] * len(mean)
 
     def document(self, text):
         return next(iter(self.model.embed([text[:2048]], batch_size=1))).tolist()
@@ -64,7 +85,7 @@ def rebuild_vectors(store, session, embedder, limit=10):
 
     indexed_references = 0
     for row in candidates[:limit]:
-        vector = embedder.document(row['content'])
+        vector = embedder.passage(row['content'])
         with store.db.transaction():
             store.db.execute('''
                 INSERT INTO reference_vectors(owner_id,source_id,passage_id,model_id,content_sha256,embedding)
@@ -141,11 +162,11 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                                           (owner, person_id)).fetchone():
         raise KeyError('Person not found')
 
-    # FTS candidates include exact matches even when semantic indexing lags.
-    # Semantic candidates are bounded explicitly; a corpus-wide nearest-neighbor
-    # guarantee is impossible without a vector index and is NOT claimed.
+    # Score all eligible rows within the bounded reference scan, not just the
+    # first page of keyword hits. A corpus above the scan bound is incomplete;
+    # this is not an unbounded nearest-neighbor guarantee.
     refs, cache, scanned = [], {}, 0
-    while len(refs) < CANDIDATE_LIMIT and scanned < MAX_REFERENCE_SCAN:
+    while scanned < MAX_REFERENCE_SCAN:
         page = store.db.execute('''
             SELECT p.source_id,p.id AS passage_id,p.content,s.author,s.title,s.edition,s.tradition,
                    s.technique,s.provenance,s.rights_basis,s.approval,s.language,s.source_url,
@@ -175,7 +196,6 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
         refs.extend(row for row in page if _allowed_source(store, session, row, cache))
         if len(page) < CANDIDATE_LIMIT:
             break
-    refs = refs[:CANDIDATE_LIMIT]
     history = []
     if (include_history and tradition is None and technique is None and
             author is None and language is None):
@@ -221,6 +241,9 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                 'review_status': row['review_status'],
                 'provenance': row['provenance'], 'rights_basis': row['rights_basis'],
                 'approval': row['approval'], 'keyword_match': row['keyword'],
+                'embedding_coverage': ('windowed_passage' if row['embedding'] is not None
+                                       else 'unindexed'),
+                'embedding_model_id': MODEL_ID if row['embedding'] is not None else None,
                 'source_kind': 'source_not_verified_interpretation'}))
     for row in history:
         score = (1.0 if row['keyword'] else 0.0)
@@ -230,6 +253,9 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
             scored.append((score, {'kind': 'conversation', 'conversation_id': row['conversation_id'],
                 'source_id': row['source_id'], 'speaker': row['speaker'],
                 'excerpt': row['content'][:600], 'keyword_match': row['keyword'],
+                'embedding_coverage': ('at_most_first_2048_characters' if row['embedding'] is not None
+                                       else 'unindexed'),
+                'embedding_model_id': MODEL_ID if row['embedding'] is not None else None,
                 'source_kind': 'prior_statement_not_independent_evidence'}))
     scored.sort(key=lambda item: item[0], reverse=True)
     count = store.db.execute('''
@@ -278,9 +304,10 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
             'semantic_index_incomplete': bool(count['unindexed_references']),
             'person_filter': person_id,
             'history_excluded_for_person_filter': False,
-            'semantic_candidates_truncated': count['references'] > CANDIDATE_LIMIT or
+            'semantic_candidates_truncated': reference_scan_truncated or
                                               count['history'] > CANDIDATE_LIMIT,
-            'candidate_limit_per_kind': CANDIDATE_LIMIT,
+            'candidate_limit_per_kind': MAX_REFERENCE_SCAN,
+            'history_candidate_limit': CANDIDATE_LIMIT,
             'reference_scan_truncated': reference_scan_truncated,
             'reference_scan_limit': MAX_REFERENCE_SCAN, 'limit': limit}
 
