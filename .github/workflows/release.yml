@@ -1,0 +1,53 @@
+name: Automatic releases
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+# Never cancel a runner that may have crossed the server's irreversible boundary.
+concurrency:
+  group: kat-entry-${{ github.event_name == 'push' && 'production' || github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    name: validate
+    if: github.event_name == 'pull_request' || vars.KAT_CI_TARGET_SCOPE == ''
+    uses: fbl-vol/Katstrology/.github/workflows/qualify.yml@c4310ac296fade23959efccbe340afb0239d0bb5
+    permissions:
+      contents: read
+  release:
+    name: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && vars.KAT_CI_TARGET_SCOPE != ''
+    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@c4310ac296fade23959efccbe340afb0239d0bb5
+    permissions:
+      contents: read
+      id-token: write # Maximum for the reusable attestation job only; other jobs reduce it.
+      attestations: write # Publish the keyless manifest, never a human signature.
+  checks:
+    name: Kat checks
+    needs: [validate, release]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require the selected qualification path
+        env:
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          AUTOMATION_ENABLED: ${{ vars.KAT_AUTOMATION_ENABLED }}
+        run: |
+          if [[ "$VALIDATION_RESULT" == success && "$RELEASE_RESULT" == skipped ]]; then
+            echo 'All synthetic and native qualification passed; no production access.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$VALIDATION_RESULT" == skipped && "$RELEASE_RESULT" == success ]]; then
+            if [[ "$AUTOMATION_ENABLED" == true ]]; then
+              echo 'Release path completed; retain the server phase/result evidence as the outcome.' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo 'Attested candidate prepared; transport is disabled, not an unattended release.' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo 'Selected path failed, was cancelled or did not run; no success claim.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

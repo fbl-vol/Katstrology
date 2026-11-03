@@ -29,6 +29,11 @@ def prepare(manual_policy, signer_sha, verifier, trusted_root, output):
     manual = json.loads(manual_policy.read_text())
     if manual['contract'] != 4 or manual['schema_version'] != 23:
         raise ValueError('Bootstrap expects existing manual protocol4/schema23')
+    version = subprocess.check_output([str(verifier), '--version'], text=True, timeout=10,
+                                     env={'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent',
+                                          'GH_CONFIG_DIR': '/nonexistent', 'GH_PROMPT_DISABLED': '1'})
+    if not version.startswith('gh version 2.97.0 '):
+        raise ValueError('Reviewed native verifier version2.97.0 required')
     target = manual['target']
     scope = {key: target[key] for key in ('project', 'origin', 'loopback_port')}
     scope['target_sha256'] = sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()

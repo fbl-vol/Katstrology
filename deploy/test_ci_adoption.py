@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from deploy import bootstrap_bridge as bridge, ci_transport, hosted_tools
+from deploy import bootstrap_bridge as bridge, ci_transport, hosted_tools, prepare_enrollment
 from deploy import release_access as access, release_ci_access as ci, release_pipeline as pipeline
 from deploy import release_remote as remote
 from deploy.test_release_access import fixture
@@ -50,6 +50,32 @@ class AdoptionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'witness differs'):
                     ci.dispatch({'action': 'compose', 'manifest': manifest}, {}, manual, access, BytesIO())
                 dispatch.assert_not_called()
+
+    def test_enrollment_plan_is_disabled_exact_and_omits_private_target_paths(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, manual = fixture(directory)
+            manual['schema_version'] = 23
+            manual_path = root / 'manual.json'
+            manual_path.write_text(json.dumps(manual))
+            verifier, trusted_root = root / 'gh', root / 'trusted-root.jsonl'
+            verifier.write_bytes(b'synthetic-public-verifier')
+            trusted_root.write_bytes(b'synthetic-public-root')
+            workflow = (pipeline.ROOT / '.github/workflows/trusted-release.yml').read_bytes()
+            results = [b'', 'a' * 40, 'b' * 40, workflow, 'gh version 2.97.0 (synthetic)\n']
+            with patch.object(prepare_enrollment.subprocess, 'check_output', side_effect=results):
+                plan = prepare_enrollment.prepare(manual_path, 'c' * 40, verifier, trusted_root, root / 'output')
+            policy = json.loads((root / 'output/ci-policy.json').read_text())
+            scope = json.loads((root / 'output/target-scope.json').read_text())
+            self.assertIs(policy['enabled'], False)
+            self.assertEqual(policy['transitions'], [])
+            self.assertEqual(policy['qualification_job'], 'release / qualify / candidate')
+            self.assertEqual(scope, original['target'])
+            self.assertEqual(plan['commit'], 'a' * 40)
+            self.assertIn('bootstrap_bridge.py', plan['helper_sha256'])
+            output = ''.join(p.read_text() for p in (root / 'output').iterdir())
+            self.assertNotIn(manual['target']['password_file'], output)
+            self.assertNotIn(manual['target']['stage_root'], output)
 
     def test_one_time_permit_is_consumed_before_effects_and_never_replayed(self):
         for fail_phase in (None, 'promote_release'):
