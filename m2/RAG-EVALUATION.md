@@ -33,11 +33,12 @@ English/Danish. The no-answer query was separate. **Top-3 labelled hits:**
 | CPU semantic alone | 3 | 3 | 1 | Returns a ranking regardless of support |
 | Bounded hybrid | 3 | 3 | 1 | `semantic_suggestions_only`, never evidence of entailment |
 
-On seven passages, indexing took **586 ms** and eight mixed-mode query checks
-**275 ms** on this workstation (single example; not server latency). A second
-**618-passage** synthetic owner corpus indexed all 618 vectors; one older
-interpretive match behind 617 newer keyword-matching stationery distractors was
-ranked in the first eight after removal of the former 240-eligible cap. The
+On seven passages, indexing took **375 ms** and eight mixed-mode query checks
+**288 ms** on this workstation. A second **618-passage** synthetic owner corpus
+indexed all 618 vectors in **15,465 ms**; one older interpretive match behind
+617 newer keyword-matching stationery distractors ranked **first** in **119 ms**
+without scan truncation after removal of the former 240-eligible cap. These are
+single local exact-tip `3619673` observations, **not old-server latency**. The
 pre-change test lost that source; a pair of distinct end-of-passage qualifications
 also previously produced *identical* 2,048-character-prefix vectors. The new
 model key pins the public snapshot, FastEmbed version and 384-token passage-window
