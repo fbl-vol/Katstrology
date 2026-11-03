@@ -131,7 +131,10 @@ for (const viewport of [
           ['x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'x', 'y'].map(key => node.getAttribute(key))));
         const lightPaper = await wheel.locator('rect').first().evaluate(node => getComputedStyle(node).fill);
         await page.getByRole('button', { name: 'Settings' }).click();
+        await page.getByRole('button', { name: /Appearance/ }).click();
+        await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
         await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+        await page.getByRole('button', { name: 'Close settings panel' }).click();
         await page.getByRole('button', { name: 'Back to workspace' }).click();
         const darkPaper = await wheel.locator('rect').first().evaluate(node => getComputedStyle(node).fill);
         expect(darkPaper).not.toBe(lightPaper);

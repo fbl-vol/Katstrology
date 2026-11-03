@@ -32,6 +32,7 @@ async function isolatedSession(page: Page, context: BrowserContext, status: () =
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   return page.getByRole('region', { name: 'Model connection' });
 }
 
@@ -43,6 +44,8 @@ test('offline connection explains the loopback handoff, never disguises Manage u
   const connection = await isolatedSession(page, context, () => state);
   await expect(connection.getByText(/Connect the account offline/)).toBeVisible();
   await expect(connection).toContainText('Your Kat login and ChatGPT permission are separate');
+  await expect(connection.getByText('127.0.0.1 callback, not this website', { exact: false })).toBeHidden();
+  await connection.getByText('Show offline setup steps').click();
   await expect(connection).toContainText('127.0.0.1 callback, not this website');
   await expect(connection.getByRole('link', { name: 'Manage usage in ChatGPT settings' })).toHaveCount(0);
   await expect(connection.getByRole('button', { name: /Connect ChatGPT plan|Reconnect ChatGPT account/ })).toHaveCount(0);
@@ -99,6 +102,7 @@ test('transferred grant, renewal and unavailable states keep recovery honest', a
   await page.screenshot({ path: resolve(folder, 'refresh-failed-desktop.png') });
   await page.reload();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await expect(page.getByRole('region', { name: 'Model connection' }))
     .toContainText('authorization needs renewing');
   await page.screenshot({ path: resolve(folder, 'recovery-desktop.png') });
@@ -112,11 +116,13 @@ test('transferred grant, renewal and unavailable states keep recovery honest', a
   await page.reload();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await expect(page.getByRole('region', { name: 'Model connection' })).toContainText('without plan permission');
   state.available = false;
   await page.reload();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await expect(page.getByRole('region', { name: 'Model connection' }))
     .toContainText('server connection is disabled');
   await page.screenshot({ path: resolve(folder, 'unavailable-short-mobile.png') });

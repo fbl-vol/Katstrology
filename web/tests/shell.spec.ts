@@ -13,8 +13,10 @@ test('local workspace login, honest empty state, protected logout', async ({ pag
   await expect(page.locator('.model-label')).toContainText(/ChatGPT connected|Connect ChatGPT plan to send/);
   await expect(page.locator('header')).not.toContainText('gpt-6.1-sol');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const connection = page.getByRole('region', { name: 'Model connection' });
   await expect(connection.getByText(/Plan permission granted|connection is disabled/)).toBeVisible();
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome to Kat.' })).toBeVisible();

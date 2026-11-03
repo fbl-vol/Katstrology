@@ -43,6 +43,7 @@ async function openSyntheticSignIn(page: Page, owner: string) {
   await page.getByRole('button', { name: 'Open workspace' }).click();
   if ((page.viewportSize()?.width || 900) < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const connection = page.getByRole('region', { name: 'Model connection' });
   // A previous scenario may have connected this synthetic owner; the same flow reconnects it.
   const connect = connection.getByRole('button', { name: /^(Connect ChatGPT plan|Reconnect ChatGPT account)$/ });
@@ -83,6 +84,7 @@ test('signed synthetic callback lands in the existing workspace; cross-site muta
   await openSyntheticSignIn(page, 'reader-siwc');
   const callbackUrl = await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const connected = page.getByRole('region', { name: 'Model connection' });
   await expect(connected.getByText(/Connected · Selected account: synthetic@example.invalid/)).toBeVisible();
   await expect(connected.getByRole('button', { name: 'Reconnect ChatGPT account' })).toHaveClass(/quiet-action/);
@@ -120,6 +122,7 @@ test('identity-only callback lands, but never enables plan mode', async ({ page,
   await openSyntheticSignIn(page, 'reader-siwc-identity');
   await returnFromProvider(page, 'Complete synthetic sign-in', 'identity_only');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const identity = page.getByRole('region', { name: 'Model connection' });
   await expect(identity.getByText(/Identity only; plan use not permitted/)).toBeVisible();
   await expect(identity.getByRole('button', { name: 'Connect ChatGPT plan', exact: true })).toHaveClass(/primary/);
@@ -137,6 +140,7 @@ test('unconfirmed connection status is not presented as disabled or connected', 
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await expect(page.locator('.model-label')).toHaveText('ChatGPT connection unavailable');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const connection = page.getByRole('region', { name: 'Model connection' });
   await expect(connection.getByText(/Connection status is unavailable/)).toBeVisible();
   await expect(connection.getByText(/Connection status could not be confirmed/)).toBeVisible();
@@ -153,6 +157,7 @@ test('disconnected Settings offers Connect without starting authentication', asy
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   const connection = page.getByRole('region', { name: 'Model connection' });
   await expect(connection.getByRole('button', { name: 'Connect ChatGPT plan', exact: true })).toHaveClass(/primary/);
   await expect(connection.getByRole('button', { name: 'Reconnect ChatGPT account' })).toHaveCount(0);
@@ -168,6 +173,7 @@ test('wrong state and a forged success marker cannot authenticate a provider acc
   await returnFromProvider(page, 'Submit wrong state', 'failed');
   await page.goto(`${origin}/?connection=connected`); // display hint is not authority
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await expect(page.getByRole('region', { name: 'Model connection' }).getByText(/Selected account:/)).toHaveCount(0);
   await expect(page.locator('header').getByText('Connect ChatGPT plan to send')).toBeVisible();
 });
@@ -681,7 +687,10 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1024, owner: 're
     const consent = page.getByLabel('I consent to send this specific chart file to the selected hosted model for this turn.');
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /Appearance/ }).click();
+    await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
     await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+    await page.getByRole('button', { name: 'Close settings panel' }).click();
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     await expect(file).not.toHaveValue('');
     await expect(consent).toBeChecked();
@@ -747,8 +756,10 @@ for (const viewport of [
     await page.goto(origin); // Drop any pre-callback status request before choosing a model.
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
     const connection = page.getByRole('region', { name: 'Model connection' });
     await expect(connection).toContainText('Plan permission granted');
+    await page.getByRole('button', { name: 'Close settings panel' }).click();
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     await expect(page.getByLabel('Model source')).toHaveCount(0);
     await expect(page.getByLabel('ChatGPT model')).toHaveCount(0);

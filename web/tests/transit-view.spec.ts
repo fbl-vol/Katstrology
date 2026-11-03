@@ -79,7 +79,10 @@ for (const viewport of [
     await panel.locator('.transit-result').screenshot({ path: `../.local/transit-view/combined-${viewport.name}.png` });
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /Appearance/ }).click();
+    await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
     await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Ink & Copper/ }).click();
+    await page.getByRole('button', { name: 'Close settings panel' }).click();
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     await expect(panel.locator('.transit-result')).not.toContainText(chartId);
     const wheelPaper = await panel.locator('.natal-wheel rect').first().evaluate(node => getComputedStyle(node).fill);

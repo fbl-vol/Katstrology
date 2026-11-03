@@ -48,7 +48,9 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   await expect(notebook).toContainText('Current source');
   await expect(notebook).toContainText('A deliberate personal note, not a chart result.');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
   await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Peony/ }).click();
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await expect(notebook.getByText('synthetic sky sketches', { exact: true })).toBeVisible();
   await page.screenshot({ path: resolve(renders, 'notebook-desktop.png') });
@@ -63,7 +65,10 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   await notebook.getByRole('button', { name: 'Save note' }).click();
   await expect(notebook).toContainText('Revised human annotation.');
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
+  await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
   await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Midnight Orchid/ }).click();
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await expect(notebook).toContainText('Revised human annotation.');
 

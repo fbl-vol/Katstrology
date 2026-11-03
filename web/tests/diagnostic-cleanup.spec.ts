@@ -28,6 +28,7 @@ test('normal provider explanation is accessible without hiding consent or errors
     await page.getByLabel('Password').fill('synthetic-browser-password');
     await page.getByRole('button', { name: 'Open workspace' }).click();
     await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
     const connection = page.getByRole('region', { name: 'Model connection' });
     const help = connection.getByRole('button', { name: 'About ChatGPT plan connection' });
     const explanation = connection.getByRole('note');

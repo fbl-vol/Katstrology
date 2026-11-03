@@ -170,13 +170,15 @@ for (const size of [
     expect(notebookRanges.filter(item => item.scrollTop !== 0), JSON.stringify(notebookRanges)).toEqual([]);
     if (size.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Appearance' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Appearance/ })).toBeVisible();
     const settingsRanges = await verticalRanges(page, ['.main', '.settings-page']);
     expect(settingsRanges.filter(item => item.scrollTop !== 0), JSON.stringify(settingsRanges)).toEqual([]);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.mouse.move(size.width / 2, size.height / 2);
     await page.mouse.wheel(0, 280);
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    if (await page.evaluate(() => document.documentElement.scrollHeight > innerHeight))
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    else expect(await page.evaluate(() => window.scrollY)).toBe(0);
     await page.screenshot({ path: resolve(renders, `settings-${size.name}.png`) });
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     await expect(page.getByRole('tab', { name: 'Insights' })).toHaveAttribute('aria-selected', 'true');

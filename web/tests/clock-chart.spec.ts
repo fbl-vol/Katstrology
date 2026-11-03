@@ -27,6 +27,7 @@ async function connect(page: Page, context: BrowserContext, owner: string, mobil
   await page.getByRole('button', { name: 'Open workspace' }).click();
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await page.getByRole('region', { name: 'Model connection' })
     .getByRole('button', { name: 'Reconnect ChatGPT account', exact: true }).click();
   await page.waitForURL(`${provider}/authorize?*`);
@@ -62,7 +63,10 @@ for (const viewport of [
     if (viewport.name === 'mobile') await expect(contextChart.locator(':scope > details')).not.toHaveAttribute('open');
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /Appearance/ }).click();
+    await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
     await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+    await page.getByRole('button', { name: 'Close settings panel' }).click();
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     const composer = page.getByLabel('Message Kat');
     await composer.fill('Synthetic full transit chart fixture: please calculate today’s natal transits.');

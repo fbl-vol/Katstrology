@@ -27,6 +27,7 @@ test('source, license and warranty notice are available before and after local s
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'About Kat & source' }).click();
   const about = page.getByRole('region', { name: 'About and source' });
   await expect(about).toContainText('AGPLv3 only, without warranty');
   await expect(about.getByRole('link', { name: 'Source and build instructions' })).toBeVisible();

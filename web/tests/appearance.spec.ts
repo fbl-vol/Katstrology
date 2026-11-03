@@ -41,14 +41,17 @@ test('appearance is local presentation state across draft, navigation and sign-o
   });
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance Reading Room/ }).click();
   const picker = page.getByRole('region', { name: 'Appearance' });
   await expect(picker.getByRole('button', { name: /Reading Room/ })).toHaveAttribute('aria-pressed', 'true');
+  await picker.getByRole('button', { name: 'Dark', exact: true }).click();
   await picker.getByRole('button', { name: /Moonstone/ }).focus();
   await page.keyboard.press('Enter');
   await expect(picker.getByRole('button', { name: /Moonstone/ })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('dark');
-  await page.getByRole('button', { name: 'Back to workspace' }).click();
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await expect(picker).toBeHidden();
+  await page.getByRole('button', { name: 'Back to workspace' }).click();
   await expect(page.getByLabel('Message Kat')).toHaveValue('Keep this unsent draft');
   expect(mutations).toEqual([]);
   await page.reload();
@@ -79,12 +82,15 @@ for (const viewport of [{ name: 'desktop', size: { width: 1440, height: 1024 } }
     for (const theme of themes) {
       if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
       await page.getByRole('button', { name: 'Settings' }).click();
+      await page.getByRole('button', { name: /Appearance/ }).click();
       const picker = page.getByRole('region', { name: 'Appearance' });
-      await expect(picker.getByRole('button')).toHaveCount(18);
+      await picker.getByRole('button', { name: theme.mode === 'light' ? 'Light' : 'Dark', exact: true }).click();
+      await expect(picker.locator('.appearance-option')).toHaveCount(9);
       await picker.getByRole('button', { name: new RegExp(`^${theme.label}`) }).click();
       await expect(picker.getByRole('button', { name: new RegExp(`^${theme.label}`) })).toHaveAttribute('aria-pressed', 'true');
-      await page.getByRole('button', { name: 'Back to workspace' }).click();
+      await page.getByRole('button', { name: 'Close settings panel' }).click();
       await expect(picker).toBeHidden();
+      await page.getByRole('button', { name: 'Back to workspace' }).click();
       expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme.id);
       expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(theme.mode);
       const colors = await page.evaluate(() => {
@@ -128,11 +134,13 @@ for (const viewport of [{ name: 'short-mobile', size: { width: 390, height: 560 
       await page.reload();
       if (viewport.name === 'short-mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
       await page.getByRole('button', { name: 'Settings' }).click();
+      await page.getByRole('button', { name: /Appearance/ }).click();
       const selected = page.getByRole('region', { name: 'Appearance' }).getByRole('button',
         { name: new RegExp(`^${theme.label}`) });
       await expect(selected).toHaveAttribute('aria-pressed', 'true');
       await selected.scrollIntoViewIfNeeded();
       await page.screenshot({ path: resolve(renders, `${theme.id}-${viewport.name}-settings.png`) });
+      await page.getByRole('button', { name: 'Close settings panel' }).click();
       await page.getByRole('button', { name: 'Back to workspace' }).click();
       if (viewport.name === 'short-mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
       await page.getByRole('button', { name: 'Add person', exact: true }).click();
@@ -157,6 +165,7 @@ test('theme-color follows selected reading surfaces, not palette previews, and s
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
   const picker = page.getByRole('region', { name: 'Appearance' });
   let current = '#f5f3ec';
   for (const { name, id, paper, mode } of [
@@ -165,6 +174,7 @@ test('theme-color follows selected reading surfaces, not palette previews, and s
     { name: /Moonstone/, id: 'moonstone', paper: '#292631', mode: 'dark' },
   ]) {
     await expect(chrome).toHaveAttribute('content', current);
+    await picker.getByRole('button', { name: mode === 'light' ? 'Light' : 'Dark', exact: true }).click();
     await picker.getByRole('button', { name }).click();
     await expect(chrome).toHaveAttribute('content', paper);
     current = paper;
@@ -186,6 +196,7 @@ test('Settings themes are keyboard operable and return focus on back' , async ({
   const opener = page.getByRole('button', { name: 'Settings' });
   await opener.focus();
   await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: /Appearance/ }).click();
   const picker = page.getByRole('region', { name: 'Appearance' });
   await expect(picker).toBeVisible();
   await expect(picker.getByRole('button', { name: /Reading Room/ })).toHaveAttribute('aria-pressed', 'true');
@@ -193,6 +204,8 @@ test('Settings themes are keyboard operable and return focus on back' , async ({
   await page.keyboard.press('Enter');
   await expect(picker.getByRole('button', { name: /Rosewood/ })).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: resolve(renders, 'picker-desktop.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /Appearance/ })).toBeFocused();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await expect(picker).toBeHidden();
   await expect(opener).toBeFocused();
@@ -204,7 +217,10 @@ test('dark palette preserves person form and Settings connection hierarchy', asy
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
+  await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
   await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Black Cherry/ }).click();
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await page.getByRole('button', { name: 'Add person', exact: true }).click();
   const personDialog = page.getByRole('dialog', { name: 'A space for someone new.' });
@@ -215,6 +231,7 @@ test('dark palette preserves person form and Settings connection hierarchy', asy
   await expect(page.getByRole('heading', { name: 'Synthetic surface reader' })).toBeVisible();
   await page.screenshot({ path: resolve(renders, 'person-dark.png') });
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /ChatGPT.*Manage/ }).click();
   await expect(page.getByRole('region', { name: 'Model connection' })).toBeVisible();
   await page.screenshot({ path: resolve(renders, 'provider-disabled-dark.png') });
 });
@@ -228,9 +245,11 @@ test('mobile Settings returns to workspace without hiding navigation' , async ({
   const menu = page.getByRole('button', { name: 'Open navigation' });
   await menu.click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
   const picker = page.getByRole('region', { name: 'Appearance' });
   await expect(picker).toBeVisible();
   await page.screenshot({ path: resolve(renders, 'picker-mobile.png') });
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   await expect(picker).toBeHidden();
   await expect(menu).toBeFocused();
@@ -263,6 +282,8 @@ test('storage access denial still leaves a usable Reading Room login', async ({ 
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Appearance/ }).click();
+  await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
   await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#192238');
   await page.reload();

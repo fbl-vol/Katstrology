@@ -95,7 +95,9 @@ function ProviderHelp() {
     onMouseLeave={event => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}
     onFocus={() => setOpen(true)}
     onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
-    onKeyDown={event => { if (event.key === 'Escape') { setOpen(false); button.current?.focus(); } }}>
+    onKeyDown={event => { if (event.key === 'Escape' && open) {
+      event.preventDefault(); event.stopPropagation(); setOpen(false); button.current?.focus();
+    } }}>
     <button ref={button} type="button" aria-label="About ChatGPT plan connection" aria-expanded={open}
       aria-controls="provider-help-text" onClick={() => setOpen(true)}>ⓘ</button>
     {open && <span id="provider-help-text" className="provider-help-text" role="note">
@@ -108,8 +110,8 @@ function ProviderHelp() {
 export function ProviderSettings({ provider, workspace }: { provider: Provider; workspace: Workspace }) {
   useEffect(() => { void provider.refresh(); }, []);
   const selected = provider.status.accounts.find(account => account.selected);
-  return <section className="settings-section" aria-labelledby="provider-title">
-    <h2 id="provider-title">Model connection <ProviderHelp /></h2>
+  return <section className="settings-connection" aria-label="Model connection">
+    <h2>ChatGPT <ProviderHelp /></h2>
     {!provider.status.available ? <p className="provider-disabled">{provider.error ?
       'Connection status is unavailable. No chat message will be sent until it can be checked.' :
       provider.status.registration === 'offline' ?
@@ -132,9 +134,11 @@ export function ProviderSettings({ provider, workspace }: { provider: Provider; 
           selected && provider.status.connected ?
           <p>This connection was set up privately on this server. Model availability is checked when chat is used.</p> :
           <div className="connection-setup"><p>Connect the account offline on a dedicated computer before using chat. Your Kat login and ChatGPT permission are separate; signing in on the ChatGPT website or opening Manage usage does not connect Kat.</p>
-            <ol><li>Run Kat locally on that computer and choose Connect ChatGPT plan. Its sign-in returns to that computer’s 127.0.0.1 callback, not this website.</li>
-              <li>After granting plan use, securely transfer only the selected encrypted registration to this server using the private deployment setup procedure.</li>
-              <li>Open Settings again to check the saved registration, then choose Check chat connection. Do not send a message until the connection is ready.</li></ol>
+            <details><summary>Show offline setup steps</summary>
+              <ol><li>Run Kat locally on that computer and choose Connect ChatGPT plan. Its sign-in returns to that computer’s 127.0.0.1 callback, not this website.</li>
+                <li>After granting plan use, securely transfer only the selected encrypted registration to this server using the private deployment setup procedure.</li>
+                <li>Open Settings again to check the saved registration, then choose Check chat connection. Do not send a message until the connection is ready.</li></ol>
+            </details>
             <p>No ChatGPT credentials are entered or uploaded on this website.</p></div>}
       </div> :
       <form method="post" action="/auth/chatgpt/start" className="provider-form">
@@ -147,8 +151,11 @@ export function ProviderSettings({ provider, workspace }: { provider: Provider; 
         <button type="button" className="quiet-action" disabled={provider.checking}
           onClick={() => void provider.checkConnection()}>{provider.checking ? 'Checking chat connection…' : 'Check chat connection'}</button>}
       {provider.checkMessage && <p role="status">{provider.checkMessage}</p>}
-      {selected && <button type="button" className="quiet-action" disabled={provider.checking}
-        onClick={() => void provider.disconnect()}>{provider.status.registration === 'offline' &&
+      {selected && <button type="button" className="quiet-action settings-disconnect" disabled={provider.checking}
+        onClick={() => {
+          if (window.confirm('Disconnect the selected ChatGPT account from Kat? Chat will be unavailable until you reconnect or choose another saved account.'))
+            void provider.disconnect();
+        }}>{provider.status.registration === 'offline' &&
           provider.status.phase === 'reauthorization_required' ? 'Clear saved ChatGPT authorization' :
           'Disconnect ChatGPT plan'}</button>}
       {selected && <p><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer noopener">Manage usage in ChatGPT settings</a> (usage and access only, not connection setup).</p>}
