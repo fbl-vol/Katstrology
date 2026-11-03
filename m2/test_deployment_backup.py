@@ -38,7 +38,8 @@ class DeploymentSnapshotTests(DatabaseCase):
             with db.transaction():
                 db.execute('ALTER TABLE reference_sources DROP CONSTRAINT reference_sources_one_previous_check')
                 db.execute('ALTER TABLE reference_sources DROP COLUMN supersedes_deleted_source_id')
-                db.execute('DELETE FROM schema_migrations WHERE version=22')
+                db.execute('DROP TABLE reference_book_locations, reference_book_sources')
+                db.execute('DELETE FROM schema_migrations WHERE version>=22')
         journal = self.ledger.path.read_bytes()
         tip_path = self.ledger.path.with_name(self.ledger.path.name + '.tip')
         tip = tip_path.read_bytes()
@@ -66,7 +67,7 @@ class DeploymentSnapshotTests(DatabaseCase):
 
         with deployment_snapshot_source(self.dsn, self.store.files, self.ledger.path) as source:
             manifest = backup(source, destination, dump_database=synthetic_dump)
-        self.assertEqual(manifest['schema_version'], 22)
+        self.assertEqual(manifest['schema_version'], 23)
         self.assertTrue((destination / 'manifest.json').is_file())
         self.assertEqual(self.ledger.path.read_bytes(), before)
 

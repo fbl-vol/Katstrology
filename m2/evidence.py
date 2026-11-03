@@ -149,6 +149,8 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
         page = store.db.execute('''
             SELECT p.source_id,p.id AS passage_id,p.content,s.author,s.title,s.edition,s.tradition,
                    s.technique,s.provenance,s.rights_basis,s.approval,s.language,s.source_url,
+                   l.ordinal,l.page_start,l.page_end,l.printed_page_start,l.printed_page_end,
+                   l.source_locator_start,l.source_locator_end,l.parent_section,l.review_status,
                    s.source_conversation_id,
                    s.source_turn_id,v.embedding,
                    to_tsvector('simple',p.content) @@ plainto_tsquery('simple',%s) AS keyword
@@ -157,6 +159,8 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
             LEFT JOIN reference_vectors v ON (v.owner_id=p.owner_id AND v.source_id=p.source_id
                                              AND v.passage_id=p.id AND v.model_id=%s
                                              AND v.content_sha256=p.content_sha256)
+            LEFT JOIN reference_book_locations l ON (l.owner_id=p.owner_id
+                AND l.source_id=p.source_id AND l.passage_id=p.id)
             WHERE p.owner_id=%s AND s.approval<>'revoked'
               AND (s.approval='selected' OR s.rights_basis='synthetic_fixture')
               AND (%s::text IS NULL OR s.tradition=%s)
@@ -207,6 +211,14 @@ def search_evidence(store, session, query, embedder=None, limit=8, tradition=Non
                 'author': row['author'], 'title': row['title'], 'edition': row['edition'],
                 'tradition': row['tradition'], 'technique': row['technique'],
                 'language': row['language'], 'source_url': row['source_url'],
+                'ordinal': row['ordinal'], 'page_start': row['page_start'],
+                'page_end': row['page_end'],
+                'printed_page_start': row['printed_page_start'],
+                'printed_page_end': row['printed_page_end'],
+                'source_locator_start': row['source_locator_start'],
+                'source_locator_end': row['source_locator_end'],
+                'parent_section': row['parent_section'],
+                'review_status': row['review_status'],
                 'provenance': row['provenance'], 'rights_basis': row['rights_basis'],
                 'approval': row['approval'], 'keyword_match': row['keyword'],
                 'source_kind': 'source_not_verified_interpretation'}))

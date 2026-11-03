@@ -193,6 +193,7 @@ class CorrectionContinuityTests(DatabaseCase):
             db.execute('ALTER TABLE personal_entries DROP CONSTRAINT personal_entries_epistemic_status_check')
             db.execute('ALTER TABLE personal_entries ADD CONSTRAINT personal_entries_epistemic_status_check '
                        "CHECK (epistemic_status IN ('user_reported','explicitly_confirmed','agent_inference'))")
+            db.execute('DROP TABLE reference_book_locations, reference_book_sources')
             db.execute('DROP TABLE reference_originals')
             db.execute('ALTER TABLE reference_sources DROP CONSTRAINT reference_sources_previous_fk, '
                        'DROP CONSTRAINT reference_sources_approval_check, '
@@ -238,7 +239,7 @@ class CorrectionContinuityTests(DatabaseCase):
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertIsNone(restored.read_turn(alice, 'thread', 'legacy')['parent_revision'])
             self.assertEqual(restored.db.execute('SELECT max(version) AS version FROM '
-                                                  'schema_migrations').fetchone()['version'], 22)
+                                                  'schema_migrations').fetchone()['version'], 23)
             correct(restored, alice, 'thread', 'withdrawn', 'root', 'withdraw')
             self.assertIsNone(current_text(restored, alice, 'thread', 'legacy',
                                            {'thread': {'root', 'legacy'}}))

@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
+from m2 import book_package
 from m2.provenance import source_turn_current
 
 
@@ -20,7 +21,8 @@ class References:
     def add_source(self, session, source_id, author, title, edition, tradition,
                    technique, provenance, rights_evidence, source=None, *,
                    rights_basis='synthetic_fixture', language='en', source_url=None,
-                   original_text=None, extraction_note=None, supersedes_source_id=None):
+                   original_text=None, extraction_note=None, supersedes_source_id=None,
+                   book_source=False):
         owner = self.store.owner(session)
         self.store._id(source_id)
         metadata = (author, title, edition, tradition, technique,
@@ -41,7 +43,7 @@ class References:
         if rights_basis != 'synthetic_fixture' and original_text is None:
             raise ValueError('Non-fixture source requires a preserved original')
         if original_text is not None:
-            self.store._text(original_text, 128 * 1024)
+            self.store._text(original_text, book_package.MAX_TEXT if book_source else 128 * 1024)
             self.store._text(extraction_note, 512)
         elif extraction_note is not None:
             raise ValueError('Extraction note without source original')
@@ -78,13 +80,16 @@ class References:
         self.store._id(source_id)
         self.store._id(passage_id)
         self.store._text(section, 256)
-        self.store._text(content, 4096)
-        digest = sha256(content.encode('utf-8')).hexdigest()
         source = self.store.db.execute('''
-            SELECT approval FROM reference_sources WHERE owner_id=%s AND id=%s
+            SELECT s.approval,b.source_id IS NOT NULL AS book_package
+            FROM reference_sources s LEFT JOIN reference_book_sources b
+              ON (b.owner_id=s.owner_id AND b.source_id=s.id)
+            WHERE s.owner_id=%s AND s.id=%s
         ''', (owner, source_id)).fetchone()
         if not source or source['approval'] != 'not_kat_selected':
             raise ValueError('Passages can only be added to an unselected source edition')
+        self.store._text(content, book_package.MAX_BOOK_PASSAGE_BYTES if source['book_package'] else 4096)
+        digest = sha256(content.encode('utf-8')).hexdigest()
         original = self.store.db.execute('''
             SELECT original_text FROM reference_originals WHERE owner_id=%s AND source_id=%s
         ''', (owner, source_id)).fetchone()
@@ -99,7 +104,12 @@ class References:
     def get_passage(self, session, source_id, passage_id):
         owner = self.store.owner(session)
         row = self.store.db.execute('''
-            SELECT p.id,p.section,p.content,p.content_sha256,s.author,s.title,s.edition,
+            SELECT p.id,p.section,p.content,p.content_sha256,
+                   l.ordinal,l.start_offset,l.end_offset,l.page_start,l.page_end,
+                   l.printed_page_start,l.printed_page_end,
+                   l.source_locator_start,l.source_locator_end,l.parent_section,l.extraction_status,l.review_status,
+                   b.raw_sha256,b.transcript_sha256,b.processing_sha256,b.normalized_sha256,
+                   s.author,s.title,s.edition,
                    s.tradition,s.technique,s.provenance,s.rights_basis,s.rights_evidence,
                    s.approval,s.language,s.source_url,
                    COALESCE(s.supersedes_source_id,s.supersedes_deleted_source_id) AS supersedes_source_id,
@@ -107,10 +117,24 @@ class References:
                    s.source_conversation_id,s.source_turn_id
             FROM reference_passages p JOIN reference_sources s
               ON (s.owner_id=p.owner_id AND s.id=p.source_id)
+            LEFT JOIN reference_book_locations l ON (l.owner_id=p.owner_id
+                AND l.source_id=p.source_id AND l.passage_id=p.id)
+            LEFT JOIN reference_book_sources b ON (b.owner_id=p.owner_id AND b.source_id=p.source_id)
             WHERE p.owner_id=%s AND p.source_id=%s AND p.id=%s
         ''', (owner, self.store._id(source_id), self.store._id(passage_id))).fetchone()
         if not row:
             raise KeyError('Passage not found')
+        row['neighbors'] = {'previous': None, 'next': None}
+        if row['ordinal'] is not None and row['parent_section'] != 'mixed_sections':
+            neighbors = self.store.db.execute('''
+                SELECT p.id,l.ordinal FROM reference_book_locations l JOIN reference_passages p
+                  ON (p.owner_id=l.owner_id AND p.source_id=l.source_id AND p.id=l.passage_id)
+                WHERE l.owner_id=%s AND l.source_id=%s AND l.parent_section=%s
+                  AND p.section=%s AND l.ordinal IN (%s,%s)
+            ''', (owner, source_id, row['parent_section'], row['section'],
+                  row['ordinal'] - 1, row['ordinal'] + 1)).fetchall()
+            for neighbor in neighbors:
+                row['neighbors']['previous' if neighbor['ordinal'] < row['ordinal'] else 'next'] = neighbor['id']
         conv_id, turn_id = row['source_conversation_id'], row['source_turn_id']
         row['source_status'] = ('independent_synthetic_fixture' if row['rights_basis'] == 'synthetic_fixture'
                                 else 'independent_attributed_edition')
@@ -219,7 +243,7 @@ class References:
         return {'source_id': source_id, 'already_imported': False}
 
     def ingest_edition(self, session, metadata, original_text, passages):
-        """Atomic small-source ingest; revisions use new immutable source IDs."""
+        """Atomic text ingest; revisions use new immutable source IDs."""
         if not isinstance(passages, list) or not 1 <= len(passages) <= 64:
             raise ValueError('Select 1..64 located passages')
         with self.store.db.transaction():
@@ -229,6 +253,63 @@ class References:
                     raise ValueError('Invalid located passage')
                 self.add_passage(session, source_id, item['id'], item['section'], item['content'])
         return source_id
+
+    def import_book_package(self, session, path):
+        """Validate all package bytes before an atomic, unselected owner import."""
+        package = book_package.validated_snapshot(path)
+        manifest, raw, transcript, text = package
+        owner = self.store.owner(session)
+        source_id = self.store._id(manifest['source_id'])
+        existing = self.store.db.execute('''
+            SELECT b.manifest,b.raw_source,b.transcript,b.raw_sha256,o.original_text,o.content_sha256
+            FROM reference_book_sources b JOIN reference_originals o
+              ON (o.owner_id=b.owner_id AND o.source_id=b.source_id)
+            WHERE b.owner_id=%s AND b.source_id=%s
+        ''', (owner, source_id)).fetchone()
+        if existing:
+            if (existing['manifest'] != manifest or bytes(existing['raw_source']) != raw or
+                    bytes(existing['transcript']) != transcript or
+                    existing['raw_sha256'] != book_package.digest(raw) or
+                    existing['original_text'] != text or
+                    existing['content_sha256'] != book_package.digest(text.encode()) or
+                    self.store.db.execute('''
+                        SELECT count(*) AS n FROM reference_book_locations
+                        WHERE owner_id=%s AND source_id=%s
+                    ''', (owner, source_id)).fetchone()['n'] != len(manifest['passages'])):
+                raise ValueError('Imported edition identity differs from package')
+            return {'source_id': source_id, 'already_imported': True}
+        if self.store.db.execute('SELECT 1 FROM reference_sources WHERE owner_id=%s AND id=%s',
+                                 (owner, source_id)).fetchone():
+            raise ValueError('Edition ID already exists')
+        metadata = dict(manifest['metadata'], source_id=source_id)
+        metadata.pop('processing_revision')
+        passages = manifest['passages']
+        with self.store.db.transaction():
+            self.add_source(session, original_text=text, book_source=True,
+                            **metadata)
+            self.store.db.execute('''
+                INSERT INTO reference_book_sources
+                  (owner_id,source_id,raw_source,transcript,raw_sha256,transcript_sha256,
+                   processing_sha256,normalized_sha256,package_version,manifest)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ''', (owner, source_id, raw, transcript, manifest['source_sha256'],
+                  manifest['transcript_sha256'], manifest['processing_sha256'],
+                  manifest['normalized_sha256'],
+                  manifest['package_version'], json.dumps(manifest)))
+            for item in passages:
+                self.add_passage(session, source_id, item['id'], item['section'], item['content'])
+                self.store.db.execute('''
+                    INSERT INTO reference_book_locations
+                      (owner_id,source_id,passage_id,ordinal,start_offset,end_offset,page_start,
+                       page_end,printed_page_start,printed_page_end,source_locator_start,
+                       source_locator_end,parent_section,extraction_status,review_status)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ''', (owner, source_id, item['id'], item['ordinal'], item['start'], item['end'],
+                      item['page_start'], item['page_end'], item['printed_page_start'],
+                      item['printed_page_end'], item['source_locator_start'],
+                      item['source_locator_end'], item['parent_section'],
+                      item['extraction_status'], item['review_status']))
+        return {'source_id': source_id, 'already_imported': False}
 
 
 class PersonalContext:

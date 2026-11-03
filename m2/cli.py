@@ -11,6 +11,7 @@ from uuid import uuid4
 import swisseph as swe
 
 from m2.attachments import Attachments, MAX_ATTACHMENT
+from m2.book_package import prepare as prepare_book, validate as validate_book
 from m2.deletion import Tombstones
 from m2.evidence import LocalEmbedder, personal_context, rebuild_vectors, search_evidence
 from m2.gateway import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
@@ -29,6 +30,11 @@ def output(value):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
+    preparation = sub.add_parser('prepare-book', help='offline extracted-leaf package; no app import')
+    for argument in ('source', 'leaves', 'metadata', 'output_root'):
+        preparation.add_argument(argument, type=Path)
+    check = sub.add_parser('validate-book', help='offline package validation; no app import')
+    check.add_argument('package', type=Path)
     enroll = sub.add_parser('enroll', help='local-workstation user enrollment')
     enroll.add_argument('user')
     for action in ('demo', 'chat', 'read', 'replay', 'search', 'rebuild', 'repair-continuity', 'index',
@@ -36,7 +42,7 @@ def main(argv=None):
                    'branch', 'correct', 'withdraw', 'export',
                    'delete-conversation', 'delete-conversations', 'delete-attachment',
                    'delete-person', 'delete-reference', 'revoke-reference',
-                   'import-reference', 'select-reference'):
+                   'import-reference', 'import-book', 'select-reference'):
         sub.add_parser(action)
     sub.choices['chat'].add_argument('conversation')
     sub.choices['chat'].add_argument('--parent', default='@active')
@@ -55,6 +61,8 @@ def main(argv=None):
     sub.choices['search-evidence'].add_argument('--tradition')
     sub.choices['search-evidence'].add_argument('--technique')
     sub.choices['search-evidence'].add_argument('--person')
+    sub.choices['import-book'].add_argument('package', type=Path)
+    sub.choices['import-book'].add_argument('--confirm-rights', action='store_true')
     sub.choices['import-reference'].add_argument('manifest', type=Path)
     sub.choices['import-reference'].add_argument('original', type=Path)
     sub.choices['import-reference'].add_argument('--confirm-rights', action='store_true',
@@ -86,6 +94,13 @@ def main(argv=None):
     sub.choices['delete-person'].add_argument('person_id')
     sub.choices['delete-reference'].add_argument('source_id')
     args = parser.parse_args(argv)
+    if args.command == 'prepare-book':
+        output({'package': str(prepare_book(args.source, args.leaves, args.metadata, args.output_root))})
+        return 0
+    if args.command == 'validate-book':
+        manifest = validate_book(args.package)
+        output({'source_id': manifest['source_id'], 'passages': len(manifest['passages'])})
+        return 0
     dsn = os.environ.get('KAT_M2_DSN')
     if not dsn:
         parser.error('KAT_M2_DSN is required (owned local PostgreSQL only)')
@@ -135,6 +150,10 @@ def main(argv=None):
                 if not args.confirm_rights:
                     parser.error('Inspect the manifest and original; pass --confirm-rights for this import')
                 output(References(store).import_text_file(session, args.manifest, args.original))
+            elif args.command == 'import-book':
+                if not args.confirm_rights:
+                    parser.error('Inspect source, transcript, metadata and rights; pass --confirm-rights')
+                output(References(store).import_book_package(session, args.package))
             elif args.command == 'select-reference':
                 References(store).select(session, args.source_id)
                 output({'selected': args.source_id, 'meaning': 'operator inclusion, not Kat endorsement'})
