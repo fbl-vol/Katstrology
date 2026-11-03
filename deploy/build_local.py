@@ -38,6 +38,10 @@ def main():
     args = parser.parse_args()
     if run('git', 'status', '--porcelain', '--untracked-files=all'):
         raise RuntimeError('Only a clean committed source tip may be packaged')
+    driver = json.loads(run('docker', 'info', '--format', '{{json .DriverStatus}}'))
+    if ['driver-type', 'io.containerd.snapshotter.v1'] not in driver:
+        raise RuntimeError('Qualified containerd image store required; do not substitute archive identities')
+    (ROOT / '.local').mkdir(exist_ok=True)
     commit, tree = run('git', 'rev-parse', 'HEAD'), run('git', 'rev-parse', 'HEAD^{tree}')
     output = ROOT / '.local/fresh-production/package' / commit[:12]
     with TemporaryDirectory(prefix='kat-public-model-', dir=ROOT / '.local') as model_context:
@@ -86,7 +90,7 @@ def main():
                'image_id': image_id, 'config_digest': config_digest,
                'image_archive_sha256': file_hash(image),
                'source_offer_sha256': file_hash(source),
-               'image_archive': str(image), 'source_offer': str(source)}
+               'image_archive': image.name, 'source_offer': source.name}
     (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt, indent=2))
 

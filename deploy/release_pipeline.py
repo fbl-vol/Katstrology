@@ -34,6 +34,18 @@ def digest(path):
         return file_digest(stream, 'sha256').hexdigest()
 
 
+def package_path(receipt_path, value):
+    path = Path(value)
+    if path.is_absolute():  # Retained manual receipts are not rewritten.
+        return path
+    if path.name != value or path.is_symlink() or value in ('', '.', '..'):
+        raise ValueError('Portable package path must be a basename')
+    path = receipt_path.resolve().parent / value
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('Portable package member missing or indirect')
+    return path
+
+
 def artifact(receipt_path):
     receipt = json.loads(receipt_path.read_text())
     for key in ('commit', 'tree'):
@@ -46,7 +58,9 @@ def artifact(receipt_path):
         raise ValueError('Invalid image identity')
     if receipt['architecture'] != 'linux/amd64':
         raise ValueError('Unsupported artifact architecture')
-    archive, offer = Path(receipt['image_archive']), Path(receipt['source_offer'])
+    archive, offer = (package_path(receipt_path, receipt[key])
+                      for key in ('image_archive', 'source_offer'))
+    receipt = receipt | {'image_archive': str(archive), 'source_offer': str(offer)}
     if digest(archive) != receipt['image_archive_sha256'] or digest(offer) != receipt['source_offer_sha256']:
         raise ValueError('Artifact hash mismatch')
     with tarfile.open(archive) as image:

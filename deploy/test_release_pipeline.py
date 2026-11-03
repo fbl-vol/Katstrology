@@ -144,6 +144,27 @@ class ReleasePlanTests(unittest.TestCase):
             self.assertNotIn('/srv/', json.dumps(planned))
             self.assertNotIn('synthetic-secret', json.dumps(planned))
 
+    def test_portable_package_survives_job_handoff_and_refuses_indirection(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / 'build-job'
+            original.mkdir()
+            path = synthetic_package(original)
+            receipt = json.loads(path.read_text())
+            receipt.update(image_archive='image.tar', source_offer='source.tar')
+            path.write_text(json.dumps(receipt))
+            moved = root / 'deploy-job'
+            original.rename(moved)
+            normalized, archive, _, _ = pipeline.artifact(moved / 'receipt.json')
+            self.assertEqual(archive, moved / 'image.tar')
+            self.assertEqual(normalized['source_offer'], str(moved / 'source.tar'))
+            for unsafe in ('../deploy-job/image.tar', 'missing.tar'):
+                with self.assertRaises(ValueError):
+                    pipeline.package_path(moved / 'receipt.json', unsafe)
+            (moved / 'link.tar').symlink_to(moved / 'image.tar')
+            with self.assertRaises(ValueError):
+                pipeline.package_path(moved / 'receipt.json', 'link.tar')
+
     def test_tampered_archive_is_rejected_before_transport(self):
         with TemporaryDirectory() as directory:
             path = synthetic_package(directory)

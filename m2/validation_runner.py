@@ -28,8 +28,10 @@ def main():
     parser.add_argument('selectors', nargs='*')
     args = parser.parse_args()
     loader = unittest.defaultTestLoader
-    suite = (loader.loadTestsFromNames(args.selectors) if args.selectors else
-             loader.discover('m2', pattern='test_*.py'))
+    suite = (loader.loadTestsFromNames(args.selectors) if args.selectors else unittest.TestSuite([
+        loader.discover('m2', pattern='test_*.py'),
+        unittest.TestLoader().discover('deploy', pattern='test_*.py'),
+    ]))
     result = unittest.TextTestRunner(verbosity=0, resultclass=TimedResult).run(suite)
     ranked = sorted(result.samples, key=lambda sample: sample[1], reverse=True)
     setup = sorted(result.samples, key=lambda sample: sample[2], reverse=True)
