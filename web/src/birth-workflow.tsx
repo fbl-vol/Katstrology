@@ -31,20 +31,26 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
   discussChart: () => void; onGenerated?: (result: Generation, draft: Person['drafts'][number]['details']) => void; compact?: boolean;
 }) {
   const savedDraft = person.drafts[0]?.details;
+  const savedLocation = person.editor_location;
   const activeSettings = person.charts.find(chart => chart.id === person.active_chart_id)?.result.profile.settings;
   const [day, setDay] = useState(savedDraft?.birth_date || '');
   const [hour, setHour] = useState(savedDraft?.birth_time || '');
   const [unknown, setUnknown] = useState(savedDraft?.time_unknown || false);
-  const [provisional, setProvisional] = useState(true);
-  const [query, setQuery] = useState(savedDraft?.birthplace || '');
-  const [place, setPlace] = useState<Place | null>(null);
+  const [provisional, setProvisional] = useState(savedLocation?.provisional ?? true);
+  const [locationKind, setLocationKind] = useState(savedLocation?.kind || 'review');
+  const [query, setQuery] = useState(savedLocation?.kind === 'catalogue' || savedLocation?.kind === 'manual'
+    ? savedDraft?.birthplace || '' : savedDraft?.birthplace.split(',')[0] || '');
+  const [place, setPlace] = useState<Place | null>(savedLocation?.kind === 'catalogue' ? savedLocation.place || null : null);
   const [matches, setMatches] = useState<Place[]>([]);
-  const [placeError, setPlaceError] = useState('');
-  const [zone, setZone] = useState('');
-  const [latitude, setLatitude] = useState('');
-  const [longitude, setLongitude] = useState('');
-  const [fold, setFold] = useState('');
-  const [needFold, setNeedFold] = useState(false);
+  const [lookup, setLookup] = useState<'idle' | 'loading' | 'empty' | 'error'>('idle');
+  const [fieldError, setFieldError] = useState('');
+  const [zone, setZone] = useState(savedLocation?.kind === 'manual' ? savedLocation.zone : savedLocation?.zone_override || '');
+  const [latitude, setLatitude] = useState(savedLocation?.kind === 'manual' ? String(savedLocation.latitude) :
+    savedLocation?.latitude_override === undefined ? '' : String(savedLocation.latitude_override));
+  const [longitude, setLongitude] = useState(savedLocation?.kind === 'manual' ? String(savedLocation.longitude) :
+    savedLocation?.longitude_override === undefined ? '' : String(savedLocation.longitude_override));
+  const [fold, setFold] = useState(savedLocation?.fold == null ? '' : String(savedLocation.fold));
+  const [needFold, setNeedFold] = useState(savedLocation?.fold != null);
   const [house, setHouse] = useState(activeSettings?.house_system || 'placidus');
   const [node, setNode] = useState(activeSettings?.node_type || 'true');
   const [includeChiron, setIncludeChiron] = useState(activeSettings?.include_chiron === true);
@@ -60,6 +66,7 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
   const resultRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLInputElement>(null);
   const placeRef = useRef<HTMLInputElement>(null);
+  const placeFeedback = useRef<HTMLParagraphElement>(null);
   const zoneRef = useRef<HTMLInputElement>(null);
   const foldRef = useRef<HTMLSelectElement>(null);
   const chironRef = useRef<HTMLInputElement>(null);
@@ -73,18 +80,21 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
   }, [busy, error]);
 
   useEffect(() => {
-    if (place || query.trim().length < 2) { setMatches([]); return; }
+    if (locationKind !== 'review' || query.trim().length < 2) {
+      setMatches([]); setLookup('idle'); return;
+    }
     let current = true;
+    setLookup('loading'); setMatches([]);
     const timer = window.setTimeout(() => {
       void api<{ places: Place[] }>('places/search', workspace.csrf, 'POST', { query: query.trim() })
-        .then(result => { if (current) { setMatches(result.places); setPlaceError(''); } })
-        .catch(() => { if (current) setPlaceError('Local place suggestions are unavailable. Advanced manual location remains possible.'); });
+        .then(result => { if (current) { setMatches(result.places); setLookup(result.places.length ? 'idle' : 'empty'); } })
+        .catch(() => { if (current) { setMatches([]); setLookup('error'); } });
     }, 180);
     return () => { current = false; window.clearTimeout(timer); };
-  }, [query, place?.id, workspace.owner]);
+  }, [query, locationKind, workspace.owner]);
 
   function changed() {
-    requestId.current = null; setGenerated(null); setUnconfirmed(false); setError(''); setStatus('');
+    requestId.current = null; setGenerated(null); setUnconfirmed(false); setError(''); setFieldError(''); setStatus('');
     setNeedFold(false); setFold('');
   }
 
@@ -93,18 +103,24 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
   const suggestions = typedZone.length >= 3 && canonical !== typedZone ? browserZones
     .filter(item => item.toLowerCase().includes(typedZone.toLowerCase())).slice(0, 5) : [];
   const selectedZone = typedZone || place?.zone || '';
+  function focusPlace() {
+    window.requestAnimationFrame(() => {
+      placeRef.current?.focus({ preventScroll: true });
+      placeFeedback.current?.scrollIntoView({ block: 'center' });
+    });
+  }
 
   async function generate(event?: React.FormEvent) {
     event?.preventDefault();
     if (submitting.current || generated) return;
     if (!place && (!typedZone || latitude === '' || longitude === '')) {
-      setError(explanation('select_place_or_advanced_location')); placeRef.current?.focus(); return;
+      setFieldError(explanation('select_place_or_advanced_location')); focusPlace(); return;
     }
     if (typedZone && canonical && canonical !== typedZone) {
       setError(`Use the exact timezone spelling ${canonical} in Advanced, then generate again.`);
       zoneRef.current?.focus(); return;
     }
-    submitting.current = true; setBusy(true); setError(''); setStatus('Generating and saving the chart…');
+    submitting.current = true; setBusy(true); setError(''); setFieldError(''); setStatus('Generating and saving the chart…');
     const id = requestId.current || `generate-${crypto.randomUUID()}`;
     requestId.current = id;
     const settings = house !== 'placidus' || node !== 'true' || includeChiron || lilith !== 'off' ||
@@ -122,6 +138,7 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
         fold: fold === '' ? null : Number(fold), settings,
       });
       setGenerated(result);
+      if (!place) setLocationKind('manual');
       onGenerated?.(result, { birth_date: day, birth_time: unknown ? '' : hour,
         birthplace: place ? placeLabel(place) : query.trim(), time_unknown: unknown });
       setUnconfirmed(false);
@@ -134,13 +151,21 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
     } catch (cause) {
       setStatus('');
       if (cause instanceof ApiError && [400, 409].includes(cause.status)) {
-        setError(explanation(cause.code)); setUnconfirmed(false); requestId.current = null;
+        if (cause.code.startsWith('select_place')) setFieldError(explanation(cause.code));
+        else setError(explanation(cause.code));
+        setUnconfirmed(false); requestId.current = null;
         if (cause.code === 'choose_dst_occurrence') {
           setNeedFold(true); if (advancedRef.current) advancedRef.current.open = true;
           window.requestAnimationFrame(() => foldRef.current?.focus());
         } else if (cause.code === 'nonexistent_local_time') timeRef.current?.focus();
         else if (cause.code === 'invalid_timezone') zoneRef.current?.focus();
-        else if (cause.code.startsWith('select_place')) placeRef.current?.focus();
+        else if (cause.code.startsWith('select_place')) {
+          if (cause.code === 'select_place_again') {
+            setPlace(null); setLocationKind('review'); setQuery(place?.name || query.split(',')[0]);
+            setZone(''); setLatitude(''); setLongitude('');
+          }
+          focusPlace();
+        }
       } else {
         setError('Save was not confirmed. Do not start another version; retry this exact request ID to check the archive without duplicate calculation.');
         setUnconfirmed(true);
@@ -150,23 +175,41 @@ export function BirthWorkflow({ person, workspace, refresh, discussChart, onGene
 
   return <section className="birth-workflow" aria-label="Generate a chart">
     <h2>Birth details</h2>
-    <p>One chart from the details you supply. A city is a reference, not exact birth coordinates. {savedDraft ?
-      'Review the saved details and choose the birthplace again (or enter an Advanced manual location); an old label is not a selected place.' :
-      'Nothing is inferred from an unselected place label.'}</p>
+    <p>Use the details you know. Nothing is inferred from an unselected birthplace or birth time.</p>
     <form onSubmit={event => void generate(event)}>
       <fieldset disabled={busy || !!generated}>
         <label>Birth date <input type="date" required value={day} onChange={event => { changed(); setDay(event.target.value); }} /></label>
         <label className="check"><input type="checkbox" checked={unknown} onChange={event => { changed(); setUnknown(event.target.checked); setHour(''); setFold(''); }} />Time unknown</label>
         {!unknown && <label>Birth time <input ref={timeRef} type="time" required value={hour} onChange={event => { changed(); setHour(event.target.value); }} /></label>}
-        <label>Birthplace search <input ref={placeRef} autoComplete="off" value={query} placeholder="Search city, then choose country and region" onChange={event => { changed(); setPlace(null); setQuery(event.target.value); }} /></label>
+        {savedDraft && locationKind === 'review' && <p className="place-recovery">Saved birthplace: {savedDraft.birthplace || 'Not supplied'}. Choose a city below or use Advanced to enter a location.</p>}
+        <label>Birthplace search <input ref={placeRef} autoComplete="off" value={query} readOnly={!!place}
+          aria-invalid={!!fieldError} aria-describedby={fieldError ? 'birthplace-error' : undefined}
+          placeholder="Search city, then choose country and region"
+          onChange={event => { changed(); setPlace(null); setLocationKind('review');
+            setZone(''); setLatitude(''); setLongitude(''); setQuery(event.target.value); }} /></label>
+        {place && <button type="button" className="quiet-action" onClick={() => {
+          changed(); setPlace(null); setLocationKind('review'); setQuery(place.name);
+          setZone(''); setLatitude(''); setLongitude(''); placeRef.current?.focus();
+        }}>Change birthplace</button>}
+        {fieldError && <p ref={placeFeedback} id="birthplace-error" className="error place-feedback" role="alert">{fieldError}</p>}
+        {lookup === 'loading' && <p className="place-feedback" role="status">Searching local cities…</p>}
+        {lookup === 'empty' && <p className="place-feedback" role="status">No cities found. Try a city name or enter a location in Advanced.</p>}
+        {lookup === 'error' && <p className="error place-feedback" role="alert">Local city search is unavailable. Your input remains; Advanced manual location is still available.</p>}
         {matches.length > 0 && <div className="place-results" role="group" aria-label="Offline birthplace results">{matches.map(item =>
-          <button type="button" key={item.id} onClick={() => { changed(); setPlace(item); setQuery(placeLabel(item)); setMatches([]); }}>
+          <button type="button" key={item.id} onClick={() => { changed(); setPlace(item); setLocationKind('catalogue');
+            setZone(''); setLatitude(''); setLongitude(''); setQuery(placeLabel(item)); setMatches([]); }}>
             {placeLabel(item)} <small>GeoNames city centre · {item.zone}</small>
           </button>)}</div>}
-        {placeError && <p className="error" role="alert">{placeError}</p>}
-        {place && <p className="place-selected" role="status">Selected {placeLabel(place)} · GeoNames city-centre reference ({place.latitude}, {place.longitude}) · {place.zone}. If birth was near a timezone border, inspect/override in Advanced.</p>}
+        {place && <p className="place-selected" role="status">Selected {placeLabel(place)} · GeoNames city-centre reference ({place.latitude}, {place.longitude}) · {selectedZone}. The city centre is approximate; inspect Advanced if the birth location or timezone differs.</p>}
+        {locationKind === 'manual' && !place && <p className="place-selected" role="status">Saved manual location · {latitude}, {longitude} · {zone}. Inspect or change it in Advanced.</p>}
+        {savedLocation?.kind === 'review' && savedLocation.latitude != null && savedLocation.longitude != null &&
+          locationKind === 'review' && <button type="button" className="quiet-action" onClick={() => {
+          changed(); setLocationKind('manual'); setQuery(savedDraft?.birthplace || '');
+          setLatitude(String(savedLocation.latitude)); setLongitude(String(savedLocation.longitude));
+          setZone(savedLocation.zone); advancedRef.current!.open = true;
+        }}>Use saved coordinates as a manual location</button>}
         <label className="check"><input type="checkbox" checked={provisional} onChange={event => { changed(); setProvisional(event.target.checked); }} />Details are provisional</label>
-        <p>Leave checked if the details may change. This choice does not verify a birth record; unknown time cannot produce an Ascendant or houses.</p>
+        <p>Leave checked if details may change; this does not verify a birth record. Unknown time cannot produce an Ascendant or houses.</p>
         <details ref={advancedRef} className="birth-advanced"><summary>Advanced · chart settings and location</summary>
           <p>Tropical zodiac · ten planets, true north node, Placidus houses, five major aspects. Defaults: conjunction/opposition 8°, square/trine 6°, sextile 4°. Other values apply to the chart you generate.</p>
           <label>House system <select value={house} onChange={event => { changed(); setHouse(event.target.value); }}><option value="placidus">Placidus</option><option value="whole_sign">Whole sign</option></select></label>

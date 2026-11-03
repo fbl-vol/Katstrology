@@ -172,6 +172,53 @@ class BirthFlow:
                     'active_chart_id': chart['id'], 'provisional': data['provisional'],
                     'place_id': place_id, 'reused': False}
 
+    def editor_location(self, session, person_id, revision, label):
+        """Read only the generation linked to this editor draft, never a nearby chart."""
+        owner = self.store.owner(session)
+        self.people._person(session, person_id)
+        row = self.store.db.execute('''
+            SELECT g.place_id,g.provisional,b.zone_name,b.latitude,b.longitude,b.fold,b.provenance
+            FROM birth_generation_requests g
+            JOIN person_drafts d ON d.owner_id=g.owner_id AND d.person_id=g.person_id
+              AND d.revision=g.draft_revision
+            JOIN birth_records b ON b.owner_id=g.owner_id AND b.person_id=g.person_id
+              AND b.id=g.birth_id
+            JOIN charts c ON c.owner_id=g.owner_id AND c.person_id=g.person_id
+              AND c.id=g.chart_id AND c.birth_id=g.birth_id
+            WHERE g.owner_id=%s AND g.person_id=%s AND g.draft_revision=%s
+              AND d.details->>'birthplace'=%s
+        ''', (owner, person_id, revision, label)).fetchone()
+        if row is None:
+            return None
+        context = {'kind': 'review', 'latitude': row['latitude'], 'longitude': row['longitude'],
+                   'zone': row['zone_name'], 'fold': row['fold'], 'provisional': row['provisional']}
+        if row['latitude'] is None or row['longitude'] is None:
+            return context
+        source = row['provenance'].split(':', 1)
+        if len(source) != 2 or source[0] != ('provisional' if row['provisional'] else 'user_reported_reliable'):
+            return context
+        if row['place_id'] is None:
+            if source[1] == 'user_supplied_coordinates':
+                context['kind'] = 'manual'
+            return context
+        try:
+            place = selected(row['place_id'])
+        except ValueError:
+            return context
+        if self._label(place) != label:
+            return context
+        if source[1] == f'user_supplied_coordinates_place_{place["id"]}':
+            context['latitude_override'] = row['latitude']
+            context['longitude_override'] = row['longitude']
+        elif source[1] != f'geonames_city_centre_{place["id"]}' or (
+                row['latitude'], row['longitude']) != (place['latitude'], place['longitude']):
+            return context
+        context['kind'] = 'catalogue'
+        context['place'] = {key: place[key] for key in
+                            ('id', 'name', 'region', 'country', 'latitude', 'longitude', 'zone')}
+        context['zone_override'] = row['zone_name'] if row['zone_name'] != place['zone'] else None
+        return context
+
     @staticmethod
     def _label(place):
         return ', '.join(part for part in (place['name'], place['region'], place['country']) if part)

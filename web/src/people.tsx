@@ -9,8 +9,13 @@ import { AstrologyHelp } from './astrology-help';
 import type { SelectedResult } from './archive';
 
 export type Draft = { birth_date: string; birth_time: string; birthplace: string; time_unknown: boolean };
+export type EditorLocation = { kind: 'catalogue' | 'manual' | 'review';
+  latitude: number | null; longitude: number | null; zone: string; fold: number | null; provisional: boolean;
+  place?: { id: string; name: string; region: string; country: string; latitude: number; longitude: number; zone: string };
+  latitude_override?: number; longitude_override?: number; zone_override?: string | null };
 export type Person = {
   id: string; name: string; active_chart_id: string | null;
+  editor_location?: EditorLocation | null;
   drafts: { revision: number; details: Draft }[];
   birth_records: { id: string; wall_time: string | null; zone_name: string; earliest_utc: string | null; latest_utc: string | null }[];
   charts: Chart[];

@@ -89,7 +89,15 @@ class BirthFlowTests(DatabaseCase):
         class HostedCapture(Capture):
             count_method = 'conservative_utf8_byte_estimate'
 
-        hosted = HostedCapture(lambda text, **_: range((len(text) + 1) // 2), 4096)
+        small = HostedCapture(lambda text, **_: range((len(text) + 1) // 2), 4096)
+        refused = []
+        self.assertEqual(run_turn(self.store, self.alice, 'selected-chart-thread', 'hosted-small',
+                                  'Give an overview of this selected natal chart', small,
+                                  refused.append, parent_id='@root', selected_people=selected,
+                                  model_provider='chatgpt_plan', model_slug='synthetic'), 'error')
+        self.assertEqual(refused[-1]['payload']['code'], 'hosted_text_capacity_exceeded')
+        self.assertEqual(small.prompts, [])
+        hosted = HostedCapture(lambda text, **_: range((len(text) + 1) // 2), 500000)
         hosted_events = []
         self.assertEqual(run_turn(self.store, self.alice, 'selected-chart-thread', 'hosted-chart',
                                   'Give an overview of this selected natal chart', hosted,
@@ -98,7 +106,7 @@ class BirthFlowTests(DatabaseCase):
         context = next(event['payload'] for event in hosted_events if event['kind'] == 'context')
         self.assertEqual({key: context[key] for key in identity('hosted')}, identity('hosted'))
         self.assertLessEqual(context['prompt_tokens'] + context['instruction_tokens']
-                             + context['reply_reserve'], 4096)
+                             + context['reply_reserve'], 500000)
         self.assertGreater(context['instruction_tokens'], 0)
         self.assertNotIn(HOSTED, hosted.prompts[0])
         self.assertIn('positions=', hosted.prompts[0])
@@ -147,6 +155,62 @@ class BirthFlowTests(DatabaseCase):
         self.assertEqual(chart['result']['birth']['latitude'], 55.6)
         self.assertEqual(chart['result']['birth']['provenance'],
                          'provisional:user_supplied_coordinates_place_2618425')
+
+    def test_editor_location_is_linked_to_owned_draft_and_preserves_effective_manual_inputs(self):
+        person_id = self.person['id']
+        created = self.flow.generate(self.alice, person_id, self.details())
+        context = self.flow.editor_location(self.alice, person_id, created['draft_revision'],
+                                            'Copenhagen, Capital Region, Denmark')
+        self.assertEqual(context['kind'], 'catalogue')
+        self.assertEqual(context['place']['id'], '2618425')
+        self.assertNotIn('latitude_override', context)
+        self.assertEqual((context['zone'], context['provisional']), ('Europe/Copenhagen', True))
+        with self.assertRaises(KeyError):
+            self.flow.editor_location(self.bob, person_id, created['draft_revision'],
+                                      'Copenhagen, Capital Region, Denmark')
+
+        zone_only = self.flow.generate(self.alice, person_id, self.details(
+            request_id='zone-only-city', zone_override='Europe/Stockholm'))
+        zone_context = self.flow.editor_location(self.alice, person_id, zone_only['draft_revision'],
+                                                 'Copenhagen, Capital Region, Denmark')
+        self.assertEqual(zone_context['zone_override'], 'Europe/Stockholm')
+        self.assertNotIn('latitude_override', zone_context)
+        with_overrides = self.flow.generate(self.alice, person_id, self.details(
+            request_id='overridden-city', zone_override='Europe/Stockholm',
+            latitude_override=55.6, longitude_override=12.5, provisional=False))
+        context = self.flow.editor_location(self.alice, person_id, with_overrides['draft_revision'],
+                                            'Copenhagen, Capital Region, Denmark')
+        self.assertEqual(context['kind'], 'catalogue')
+        self.assertEqual((context['latitude_override'], context['longitude_override'],
+                          context['zone_override'], context['provisional']),
+                         (55.6, 12.5, 'Europe/Stockholm', False))
+        manual = self.flow.generate(self.alice, person_id, self.details(
+            request_id='manual-only', birthplace='Synthetic manually supplied location',
+            place_id=None, latitude_override=50.1, longitude_override=10.2,
+            zone_override='Europe/Berlin'))
+        context = self.flow.editor_location(self.alice, person_id, manual['draft_revision'],
+                                            'Synthetic manually supplied location')
+        self.assertEqual((context['kind'], context['latitude'], context['longitude'], context['zone']),
+                         ('manual', 50.1, 10.2, 'Europe/Berlin'))
+        self.assertIsNone(self.flow.editor_location(self.alice, person_id, manual['draft_revision'],
+                                                    'A different label'))
+        newer = People(self.store).add_draft(self.alice, person_id, {
+            'birth_date': '2024-03-21', 'birth_time': '03:06', 'time_unknown': False,
+            'birthplace': 'A new ungenerated city'})
+        self.assertIsNone(self.flow.editor_location(self.alice, person_id, newer,
+                                                    'A new ungenerated city'))
+        self.assertEqual(self.flow.editor_location(self.alice, person_id, created['draft_revision'],
+                                                   'Copenhagen, Capital Region, Denmark')['kind'], 'catalogue')
+
+    def test_catalogue_drift_requires_review_without_guessing_another_place(self):
+        from unittest.mock import patch
+        result = self.flow.generate(self.alice, self.person['id'], self.details())
+        with patch('m2.birth_flow.selected', side_effect=ValueError('Unavailable')):
+            context = self.flow.editor_location(self.alice, self.person['id'], result['draft_revision'],
+                                                'Copenhagen, Capital Region, Denmark')
+        self.assertEqual(context['kind'], 'review')
+        self.assertNotIn('place', context)
+        self.assertEqual((context['latitude'], context['zone']), (55.67594, 'Europe/Copenhagen'))
 
     def test_generated_versions_obey_existing_person_deletion_fence(self):
         result = self.flow.generate(self.alice, self.person['id'], self.details())

@@ -60,8 +60,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await page.getByRole('button', { name: 'Edit current chart' }).click();
   await form.getByText('Advanced · chart settings and location').click();
   await form.getByLabel('Black Moon Lilith (lunar apogee)').selectOption('osculating', { timeout: 8000 });
-  await form.getByLabel('Birthplace search').fill('Copenhagen');
-  await form.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).first().click();
+  await expect(form.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
   await form.getByRole('button', { name: 'Generate chart' }).click();
   await expect(form.locator('.birth-status')).toContainText('Current natal saved');
   await expect(charts.getByRole('row', { name: /Black Moon Lilith \(true \/ osculating lunar apogee\)/ }).first()).toBeVisible();

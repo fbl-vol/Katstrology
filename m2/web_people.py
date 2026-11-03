@@ -34,8 +34,13 @@ async def person(request):
         await request.app.state.runtime.call(lambda store, _: store.ledger.delete_person(
             store, session, request.path_params['person_id']))
         return json_response({'status': 'deleted'})
-    result = await request.app.state.runtime.call(
-        lambda store, _: People(store).get(session, request.path_params['person_id']))
+    def read_person(store, _):
+        result = People(store).get(session, request.path_params['person_id'])
+        draft = result['drafts'][0] if result['drafts'] else None
+        result['editor_location'] = BirthFlow(store).editor_location(
+            session, result['id'], draft['revision'], draft['details']['birthplace']) if draft else None
+        return result
+    result = await request.app.state.runtime.call(read_person)
     return json_response(result)
 
 

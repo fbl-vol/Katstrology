@@ -213,6 +213,35 @@ class BrowserAuthTests(unittest.TestCase):
                                                                    'X-Kat-CSRF': csrf}).status_code, 200)
             self.assertEqual(restarted.get('/api/session').status_code, 401)
 
+    def test_person_http_editor_context_is_owned_and_qualified_by_latest_draft(self):
+        with self.client() as alice:
+            bob = TestClient(alice.app, base_url=ORIGIN)
+            self.addCleanup(bob.close)
+            a = alice.post('/api/login', headers={'Origin': ORIGIN}, json={
+                'username': 'alice', 'password': 'synthetic-password-alice'}).json()
+            bob.post('/api/login', headers={'Origin': ORIGIN}, json={
+                'username': 'bob', 'password': 'synthetic-password-bob'})
+            headers = {'Origin': ORIGIN, 'X-Kat-CSRF': a['csrf']}
+            created = alice.post('/api/people', headers=headers, json={'name': 'Owned editor'}).json()
+            url = '/api/people/' + created['id']
+            self.assertIsNone(alice.get(url).json()['editor_location'])
+            self.assertEqual(bob.get(url).status_code, 404)
+            generated = alice.post(url + '/generate', headers=headers, json={
+                'request_id': 'http-editor', 'birth_date': '2024-03-20', 'birth_time': '03:06',
+                'time_unknown': False, 'birthplace': 'Copenhagen, Capital Region, Denmark',
+                'place_id': '2618425', 'provisional': True, 'zone_override': None,
+                'latitude_override': None, 'longitude_override': None, 'fold': None,
+                'settings': None})
+            self.assertEqual(generated.status_code, 201)
+            context = alice.get(url).json()['editor_location']
+            self.assertEqual((context['kind'], context['place']['id'], context['zone']),
+                             ('catalogue', '2618425', 'Europe/Copenhagen'))
+            self.assertEqual(bob.get(url).status_code, 404)
+            self.assertEqual(alice.post(url + '/drafts', headers=headers, json={
+                'birth_date': '2024-03-21', 'birth_time': '03:06', 'time_unknown': False,
+                'birthplace': 'A newer unmatched draft'}).status_code, 201)
+            self.assertIsNone(alice.get(url).json()['editor_location'])
+
     def test_person_drafts_solar_versions_and_owner_scoped_files(self):
         with self.client() as alice:
             bob = TestClient(alice.app, base_url=ORIGIN)

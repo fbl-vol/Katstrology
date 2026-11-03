@@ -82,19 +82,31 @@ for (const viewport of [
     await page.locator('.chart-history > summary').click();
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"] > summary`)).toContainText('Current natal');
     await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+    let placeSearches = 0;
+    let modelSends = 0;
+    page.on('request', request => {
+      if (request.url().includes('/api/places/search')) placeSearches++;
+      if (/\/api\/conversations\/[^/]+\/turns$/.test(request.url()) && request.method() === 'POST') modelSends++;
+    });
     await page.getByRole('button', { name: 'Edit current chart' }).click();
     const nextForm = page.getByRole('region', { name: 'Generate a chart' });
-    await nextForm.getByLabel('Birth date').fill('2024-03-21');
-    await nextForm.getByLabel('Birth time').fill('03:06');
-    await nextForm.getByLabel('Birthplace search').fill('Copenhagen');
-    await nextForm.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
+    await expect(nextForm.getByLabel('Birthplace search')).toHaveValue('Copenhagen, Capital Region, Denmark');
+    await expect(nextForm.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
+    await nextForm.getByLabel('Birth time').fill('03:07');
     const nextSaved = page.waitForResponse(response => response.request().method() === 'POST' &&
       /\/api\/people\/[^/]+\/generate$/.test(new URL(response.url()).pathname));
     await nextForm.getByRole('button', { name: 'Generate chart' }).click();
     const nextResponse = await nextSaved;
     expect(nextResponse.status()).toBe(201);
-    const nextId = (await nextResponse.json()).chart.id as string;
+    const nextResult = await nextResponse.json();
+    const nextId = nextResult.chart.id as string;
     expect(nextId).not.toBe(chartId);
+    expect(nextResult.place_id).toBe('2618425');
+    expect(nextResult.chart.result.birth.zone).toBe(result.chart.result.birth.zone);
+    expect(nextResult.chart.result.birth.latitude).toBe(result.chart.result.birth.latitude);
+    expect(nextResult.chart.result.birth.longitude).toBe(result.chart.result.birth.longitude);
+    expect(placeSearches).toBe(0);
+    expect(modelSends).toBe(0);
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"] > summary`)).toContainText('Historical chart');
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${nextId}"] > summary`)).toContainText('Current natal');
     await page.getByRole('button', { name: 'Discuss current natal' }).click();
@@ -142,8 +154,7 @@ for (const viewport of [
     await update.getByRole('button', { name: 'Update the current natal' }).click();
     await update.getByLabel('Birth date').fill('2024-03-21');
     await update.getByLabel('Time unknown').check();
-    await update.getByLabel('Birthplace search').fill('Copenhagen');
-    await update.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
+    await expect(update.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
     await update.getByRole('button', { name: 'Generate chart' }).click();
     await expect(page.locator('.profile-active-chart')).toContainText('Unknown or uncertain birth time');
     await expect(page.locator('.profile-active-chart').getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
