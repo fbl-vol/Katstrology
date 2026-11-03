@@ -1,4 +1,5 @@
 {
+  "contract": 4,
   "target": {
     "ssh_alias": "example-restricted-kat-key",
     "project": "kat-example",
@@ -6,6 +7,8 @@
     "password_file": "/srv/kat-example/secrets/db-password",
     "ephemeris_dir": "/srv/kat-example/ephe",
     "snapshot_dir": "/srv/kat-example/snapshots",
+    "release_env_file": "/srv/kat-example/.env",
+    "source_offer_file": "/srv/kat-example/kat-public-source.tar",
     "origin": "https://example.invalid",
     "loopback_port": 28765,
     "db_image": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -15,6 +18,7 @@
   "approval_namespace": "kat-release-approval-v1",
   "allowed_signers_file": "/etc/kat-release/allowed-signers",
   "allowed_signers_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-  "schema_version": 22,
-  "max_archive_bytes": 2147483648
+  "schema_version": 23,
+  "max_archive_bytes": 2147483648,
+  "max_source_bytes": 134217728
 }

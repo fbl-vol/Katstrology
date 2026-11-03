@@ -8,6 +8,7 @@ versioned release_remote module after validating a root-owned release policy.
 
 from hashlib import sha256
 from importlib.util import module_from_spec, spec_from_file_location
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -28,9 +29,11 @@ HEX = re.compile(r'[0-9a-f]{64}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
 ATTEMPT = re.compile(r'[0-9a-f]{32}\Z')
 APPROVAL_NAMESPACE = 'kat-release-approval-v1'
-ACTIONS = {'stage', 'upload', 'compose', 'preflight', 'quiesce_and_snapshot',
-           'activate_app_only', 'verify_serving_path'}
-PLAN_FIELDS = {'contract', 'attempt', 'archive_bytes', 'target', 'artifact', 'schema_version', 'compose_sha256',
+ACTIONS = {'stage', 'upload', 'upload_source', 'compose', 'preflight', 'quiesce_and_snapshot',
+           'promote_release', 'activate_app_only', 'verify_serving_path', 'complete', 'quarantine'}
+STEPS = ['stage', 'upload', 'upload_source', 'compose', 'preflight', 'quiesce_and_snapshot',
+         'promote_release', 'activate_app_only', 'verify_serving_path', 'complete']
+PLAN_FIELDS = {'contract', 'attempt', 'archive_bytes', 'source_bytes', 'target', 'artifact', 'schema_version', 'compose_sha256',
                'runner_sha256', 'remote_runner_sha256', 'access_helper_sha256',
                'steps', 'on_ambiguity', 'plan_sha256'}
 ARTIFACT_FIELDS = {'commit', 'tree', 'image_id', 'config_digest',
@@ -66,23 +69,26 @@ def protected(path):
 
 def read_policy(path=POLICY):
     policy = json.loads(protected(path).read_text())
-    if set(policy) != {'target', 'schema_version', 'compose_file', 'max_archive_bytes',
+    if set(policy) != {'contract', 'target', 'schema_version', 'compose_file', 'max_archive_bytes', 'max_source_bytes',
                        'approval_principal', 'approval_namespace', 'allowed_signers_file',
                        'allowed_signers_sha256'}:
         raise ValueError('Policy fields differ')
     target = policy['target']
     if set(target) != {'ssh_alias', 'project', 'stage_root', 'password_file', 'ephemeris_dir',
-                       'snapshot_dir', 'origin', 'loopback_port', 'db_image'}:
+                       'snapshot_dir', 'origin', 'loopback_port', 'db_image', 'release_env_file', 'source_offer_file'}:
         raise ValueError('Protected target fields differ')
-    for key in ('stage_root', 'password_file', 'ephemeris_dir', 'snapshot_dir'):
+    for key in ('stage_root', 'password_file', 'ephemeris_dir', 'snapshot_dir', 'release_env_file', 'source_offer_file'):
         path_value = target[key]
         if (not isinstance(path_value, str) or not path_value.startswith('/srv/')
                 or '..' in Path(path_value).parts or os.path.realpath(path_value) != path_value):
             raise ValueError('Protected target path invalid')
-    if (not IMAGE.fullmatch(target['db_image'])
-            or not isinstance(policy['schema_version'], int) or policy['schema_version'] < 1
+    if (policy['contract'] != 4 or not IMAGE.fullmatch(target['db_image'])
+            or not isinstance(policy['schema_version'], int) or isinstance(policy['schema_version'], bool)
+            or policy['schema_version'] < 1
             or not isinstance(policy['max_archive_bytes'], int) or isinstance(policy['max_archive_bytes'], bool)
             or not 0 < policy['max_archive_bytes'] <= 2 * 1024**3
+            or not isinstance(policy['max_source_bytes'], int) or isinstance(policy['max_source_bytes'], bool)
+            or not 0 < policy['max_source_bytes'] <= 128 * 1024**2
             or policy['approval_namespace'] != APPROVAL_NAMESPACE
             or not re.fullmatch(r'[a-z][a-z0-9-]{1,63}', policy['approval_principal'])
             or not HEX.fullmatch(policy['allowed_signers_sha256'])):
@@ -101,7 +107,12 @@ def read_policy(path=POLICY):
         if (stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022
                 or (parent == stage_root and not stat.S_ISDIR(info.st_mode))):
             raise ValueError('Stage root must be root protected')
+    destinations = [protected(target[key]) for key in ('release_env_file', 'source_offer_file')]
+    if len(set(destinations + [Path(target['password_file']), Path(policy['compose_file']), signers, Path(path)])) != 6:
+        raise ValueError('Release destinations overlap')
     snapshot = Path(target['snapshot_dir'])
+    if any(stage_root in path.parents or snapshot in path.parents for path in destinations):
+        raise ValueError('Release destination overlaps staging or snapshots')
     if stage_root == snapshot or stage_root in snapshot.parents or snapshot in stage_root.parents:
         raise ValueError('Staging and snapshot must be independent')
     return policy
@@ -113,7 +124,7 @@ def validate(request, policy):
             {'action', 'plan', 'approval', 'signature', 'bytes'}):
         raise ValueError('Unsupported request fields')
     action, plan = request['action'], request['plan']
-    if action not in ACTIONS or ('bytes' in request) != (action == 'upload'):
+    if action not in ACTIONS or ('bytes' in request) != (action in ('upload', 'upload_source')):
         raise ValueError('Unsupported release action')
     if not isinstance(plan, dict) or set(plan) != PLAN_FIELDS or set(plan['artifact']) != ARTIFACT_FIELDS:
         raise ValueError('Plan fields differ')
@@ -129,9 +140,12 @@ def validate(request, policy):
                     'target_sha256': sha256(json.dumps(expected_target, sort_keys=True).encode()).hexdigest()}
     content = {key: value for key, value in plan.items() if key != 'plan_sha256'}
     digest = sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    if (plan['contract'] != 3 or not ATTEMPT.fullmatch(plan['attempt'])
+    if (policy['contract'] != 4 or plan['contract'] != 4 or plan['steps'] != STEPS
+            or not ATTEMPT.fullmatch(plan['attempt'])
             or not isinstance(plan['archive_bytes'], int) or isinstance(plan['archive_bytes'], bool)
             or not 0 < plan['archive_bytes'] <= policy['max_archive_bytes']
+            or not isinstance(plan['source_bytes'], int) or isinstance(plan['source_bytes'], bool)
+            or not 0 < plan['source_bytes'] <= policy['max_source_bytes']
             or plan['target'] != target_scope
             or plan['schema_version'] != policy['schema_version']
             or digest != plan['plan_sha256']
@@ -139,8 +153,8 @@ def validate(request, policy):
             or sha256(protected(phase_module().__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
             or sha256(protected(policy['compose_file']).read_bytes()).hexdigest() != plan['compose_sha256']):
         raise ValueError('Protected approval, target or template differs')
-    if action == 'upload' and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
-            or request['bytes'] != plan['archive_bytes']):
+    if action in ('upload', 'upload_source') and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
+            or request['bytes'] != plan['archive_bytes' if action == 'upload' else 'source_bytes']):
         raise ValueError('Archive length exceeds policy')
     approval = request['approval']
     if (not isinstance(approval, dict) or approval != {'approved_action': 'release',
@@ -170,12 +184,14 @@ def verify_signature(approval, signature, policy):
         raise ValueError('Release approval signature differs')
 
 
-def upload(stage, plan, size, input_stream):
+def upload(stage, plan, size, input_stream, *, source=False):
+    filename = 'source.tar' if source else 'image.tar'
+    expected, next_phase = ('image_uploaded', 'uploaded') if source else ('staged', 'image_uploaded')
     marker = json.loads((stage / 'phase.json').read_text())
-    if marker != {'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}:
+    if marker != {'plan_sha256': plan['plan_sha256'], 'phase': expected}:
         raise ValueError('Archive upload requires an exclusive fresh stage')
     # Exclusive O_NOFOLLOW prevents a staged symlink or ambiguous replay.
-    fd = os.open(stage / 'image.tar', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd = os.open(stage / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as output:
         remaining = size
         while remaining:
@@ -188,25 +204,47 @@ def upload(stage, plan, size, input_stream):
             raise ValueError('Trailing archive bytes refused')
         output.flush()
         os.fsync(output.fileno())
-    with (stage / 'image.tar').open('rb') as archive:
+    with (stage / filename).open('rb') as archive:
         from hashlib import file_digest
-        if file_digest(archive, 'sha256').hexdigest() != plan['artifact']['image_archive_sha256']:
+        if file_digest(archive, 'sha256').hexdigest() != plan['artifact']['source_offer_sha256' if source else 'image_archive_sha256']:
             raise ValueError('Archive differs from approved hash')
     temporary = stage / 'phase.next'
     with temporary.open('x') as marker:
-        json.dump({'plan_sha256': plan['plan_sha256'], 'phase': 'uploaded'}, marker)
+        json.dump({'plan_sha256': plan['plan_sha256'], 'phase': next_phase}, marker)
         marker.write('\n')
         marker.flush()
         os.fsync(marker.fileno())
     os.replace(temporary, stage / 'phase.json')
+    phase_module().sync_directory(stage)
 
 
 def dispatch(request, policy, input_stream):
+    # Serialize phases and pin one active attempt across separate SSH processes.
+    # Interrupted attempts retain ownership: no second deployment can race recovery.
     action, plan = validate(request, policy)
+    root = Path(policy['target']['stage_root'])
+    fd = os.open(root / 'release.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return dispatch_locked(request, policy, input_stream, action, plan)
+
+
+def dispatch_locked(request, policy, input_stream, action, plan):
     target = policy['target'] | {'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])}
     stage = Path(target['stage'])
-    if action == 'upload':
-        upload(stage, plan, request['bytes'], input_stream)
+    owner = Path(target['stage_root']) / 'active-attempt'
+    if action == 'stage':
+        if stage.exists() or stage.is_symlink():
+            raise ValueError('Stage exists; no retry')
+        with owner.open('x') as output:
+            output.write(plan['attempt'] + '\n')
+            output.flush()
+            os.fsync(output.fileno())
+        phase_module().sync_directory(owner.parent)
+    elif owner.read_text().strip() != plan['attempt']:
+        raise ValueError('Another release owns this target')
+    if action in ('upload', 'upload_source'):
+        upload(stage, plan, request['bytes'], input_stream, source=action == 'upload_source')
         return {'phase': action, 'status': 'ok'}
     if input_stream.read(1):
         raise ValueError('Unexpected request body')
@@ -221,6 +259,7 @@ def dispatch(request, policy, input_stream):
 def main(input_stream=None, original_command=None, policy_path=POLICY):
     if original_command != 'kat-release-v1':
         raise ValueError('Unsupported SSH command (no shell, SCP, SFTP or PTY)')
+    os.umask(0o077)
     input_stream = input_stream or sys.stdin.buffer
     header = input_stream.readline(REQUEST_LIMIT + 1)
     if not header.endswith(b'\n') or len(header) > REQUEST_LIMIT:

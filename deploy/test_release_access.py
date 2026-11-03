@@ -32,10 +32,10 @@ def fixture(directory):
     receipt = {'commit': 'a' * 40, 'tree': 'b' * 40,
                'image_id': 'sha256:' + 'c' * 64, 'config_digest': 'sha256:' + 'd' * 64,
                'image_archive_sha256': sha256(b'archive').hexdigest(),
-               'source_offer_sha256': 'f' * 64}
-    plan = pipeline.plan(receipt, target, 22, compose.read_bytes(), '1' * 32, 7)
-    policy = {'target': target, 'compose_file': str(compose), 'schema_version': 22,
-              'max_archive_bytes': 1024, 'approval_principal': 'kat-approver',
+               'source_offer_sha256': sha256(b'source!').hexdigest()}
+    plan = pipeline.plan(receipt, target, 22, compose.read_bytes(), '1' * 32, 7, 7)
+    policy = {'contract': 4, 'target': target, 'compose_file': str(compose), 'schema_version': 22,
+              'max_archive_bytes': 1024, 'max_source_bytes': 1024, 'approval_principal': 'kat-approver',
               'approval_namespace': access.APPROVAL_NAMESPACE,
               'allowed_signers_file': str(allowed),
               'allowed_signers_sha256': pipeline.digest(allowed)}
@@ -127,15 +127,20 @@ class AppScopedAccessTests(unittest.TestCase):
             plan, policy = fixture(directory)
             stage = Path(policy['target']['stage_root']) / plan['attempt']
             stage.mkdir()
+            (Path(policy['target']['stage_root']) / 'active-attempt').write_text(plan['attempt'] + '\n')
             (stage / 'phase.json').write_text(json.dumps({'plan_sha256': plan['plan_sha256'], 'phase': 'staged'}))
             with patch.object(access, 'protected', side_effect=lambda path: Path(path)), \
                  patch.object(release_remote, 'main') as phase:
                 request = signed_request(plan, directory, 'upload', bytes=7)
                 self.assertEqual(access.dispatch(request, policy, BytesIO(b'archive'))['status'], 'ok')
                 self.assertEqual((stage / 'image.tar').read_bytes(), b'archive')
-                self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'uploaded')
+                self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'image_uploaded')
                 with self.assertRaisesRegex(ValueError, 'exclusive fresh stage'):
                     access.dispatch(request, policy, BytesIO(b'archive'))
+                source_request = signed_request(plan, directory, 'upload_source', bytes=7)
+                self.assertEqual(access.dispatch(source_request, policy, BytesIO(b'source!'))['status'], 'ok')
+                self.assertEqual((stage / 'source.tar').read_bytes(), b'source!')
+                self.assertEqual(json.loads((stage / 'phase.json').read_text())['phase'], 'uploaded')
                 phase.assert_not_called()
             for body in (b'arch', b'archivexx'):
                 stage2 = Path(directory) / ('failed-' + str(len(body)))
@@ -165,9 +170,11 @@ class AppScopedAccessTests(unittest.TestCase):
                 return type('Result', (), {'stdout': b'{"status":"ok"}', 'returncode': 0})()
             with patch.object(pipeline.subprocess, 'run', side_effect=run) as launch:
                 request = {'action': 'upload', 'plan': {'plan_sha256': 'a' * 64}, 'bytes': 7}
-                self.assertEqual(pipeline.remote('synthetic-alias', request, upload=archive), {'status': 'ok'})
+                self.assertEqual(pipeline.remote('synthetic-alias', request, upload=archive,
+                                                 ssh_config='/synthetic/client-profile'), {'status': 'ok'})
             command = launch.call_args.args[0]
             self.assertEqual(command[-2:], ['synthetic-alias', 'kat-release-v1'])
+            self.assertEqual(command[1:3], ['-F', '/synthetic/client-profile'])
             self.assertIn('-T', command)
             self.assertNotIn('python3', command)
             self.assertNotIn('scp', command)
@@ -223,7 +230,7 @@ class AppScopedAccessTests(unittest.TestCase):
                 )
                 other_target = policy['target'] | {'password_file': '/srv/unrelated-secret'}
                 other_plan = pipeline.plan(plan['artifact'], other_target, 22,
-                    Path(policy['compose_file']).read_bytes(), '3' * 32, 7)
+                    Path(policy['compose_file']).read_bytes(), '3' * 32, 7, 7)
                 invalid += (signed_request(other_plan, directory, 'stage'),)
                 for request in invalid:
                     with self.subTest(request=list(request), signature=request.get('signature', '')[:35]):
@@ -236,11 +243,15 @@ class AppScopedAccessTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'no retry'):
                     access.dispatch(valid, policy, BytesIO())
                 later = pipeline.plan(plan['artifact'], policy['target'], 22,
-                                      Path(policy['compose_file']).read_bytes(), '2' * 32, 7)
+                                      Path(policy['compose_file']).read_bytes(), '2' * 32, 7, 7)
                 stale = valid | {'plan': later}
                 with self.assertRaises(ValueError):
                     access.dispatch(stale, policy, BytesIO())
                 self.assertFalse((stage_root / later['attempt']).exists())
+                with self.assertRaises(FileExistsError):
+                    access.dispatch(signed_request(later, directory, 'stage'), policy, BytesIO())
+                # Simulate explicitly reconciled retirement, never an automatic retry.
+                (stage_root / 'active-attempt').unlink()
                 self.assertEqual(access.dispatch(signed_request(later, directory, 'stage'),
                                                  policy, BytesIO())['status'], 'ok')
                 self.assertTrue((stage_root / later['attempt']).is_dir())

@@ -69,10 +69,11 @@ The default without `--execute` is a plan. This is not host activation.
 
 ## Existing-instance app-only release pipeline (source tooling; not authorization)
 
-**The earlier b05e033 production release is complete**, but used the approved
-existing interactive session, not this runner. This replacement SSH transport is
-**uninstalled source only**. Never infer that a usable restricted key, helper or
-server policy exists from a local test or publication of this source.
+This is **protocol 4 source tooling**, not evidence of installation or a successful
+real signed release. A protocol-3 helper/policy cannot run it. Adoption requires a
+separately reviewed protected-helper/policy transition; never replay historical
+schema-22 controls on a schema-23 installation. Existing app and signer credentials
+must not be regenerated merely to adopt this version.
 
 `release_pipeline.py` is for a **previously installed and running instance of this
 exact Compose project**, not initial installation, host provisioning, Caddy route
@@ -93,26 +94,35 @@ or the source template RepoDigest), `snapshot_dir` (pre-existing independent
 `/srv/...` directory owned by app UID 10001, distinct from staging and all serving
 volumes), `origin`
 (exact HTTPS deployment origin) and `loopback_port` (the existing loopback host
-port). The server must already have the correct image-platform runtime and Compose.
-For this new runner, a **separately approved** root-owned forced-command helper,
-protected Compose template/policy, and restricted SSH key must be installed as
-described below; there is no fallback to a general root key, Docker group or
+port). Also supply `release_env_file` (the existing root-protected canonical
+Compose env file with exactly one unquoted `KAT_APP_IMAGE=sha256:...` assignment) and
+`source_offer_file` (the existing root-protected source-download archive). Both are
+fixed `/srv/...` destinations in protected policy, distinct from secrets, policy,
+template, staging and snapshots; clients cannot choose other write destinations.
+The server must already have the correct image-platform runtime and Compose.
+For this runner, the root-owned forced-command helper and protected policy/template
+must be qualified for protocol 4 under their **separately approved** adoption scope.
+Reuse existing restricted SSH access when already installed; there is no fallback
+to a general root key, Docker group or
 interactive shell. This source does not install keys or prompt for passwords. Do not put secret values
 in the target file. The target's *paths* stay private and are represented by a
 hash in the plan and final sanitized receipt.
 
 ```
-python3 deploy/release_pipeline.py --artifact-receipt <ignored-package-receipt> --target <private-target.json> --attempt <fresh-32-lowercase-hex> > <private-plan.json>
+python3 deploy/release_pipeline.py --artifact-receipt <verified-package-receipt> --target <private-target.json> --attempt <fresh-32-lowercase-hex> --prepare-dir <new-private-preparation-directory>
 ```
 
 Use a fresh cryptographically random 16-byte attempt ID for each plan (for example
 `python3 -c 'import secrets; print(secrets.token_hex(16))'`); retain it for
 execution. The protected server derives one absent stage as
 `<stage_root>/<attempt>`; neither client nor signature can select an arbitrary path.
-Check the plan's immutable identities, target, schema, bounds and attempt, then
-obtain a fresh, separately scoped human approval for **that exact release**.
-Create a private approval file with precisely this canonical, newline-terminated
-UTF-8 content (keys in this order, no spaces):
+Preparation creates a mode-0700 directory and mode-0600 `plan.json`/`approval.json`,
+without SSH, Docker, signing or generated server programs. It validates both local
+artifacts against the package/commit identities; the caller supplies an already
+qualified immutable package. Preparation is not smoke/restore qualification.
+Check the plan's immutable identities, target, schema, both sizes, bounds and
+attempt, using the applicable existing approval. The prepared approval contains
+precisely this canonical, newline-terminated UTF-8 content:
 `{"approved_action":"release","attempt":"<from-plan>","plan_sha256":"<from-plan>"}`.
 Only the separate user-custodied approval key signs that file with native OpenSSH:
 `ssh-keygen -Y sign -n kat-release-approval-v1 -f <approval-private-key> <private-approval.json>`.
@@ -123,17 +133,24 @@ key or installing its public verifier needs separate exact-scope permission.
 Execution is a separate deliberate invocation:
 
 ```
-python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <same-target.json> --attempt <same-attempt> --execute --approval <private-approval.json> --signature <private-approval.json.sig> --result <new-private-receipt.json>
+python3 deploy/release_pipeline.py --artifact-receipt <same-receipt> --target <same-target.json> --attempt <same-attempt> --execute --approval <prepared-directory/approval.json> --signature <prepared-directory/approval.json.sig> --ssh-config <existing-dedicated-OpenSSH-profile> --result <new-private-receipt.json>
 ```
 
 The runner creates an exclusive durable attempt guard **before SSH**; an existing
-receipt refuses replay. The server verifies the exact signed plan/attempt through
+receipt refuses replay. The explicit SSH profile selects existing constrained access;
+it does not install a key or enable agent/general-root fallback. Existing dedicated
+wrapper-based OpenSSH configuration remains supported when `--ssh-config` is absent.
+The server verifies the exact signed plan/attempt through
 its pinned OpenSSH allowed-signers identity and namespace **before every phase**;
 a stale, unsigned, wrongly signed or modified plan cannot stage or upload. Each
 phase advances an exclusive attempt marker; a reused attempt cannot restage,
 reupload, recompose or reactivate. Its only SSH command is `kat-release-v1` with `-T`,
 BatchMode and strict host-key checking. Stdin is one bounded JSON request line,
-with the archive bytes framed only for `upload`. The client prepares an unlinked,
+with image bytes framed only for `upload` and source bytes only for `upload_source`.
+Both exact hashes and byte counts are signed; each upload refuses truncation,
+trailing bytes, hash changes, symlinks and replay. Source tar accepts only bounded
+regular files/directories with unique safe names, never extraction or special files.
+The client prepares an unlinked,
 local owned input file before SSH; `subprocess.run` bounds the **whole** child
 operation even if the peer stops reading its input. No SCP, SFTP, supplied Python,
 remote command string, client-selected path, environment or Compose is sent.
@@ -151,41 +168,57 @@ overrides are rejected before any serving mutation; the runner never silently
 switches to fresh volumes or a different port. It invokes the existing quiesced
 `deployment_backup` API against the existing DB/attachment state and independent
 deletion journal/tip, verifying snapshot schema before `compose up --no-deps app`.
+Before stop it also verifies the actual DB schema matches the signed package,
+canonical selected image equals the running image, source tar safety, and retains
+original env/source bytes and hashes. This is strictly a **same-schema app release**,
+not a migration or model/CPU qualification workflow. After quiesced backup, retain
+an independent journal/tip copy outside the snapshot and ongoing serving volumes.
+Promote the matching source archive and canonical image selection while the app is
+stopped, preserving every unrelated env byte. Source/config replacement and Docker
+activation are distinct durable phases, **not an atomic transaction**. Drift or
+partial promotion halts with originals/snapshot retained; it never restores old data.
 It hashes every image asset against both loopback and the **public HTTPS origin**,
 including the manifest and icons; it checks anonymous session 401, edge wrong-Host
 **421** (distinct from app loopback wrong-Host 403), Origin/fetch-site 403 and
 exact HTTP→HTTPS redirect without disabling TLS certificate checks.
-A `verified` receipt requires **all** checks. A failed public check leaves the
-receipt at `app_activated_local_verified_public_incomplete`: inspect the edge,
-do not claim success or replay the app activation. No DB rollback, data copy,
-credential import, edge route change, source publication or provider request is
-performed. HTTP checks do not replace human usability or Android device install.
+A `verified` receipt requires **all** checks plus unchanged archive aggregates,
+attachment/host/deletion hashes, DB-container identity and exact promoted files.
+Aggregate/hash evidence stays server-local; credentials and private rows never
+enter controller output. No credential re-enrollment or provider request is made.
+The source archive is promoted on-host; Git publication and any public download
+route remain separately owned (this tool does not create/change edge routes).
+A failed public check triggers a signed `quarantine`, not activation retry. It
+stops only the exact owned app after image/project/mount/runtime validation; a
+mismatched or unreachable owner yields `unknown; containment unconfirmed`, never
+an invented stopped/success status. No DB rollback, credential import, edge route
+change, Git publication or provider request is performed. HTTP checks do not replace human usability or Android device install.
 The key, protected helper/policy/template, app-owned snapshot path and a reachable
 public TLS origin remain actual execution prerequisites, not established by local
 tests. The authorized Kat app image executes as Kat UID 10001 and necessarily can
 access Kat data and Kat credentials; **that is not authority over unrelated host
 services, a general root shell, Docker commands or credential browsing**.
 
-### Restricted server-side access contract (source only; no installation)
+### Restricted server-side access contract (protocol-4 source; adoption required)
 
 `release_access.py` is a **root-owned installed** forced-command entry point; it
 loads `/etc/kat-release/policy.json` (see generic
 `release_access_policy.example.json`) and a root-owned Compose template, checking
 all ancestor ownership/modes. The protected target fixes the exact Kat project, root-owned stage root,
 snapshot destination, secret/ephemeris references, immutable installed DB image,
-origin and loopback port. The policy fixes the schema and maximum image archive
-size, plus one root-owned pinned OpenSSH `allowed-signers` entry, exact approval
+origin and loopback port. The policy explicitly fixes contract 4, the existing schema, maximum image archive
+size (at most 2 GiB) and source archive size (at most 128 MiB), plus one root-owned pinned OpenSSH `allowed-signers` entry, exact approval
 principal and `kat-release-approval-v1` namespace. The stage is derived from the
 signed fresh 32-hex attempt, not edited in policy for each release. Each approval
 signature authenticates the canonical action `release`, attempt ID and exact plan
 hash, which binds commit/tree, OCI image/config, archive/source digests and exact
-archive byte count (also limited by the stable protected maximum), schema,
+image AND source byte counts (also limited by the stable protected maximum), schema,
 target scope, protected helper/template hashes and phase list. The server recomputes
 that hash and independently verifies the signature before any effect. Its target fields must match the
 local target file byte-for-byte in the plan hash; the SSH alias is merely a local
 connection name, never a server command. The protected template SHA and the installed helper/phase-code SHA must equal
 the approved plan's pinned source bytes, or the forced command refuses before
-loading/stopping. Protocol contract 3 deliberately cannot replay contract-1/2 plans.
+loading/stopping. Protocol contract 4 deliberately rejects contract-1/2/3 plans and old policy shape;
+no unsigned downgrade or old-plan translation exists.
 Policy, verifier key and code must be root-owned and not writable through group,
 others or any symlink ancestor. Only an independently approved signed plan can
 advance a release; routine new Kat versions and attempts need no privileged policy
@@ -193,7 +226,10 @@ edit while their fixed Kat resource scope, installed helper/template bytes and
 schema remain compatible. A helper/template or target-scope change is **not** a
 routine release: it needs separate protected installation review. The stage root
 must already exist root-owned; the attempt stage is created exclusively and upload
-refuses replay/symlink/truncated/extra bytes. Signature verification is native
+refuses replay/symlink/truncated/extra bytes. A native file lock serializes each
+request; a durable `active-attempt` fence prevents different signed attempts racing
+between SSH processes. Only successfully verified `complete` retires that fence;
+a halt retains it for explicit recovery/reconciliation, not automatic retry. Signature verification is native
 `ssh-keygen -Y verify`, not client assertion, custom crypto or an SSH-agent
 side channel. A signed approval lets its holder deploy approved Kat code with
 access to Kat data and Kat credentials, never unrelated host services.
@@ -238,6 +274,38 @@ rollback.** If previous app/schema compatibility is unknown, hold serving for
 investigation instead of guessing. Snapshot
 retention/off-host backup, true remote restore rehearsal and key management are
 not automated by this runner. Leave the old maintenance route alone.
+
+### Receipts, timing and recovery inspection
+
+Receipts distinguish current phase, failed phase, server-reported containment and
+unconfirmed serving state. Per-phase elapsed seconds cover preparation of framed
+uploads and execution, not human signing wait; no runtime performance guarantee is
+implied. Preparation/build qualification and signing wait are outside execution.
+Image loading has its own bounded preflight budget rather than an outer SSH timeout
+shorter than Docker load. No credential/network retry is hidden inside the runner.
+
+On a halt, preserve `phase.json`, `failure.json`, `files.before.json`,
+`files.promoted.json` when present, `env.before`, `source.before.tar`, previous
+container/image files, snapshot, retained authority and the controller receipt.
+Some files may be absent if their phase never completed. Do not delete the fence,
+reset phase markers, reuse an attempt or re-run activation to make a status green.
+Reconcile actual canonical env/source hashes, exact owned serving identity and
+schema/deletion authority first. Any later compatible app-only recovery must
+explicitly select coherent source/config/image without restoring old DB/journal.
+If containment or owner identity is unknown, inspect before intervening.
+
+The old copied administrative workflow is **not retired by source completion**.
+Retire it only after independent review, separately authorized helper/policy adoption,
+a user-local signature and one successful real end-to-end signed release receipt.
+Do not use the installation-verification approval for an old version as a new
+release approval. No signing private key belongs on the server or runner.
+
+Offline focused checks (no SSH server/provider/user fixture):
+`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest deploy.test_release_pipeline deploy.test_release_access deploy.test_release_promotion`.
+Use the shared local execution lock where required by the checkout. These checks
+include real OpenSSH ephemeral signing and real Compose config, but Docker lifecycle
+and public HTTP are synthetic; they do not prove target installation or full live
+release. The fixed state/authority scripts also run on newly owned synthetic files.
 
 ## Accounts and selected model
 
