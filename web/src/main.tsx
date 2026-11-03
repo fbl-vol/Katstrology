@@ -23,8 +23,6 @@ import { LunationsView } from './lunations-view';
 import { PlanetaryReturnsView, type PlanetaryReturnDraft } from './planetary-returns-view';
 import { useGrowingComposer } from './chat-scroll';
 import { SynastryView } from './synastry-view';
-import './style.css';
-import './themes.css';
 
 type ThreadPage = { conversations: Conversation[]; next_offset: number | null; search_pending: number };
 type Edit = { parent: string; replaces: string; kind: 'edit' | 'regenerate' };

@@ -32,6 +32,17 @@ packaged bytes, dimensions, safe padding and MIME types. This does not add a
 service worker, offline cache, native install control, provider enrollment or
 private browser storage. Installed users may need to sign in to Kat again.
 
+The manifest's static `theme_color` and `background_color` both use the default
+Reading Room paper (`#f5f3ec`), matching the no-JS page meta and install artwork.
+An early blocking bootstrap reads the saved palette after its stylesheet loads,
+then sets the page's `theme-color` meta from the palette's `--paper` token;
+Settings changes use that same CSS token. Supported browser status/toolbar tint
+can follow the page, but the manifest cannot produce a per-user native launch
+splash. Android's bottom navigation/gesture area and keyboard/system UI are
+platform-owned and not proven controllable by page meta; no viewport-fit or
+safe-area layout changes are made without device evidence. Installed-app versus
+Chrome-tab and top-versus-bottom symptoms need a physical Android check.
+
 Desktop synthetic standalone-media probes cover ordinary login, navigation,
 unsent draft and sign-out at mobile/short-mobile/desktop sizes, but do **not**
 prove that Android Chrome offers a WebAPK, installs the right icon/identity,
@@ -39,7 +50,7 @@ launches without browser toolbar or persists a real device session. Those requir
 an explicitly approved later deployment and supported-device check. This source
 work does not authorize rebuilding/restarting a serving instance or publication.
 
-**Appearance** in the sidebar offers nine light and nine dark reading palettes, with Reading Room’s forest/ivory as the default. Selection changes only CSS variables in this browser: it does not alter messages, charts, consent, model requests, the PostgreSQL archive or another browser’s preference. The choice persists in localStorage across navigation, reload and sign-out; if storage is unavailable or the saved value is unknown, Reading Room is used. A CSP-hashed, synchronous theme bootstrap in `index.html` prevents a light flash for saved dark palettes without allowing arbitrary inline scripts. Natal, transit and synastry wheels follow the selected screen palette; the original standalone SVG retains its light fallback, PNG follows the screen and an explicit print SVG uses a light rendition. Synthetic browser checks exercise all eighteen palettes, mobile/desktop layouts, keyboard focus, contrast, file-consent continuity, and light SVG exports; these do not constitute live-user acceptance.
+**Appearance** in the sidebar offers nine light and nine dark reading palettes, with Reading Room’s forest/ivory as the default. Selection changes CSS variables and the page's `theme-color` meta in this browser: it does not alter messages, charts, consent, model requests, the PostgreSQL archive or another browser’s preference. The choice persists in localStorage across navigation, reload and sign-out; if storage is unavailable or the saved value is unknown, Reading Room is used. A CSP-hashed, synchronous theme bootstrap in `index.html` prevents a light flash for saved dark palettes without allowing arbitrary inline scripts. Natal, transit and synastry wheels follow the selected screen palette; the original standalone SVG retains its light fallback, PNG follows the screen and an explicit print SVG uses a light rendition. Synthetic browser checks exercise all eighteen palettes, mobile/desktop layouts, keyboard focus, contrast, file-consent continuity, and light SVG exports; these do not constitute live-user acceptance.
 
 ### Synthetic layout comparison
 

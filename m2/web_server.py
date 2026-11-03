@@ -264,7 +264,7 @@ class LocalBoundary(BaseHTTPMiddleware):
         if self.deployment:
             response.headers['Strict-Transport-Security'] = 'max-age=31536000'
         response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; script-src 'self' 'sha256-KMBSMe9gJmMa/C3ahcFCoD5UGi47Jz2co6hC6tczP1s='; "
+            "default-src 'self'; script-src 'self' 'sha256-LedIj7WJqez/+AidF5isYsfP593k9wlonn+5ZL3Mrgc='; "
             "style-src 'self'; img-src 'self' data:; "
             "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; "
             "form-action 'self'" + ('' if self.deployment else ' https://auth.openai.com'))

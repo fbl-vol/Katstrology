@@ -37,15 +37,21 @@ function safeStorage(): Storage | null {
   catch { return null; }
 }
 
-export function applyTheme(id: ThemeId, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
-  // Setting the root attribute is the only visual effect; browser preference is best-effort.
+function showTheme(id: ThemeId): void {
   document.documentElement.dataset.theme = id;
+  // The stylesheet is the palette authority; browser chrome follows its reading surface.
+  const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim();
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', paper);
+}
+
+export function applyTheme(id: ThemeId, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
+  showTheme(id);
   try { storage?.setItem(themeStorageKey, id); }
   catch { /* Private browsing or disabled storage still permits in-session selection. */ }
 }
 
 export function initializeTheme(): ThemeId {
   const id = readTheme();
-  document.documentElement.dataset.theme = id;
+  showTheme(id);
   return id;
 }
