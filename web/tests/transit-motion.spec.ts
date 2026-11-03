@@ -42,9 +42,14 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await panel.getByRole('button', { name: 'Show transits' }).click();
   expect((await response).status()).toBe(200);
   await expect(panel.getByRole('img', { name: /Transiting planets around the fixed natal chart/ })).toBeVisible();
+  for (const size of [{ width: 390, height: 640 }, { width: 1440, height: 1024 }]) {
+    await page.setViewportSize(size);
+    await panel.locator('.motion-controls').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`transits-ready-${size.width}.png`) });
+  }
   await panel.locator('.motion-controls').scrollIntoViewIfNeeded();
   await panel.getByRole('button', { name: 'Play', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Pause' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Pause' }), pageErrors.join('\n')).toBeVisible();
   expect(pageErrors).toEqual([]);
   await panel.getByRole('button', { name: 'Pause' }).click();
   await panel.getByRole('button', { name: 'Play', exact: true }).click();
@@ -70,6 +75,11 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(panel.getByRole('button', { name: 'Replay' })).toBeDisabled();
   await expect(panel.getByText('Reduced motion is on. Use the time slider to view each moment.')).toBeVisible();
+  for (const size of [{ width: 390, height: 640 }, { width: 1440, height: 1024 }]) {
+    await page.setViewportSize(size);
+    await panel.getByRole('status').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`transits-reduced-${size.width}.png`) });
+  }
   await slider.focus(); await page.keyboard.press('Home');
   await expect(slider).toHaveAttribute('aria-valuetext', /2024-04-01 00:00 UTC/);
   expect(sends).toBe(0);

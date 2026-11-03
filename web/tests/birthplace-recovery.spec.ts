@@ -48,6 +48,7 @@ test('ten city results keep each wrapped label inside its own hit target in both
         expect(geometry[i].labelBottom).toBeLessThanOrEqual(geometry[i].bottom);
         if (i) expect(geometry[i].top).toBeGreaterThanOrEqual(geometry[i - 1].bottom);
       }
+      await page.screenshot({ path: test.info().outputPath(`places-${theme}-${size.width}-first.png`) });
       await results.last().focus();
       await expect(results.last()).toBeFocused();
       await page.screenshot({ path: test.info().outputPath(`places-${theme}-${size.width}-last.png`) });
@@ -78,7 +79,12 @@ test('saved catalogue location can change explicitly; saved manual inputs surviv
   await expect(form.getByLabel('Latitude override')).toHaveValue('55.6');
   await expect(form.getByLabel('Longitude override')).toHaveValue('12.5');
   await expect(form.getByLabel('IANA timezone override')).toHaveValue('Europe/Stockholm');
+  await form.getByLabel('Latitude override').scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath('saved-overrides-short.png') });
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await form.getByLabel('Latitude override').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('saved-overrides-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 640 });
   await form.getByLabel('Birth time').fill('03:07');
   const changed = page.waitForResponse(response => response.request().method() === 'POST' && /\/generate$/.test(response.url()));
   await form.getByRole('button', { name: 'Generate chart' }).click();
@@ -117,7 +123,13 @@ test('manual-only edit, unmatched draft and unavailable lookup retain a delibera
   form = await reopen(page, name);
   await expect(form.getByText(/Saved manual location/)).toContainText('50.1, 10.2 · Europe/Berlin');
   await expect(form.getByLabel('Latitude override')).toHaveValue('50.1');
+  await form.locator('.birth-advanced > summary').click();
+  await form.getByLabel('Latitude override').scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath('manual-short.png') });
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await form.getByLabel('Latitude override').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('manual-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 640 });
   const revision = await page.evaluate(async personId => {
     const { csrf } = await fetch('/api/session').then(response => response.json());
     const response = await fetch(`/api/people/${personId}/drafts`, { method: 'POST',
@@ -139,5 +151,8 @@ test('manual-only edit, unmatched draft and unavailable lookup retain a delibera
   await expect(form.getByLabel('Birthplace search')).toHaveAttribute('aria-invalid', 'true');
   await expect(form.getByLabel('Birthplace search')).toBeFocused();
   await page.screenshot({ path: test.info().outputPath('unmatched-error-short.png') });
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await form.getByLabel('Birthplace search').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('unmatched-error-desktop.png') });
   await expect(form.getByLabel('Birthplace search')).toHaveValue('Copenhagen');
 });
