@@ -126,6 +126,20 @@ def validate(request, policy):
     action, plan = request['action'], request['plan']
     if action not in ACTIONS or ('bytes' in request) != (action in ('upload', 'upload_source')):
         raise ValueError('Unsupported release action')
+    validate_plan(plan, policy)
+    if action in ('upload', 'upload_source') and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
+            or request['bytes'] != plan['archive_bytes' if action == 'upload' else 'source_bytes']):
+        raise ValueError('Archive length exceeds policy')
+    approval = request['approval']
+    if (not isinstance(approval, dict) or approval != {'approved_action': 'release',
+            'attempt': plan['attempt'], 'plan_sha256': plan['plan_sha256']}):
+        raise ValueError('Unsigned, stale or mismatched release approval')
+    verify_signature(approval, request['signature'], policy)
+    return action, plan
+
+
+def validate_plan(plan, policy):
+    """Shared immutable target/artifact guard; grants no authorization by itself."""
     if not isinstance(plan, dict) or set(plan) != PLAN_FIELDS or set(plan['artifact']) != ARTIFACT_FIELDS:
         raise ValueError('Plan fields differ')
     identity = plan['artifact']
@@ -153,15 +167,6 @@ def validate(request, policy):
             or sha256(protected(phase_module().__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
             or sha256(protected(policy['compose_file']).read_bytes()).hexdigest() != plan['compose_sha256']):
         raise ValueError('Protected approval, target or template differs')
-    if action in ('upload', 'upload_source') and (not isinstance(request['bytes'], int) or isinstance(request['bytes'], bool)
-            or request['bytes'] != plan['archive_bytes' if action == 'upload' else 'source_bytes']):
-        raise ValueError('Archive length exceeds policy')
-    approval = request['approval']
-    if (not isinstance(approval, dict) or approval != {'approved_action': 'release',
-            'attempt': plan['attempt'], 'plan_sha256': digest}):
-        raise ValueError('Unsigned, stale or mismatched release approval')
-    verify_signature(approval, request['signature'], policy)
-    return action, plan
 
 
 def verify_signature(approval, signature, policy):
@@ -229,7 +234,7 @@ def dispatch(request, policy, input_stream):
         return dispatch_locked(request, policy, input_stream, action, plan)
 
 
-def dispatch_locked(request, policy, input_stream, action, plan):
+def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission=None):
     target = policy['target'] | {'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])}
     stage = Path(target['stage'])
     owner = Path(target['stage_root']) / 'active-attempt'
@@ -251,6 +256,8 @@ def dispatch_locked(request, policy, input_stream, action, plan):
     # Only trusted policy, code and template enter the actual lifecycle.
     phase = phase_module()
     phase.REQUEST = {'action': action, 'target': target, 'plan': plan}
+    if ci_admission is not None:
+        phase.REQUEST['ci_admission'] = ci_admission
     if action == 'compose':
         phase.REQUEST['compose'] = protected(policy['compose_file']).read_text()
     return phase.main()

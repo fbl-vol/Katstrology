@@ -38,7 +38,7 @@ def package_path(receipt_path, value):
     path = Path(value)
     if path.is_absolute():  # Retained manual receipts are not rewritten.
         return path
-    if path.name != value or path.is_symlink() or value in ('', '.', '..'):
+    if path.name != value or value in ('', '.', '..'):
         raise ValueError('Portable package path must be a basename')
     path = receipt_path.resolve().parent / value
     if path.is_symlink() or not path.is_file():
@@ -99,6 +99,10 @@ def artifact(receipt_path):
                                        cwd=ROOT, text=True).strip()
         if tree != receipt['tree']:
             raise ValueError('Source commit/tree mismatch')
+        expected_files = set(subprocess.check_output(
+            ['git', 'ls-tree', '-r', '--name-only', receipt['commit']], cwd=ROOT, text=True).splitlines())
+        if {member.name for member in members if member.isfile()} != expected_files:
+            raise ValueError('Source offer omits or adds committed files')
         for member in members:
             if member.isfile():
                 committed = subprocess.check_output(['git', 'show', receipt['commit'] + ':' + member.name], cwd=ROOT)
@@ -132,16 +136,20 @@ def target_config(path):
 
 
 def plan(receipt, target, schema, compose, attempt, archive_bytes, source_bytes):
+    scope = {'project': target['project'], 'origin': target['origin'],
+             'loopback_port': target['loopback_port'],
+             'target_sha256': sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()}
+    return plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes)
+
+
+def plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes):
+    """CI receives only an enrolled public target fingerprint, never private paths."""
     if not ATTEMPT.fullmatch(attempt):
         raise ValueError('Attempt must be a fresh 32-character lowercase hex ID')
     if not isinstance(archive_bytes, int) or isinstance(archive_bytes, bool) or not 0 < archive_bytes <= 2 * 1024**3:
         raise ValueError('Archive size exceeds release bound')
     if not isinstance(source_bytes, int) or isinstance(source_bytes, bool) or not 0 < source_bytes <= 128 * 1024**2:
         raise ValueError('Source archive size exceeds release bound')
-    # No credential paths in the portable approval/receipt; target file remains private.
-    scope = {'project': target['project'],
-             'origin': target['origin'], 'loopback_port': target['loopback_port'],
-             'target_sha256': sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()}
     identity = {key: receipt[key] for key in ('commit', 'tree', 'image_id', 'config_digest',
                 'image_archive_sha256', 'source_offer_sha256')}
     content = {'contract': 4, 'attempt': attempt, 'archive_bytes': archive_bytes,
@@ -162,7 +170,8 @@ def remote(alias, request, upload=None, *, ssh_config=None):
     """Only the fixed OpenSSH command; stdin is JSON followed by bounded archive bytes."""
     command = ['ssh', *(['-F', str(ssh_config)] if ssh_config is not None else []),
                '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
-               '-o', 'ConnectTimeout=10', alias, 'kat-release-v1']
+               '-o', 'ConnectTimeout=10', alias,
+               'kat-release-ci-v1' if 'manifest' in request else 'kat-release-v1']
     header = json.dumps(request, separators=(',', ':')).encode() + b'\n'
     if len(header) > 16 * 1024:
         raise ValueError('Release request exceeds helper header bound')
@@ -229,12 +238,16 @@ def verify_public(origin, assets, opener=None):
             raise ValueError('Public HTTPS asset differs from packaged image')
 
 
-def execute(receipt, archive, compose, target, planned, approval, signature, receipt_path, *, ssh_config=None):
-    if approval != {'approved_action': 'release', 'attempt': planned['attempt'],
-                    'plan_sha256': planned['plan_sha256']}:
-        raise ValueError('Exact-target release approval missing or mismatched')
-    if not signature.startswith('-----BEGIN SSH SIGNATURE-----\n') or len(signature) > 8192:
-        raise ValueError('Signed per-release approval missing or exceeds bound')
+def execute(receipt, archive, compose, target, planned, approval, signature, receipt_path, *,
+            ssh_config=None, ci_manifest=None, ci_bundle=None):
+    if ci_manifest is None:
+        if approval != {'approved_action': 'release', 'attempt': planned['attempt'],
+                        'plan_sha256': planned['plan_sha256']}:
+            raise ValueError('Exact-target release approval missing or mismatched')
+        if not signature.startswith('-----BEGIN SSH SIGNATURE-----\n') or len(signature) > 8192:
+            raise ValueError('Signed per-release approval missing or exceeds bound')
+    elif ci_manifest['plan'] != planned or ci_bundle is None or not 0 < ci_bundle.stat().st_size <= 256 * 1024:
+        raise ValueError('Exact CI manifest/bounded bundle required')
     if receipt_path.exists():
         raise ValueError('Receipt already exists; never replay an ambiguous attempt')
     if archive.stat().st_size != planned['archive_bytes']:
@@ -254,7 +267,8 @@ def execute(receipt, archive, compose, target, planned, approval, signature, rec
     finally:
         os.close(directory)
     alias = target['ssh_alias']
-    signed = {'plan': planned, 'approval': approval, 'signature': signature}
+    signed = ({'manifest': ci_manifest} if ci_manifest is not None else
+              {'plan': planned, 'approval': approval, 'signature': signature})
     result = {'plan_sha256': planned['plan_sha256'], 'artifact': planned['artifact'],
               'target': planned['target'], 'status': 'started', 'timings': []}
 
@@ -294,7 +308,7 @@ def execute(receipt, archive, compose, target, planned, approval, signature, rec
             record()
 
     try:
-        phase('stage')
+        phase('stage', upload=ci_bundle)
         phase('upload', upload=archive)
         phase('upload_source', upload=source)
         phase('compose')

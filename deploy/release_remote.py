@@ -328,6 +328,58 @@ def await_local_readiness(opener, request, check_owner):
         sleep(min(1.0, readiness_timeout(deadline)))
 
 
+def source_migrations(path):
+    with tarfile.open(path, 'r:') as archive:
+        return {Path(member.name).name: hashlib.sha256(archive.extractfile(member).read()).hexdigest()
+                for member in archive.getmembers()
+                if member.isfile() and re.fullmatch(r'm2/migrations/[0-9]+_[a-z0-9_]+\.sql', member.name)}
+
+
+def compatible_transition(target, planned, schema):
+    old = source_migrations(target['source_offer_file'])
+    new = source_migrations(Path(target['stage']) / 'source.tar')
+    if (not old or sorted(int(name.split('_')[0]) for name in old) != list(range(1, schema + 1))
+            or any(new.get(name) != digest for name, digest in old.items())):
+        raise ValueError('Immutable installed migration history changed')
+    if schema == planned['schema_version']:
+        if new != old:
+            raise ValueError('Same-schema migration history differs')
+        return None
+    candidates = [item for item in REQUEST['ci_admission']['transitions']
+                  if item['from'] == schema and item['to'] == planned['schema_version']]
+    if len(candidates) != 1 or {name: digest for name, digest in new.items() if name not in old} != candidates[0]['migrations']:
+        raise ValueError('Unqualified schema transition')
+    return candidates[0]
+
+
+def activation_baseline(stage):
+    path = stage / 'state.migrated.json'
+    return json.loads((path if path.exists() else stage / 'state.before.json').read_text())
+
+
+def maintenance(container, action, attempt):
+    result = json.loads(run('docker', 'exec', '--user', '10001:10001', container,
+        'python', '-m', 'm2.release_drain', action, attempt, timeout=310))
+    if set(result) != {'phase', 'attempt', 'boot'} or not re.fullmatch(r'[a-f0-9]{32}', result['boot']):
+        raise ValueError('Unconfirmed runtime maintenance identity')
+    return result
+
+
+def resume_old_drain(stage, planned, container):
+    before = json.loads((stage / 'drain-owner.json').read_text())
+    if container != (stage / 'previous-container').read_text().strip():
+        raise ValueError('Drain container owner changed')
+    observed = maintenance(container, 'status', planned['attempt'])
+    if observed['boot'] != before['boot'] or observed['attempt'] not in (None, planned['attempt']):
+        raise ValueError('Drain process owner changed')
+    if observed['phase'] == 'draining':
+        raise ValueError('Drain still executing; do not race its outcome')
+    if observed['phase'] != 'open':
+        observed = maintenance(container, 'resume', planned['attempt'])
+    if observed != {'phase': 'open', 'attempt': None, 'boot': before['boot']}:
+        raise ValueError('Old admission resume unconfirmed')
+
+
 def quarantine(target, planned, *, failure_type=None):
     """Contain only this exact owned deployment; never restore data or guess an owner."""
     stage = Path(target['stage'])
@@ -372,11 +424,17 @@ def quarantine(target, planned, *, failure_type=None):
                 # Validate all runtime/mount/route identities even if already stopped.
                 inspected = info | {'State': info['State'] | {'Running': True}}
                 check_existing(inspected, config, 'app', target['project'])
-                if info['State']['Running']:
-                    run('docker', 'stop', container)
-                if json.loads(run('docker', 'inspect', container))[0]['State']['Running']:
-                    raise ValueError('Containment stop unconfirmed')
-                outcome['serving'] = 'stopped; exact owned app quarantined'
+                if phase == 'draining':
+                    if not info['State']['Running'] or info['Image'] != previous:
+                        raise ValueError('Pre-stop drain owner changed')
+                    resume_old_drain(stage, planned, container)
+                    outcome['serving'] = 'unchanged; old app admission reopened before stop'
+                else:
+                    if info['State']['Running']:
+                        run('docker', 'stop', container)
+                    if json.loads(run('docker', 'inspect', container))[0]['State']['Running']:
+                        raise ValueError('Containment stop unconfirmed')
+                    outcome['serving'] = 'stopped; exact owned app quarantined'
             else:
                 outcome['serving'] = 'no app container found; inspection required'
     except (Exception, KeyboardInterrupt):
@@ -490,7 +548,10 @@ def release_phase():
         check_snapshot(target, planned, app['Mounts'] + db['Mounts'])
         schema = c('exec', '-T', 'db', 'psql', '-U', 'kat', '-d', 'kat', '-At', '-c',
                    'SELECT max(version) FROM schema_migrations')
-        if schema != str(planned['schema_version']):
+        if 'ci_admission' in REQUEST:
+            transition = compatible_transition(target, planned, int(schema))
+            durable_text(stage / 'transition.json', json.dumps(transition))
+        elif schema != str(planned['schema_version']):
             raise ValueError('Routine release cannot migrate schema')
         files = release_files(target)
         if files['selected_image'] != app['Image']:
@@ -537,7 +598,21 @@ def release_phase():
         check_snapshot(target, planned, app['Mounts'] + db['Mounts'])
         if release_files(target) != json.loads((stage / 'files.before.json').read_text()):
             raise ValueError('Canonical release files drifted after preflight')
-        advance('preflight_ok', 'quiescing')  # durable before first serving mutation
+        if 'ci_admission' in REQUEST:
+            observed = maintenance(app_id, 'status', planned['attempt'])
+            if observed['phase'] != 'open' or observed['attempt'] is not None:
+                raise ValueError('Runtime already fenced; no implicit bootstrap')
+            durable_text(stage / 'drain-owner.json', json.dumps(observed))
+            advance('preflight_ok', 'draining')
+            drained = maintenance(app_id, 'drain', planned['attempt'])
+            current = json.loads(run('docker', 'inspect', app_id))[0]
+            check_existing(current, config, 'app', project)
+            if (current['Image'] != previous_image or c('ps', '-q', 'app') != app_id
+                    or drained != {'phase': 'drained', 'attempt': planned['attempt'], 'boot': observed['boot']}):
+                raise ValueError('Drain incomplete; do not stop admitted work')
+            advance('draining', 'quiescing')
+        else:
+            advance('preflight_ok', 'quiescing')  # manual path retains external idle contract
         c('stop', 'app')
         # Safe recovery is only for a verified stopped original container before
         # the snapshot command begins. An ambiguous backup/activation never retries.
@@ -567,17 +642,34 @@ def release_phase():
             output.flush()
             os.fsync(output.fileno())
         name = 'snapshot-' + planned['plan_sha256'][:16]
+        transition = (json.loads((stage / 'transition.json').read_text())
+                      if 'ci_admission' in REQUEST else None)
+        backup_environment = environment | {'KAT_APP_IMAGE': previous_image} if 'ci_admission' in REQUEST else environment
         run(*compose, 'run', '--rm', '--no-deps', '-T', '-v',
             str(snapshot_root) + ':/verification', 'app',
             'python', '-m', 'm2.deployment_backup', 'backup',
             '--state-directory', '/var/lib/kat', '--snapshot', '/verification/' + name,
-            '--db-password-file', '/run/secrets/db_password', env=environment, timeout=180)
+            '--db-password-file', '/run/secrets/db_password', env=backup_environment, timeout=180)
         manifest = json.loads((snapshot_root / name / 'manifest.json').read_text())
-        if manifest['schema_version'] != planned['schema_version'] or not manifest['journal_prefix_sha256']:
+        expected_schema = transition['from'] if transition else planned['schema_version']
+        if manifest['schema_version'] != expected_schema or not manifest['journal_prefix_sha256']:
             raise ValueError('Snapshot schema or deletion authority mismatch')
         c('run', '--rm', '--no-deps', '-T', '-v', str(snapshot_root) + ':/verification',
           'app', 'python', '-c', RETAIN_AUTHORITY.replace('ATTEMPT', planned['attempt']))
-        advance('quiescing', 'snapshot_ok')
+        if transition:
+            # Record before invoking migration: ambiguous completion is never replayed.
+            advance('quiescing', 'migrating')
+            migrated = json.loads(run(*compose, 'run', '--rm', '--no-deps', '-T', 'app',
+                'python', '-m', 'm2.release_schema', input=json.dumps(transition), env=environment, timeout=180))
+            if migrated != {'schema': planned['schema_version'], 'status': 'migrated'}:
+                raise ValueError('Migration outcome unconfirmed')
+            baseline = preservation(c, running=False)
+            if baseline['state'] != json.loads((stage / 'state.before.json').read_text())['state']:
+                raise ValueError('Migration changed files/host/deletion authority')
+            durable_text(stage / 'state.migrated.json', json.dumps(baseline))
+            advance('migrating', 'snapshot_ok')
+        else:
+            advance('quiescing', 'snapshot_ok')
     elif action == 'promote_release':
         if release_files(target) != json.loads((stage / 'files.before.json').read_text()):
             raise ValueError('Canonical release files drifted before promotion')
@@ -610,7 +702,7 @@ def release_phase():
             raise ValueError('Preservation equality requires the app to remain quiesced')
         # Last full equality boundary BEFORE public traffic can write rows/files.
         # No new proxy/maintenance authority is needed for this app-only release.
-        if preservation(c, running=False) != json.loads((stage / 'state.before.json').read_text()):
+        if preservation(c, running=False) != activation_baseline(stage):
             raise ValueError('Quiesced archive/files/host/deletion authority changed')
         advance('promoted', 'activating')
         c('up', '--no-deps', '-d', '--wait', '--wait-timeout', '90', 'app')
@@ -678,7 +770,20 @@ def release_phase():
             code, body = fetch('/' if name == 'index.html' else '/' + name)
             if code != 200 or hashlib.sha256(body).hexdigest() != expected:
                 raise ValueError('Served asset differs from packaged image')
-        advance('app_started', 'local_verified')
+        durable_text(stage / 'assets.json', json.dumps(assets))
+        if 'ci_admission' in REQUEST:
+            if preservation(c, running=True) != activation_baseline(stage):
+                raise ValueError('Fenced startup changed retained state')
+            state = maintenance(expected_container, 'status', planned['attempt'])
+            if state['phase'] != 'fenced' or state['attempt'] != planned['attempt']:
+                raise ValueError('Candidate started without the inherited fence')
+            advance('app_started', 'reopening')
+            opened = maintenance(expected_container, 'resume', planned['attempt'])
+            if opened != {'phase': 'open', 'attempt': None, 'boot': state['boot']}:
+                raise ValueError('Candidate admission reopen unconfirmed')
+            advance('reopening', 'local_verified')
+        else:
+            advance('app_started', 'local_verified')
         return {'phase': action, 'status': 'ok', 'assets': assets, 'readiness': readiness}
     elif action == 'complete':
         if release_files(target) != json.loads((stage / 'files.promoted.json').read_text()):
