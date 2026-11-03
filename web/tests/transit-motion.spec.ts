@@ -44,7 +44,8 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await expect(panel.getByRole('img', { name: /Transiting planets around the fixed natal chart/ })).toBeVisible();
   for (const size of [{ width: 390, height: 640 }, { width: 1440, height: 1024 }]) {
     await page.setViewportSize(size);
-    await panel.locator('.motion-controls').scrollIntoViewIfNeeded();
+    await panel.locator('.motion-controls').evaluate(node => window.scrollTo(0,
+      window.scrollY + node.getBoundingClientRect().top - 190));
     await page.screenshot({ path: test.info().outputPath(`transits-ready-${size.width}.png`) });
   }
   await panel.locator('.motion-controls').scrollIntoViewIfNeeded();
@@ -77,7 +78,8 @@ test('on-demand dated transits keep natal fixed and stop or scrub without sendin
   await expect(panel.getByText('Reduced motion is on. Use the time slider to view each moment.')).toBeVisible();
   for (const size of [{ width: 390, height: 640 }, { width: 1440, height: 1024 }]) {
     await page.setViewportSize(size);
-    await panel.getByRole('status').scrollIntoViewIfNeeded();
+    await panel.getByRole('status').evaluate(node => window.scrollTo(0,
+      window.scrollY + node.getBoundingClientRect().top - 350));
     await page.screenshot({ path: test.info().outputPath(`transits-reduced-${size.width}.png`) });
   }
   await slider.focus(); await page.keyboard.press('Home');
