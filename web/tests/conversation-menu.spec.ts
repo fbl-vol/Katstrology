@@ -53,6 +53,7 @@ test('conversation actions fit general and person contexts and dismiss without c
       await page.setViewportSize(size);
       if (size.height === 390) { await opener.focus(); await opener.press('Enter'); }
       else await opener.click();
+      await expect(menu).toHaveAttribute('data-placement', /^(above|below)$/);
       await contained(page);
       await expect(menu.getByRole('button', { name: 'Rename' })).toBeVisible();
       await expect(menu.getByRole('button', { name: 'Export original JSONL' })).toBeVisible();

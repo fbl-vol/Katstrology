@@ -14,6 +14,7 @@ export function ConversationMenu({ children }: { children: ReactNode }) {
       const above = anchor.top - 8;
       const below = innerHeight - anchor.bottom - 8;
       const openAbove = below < 220 && above > below;
+      menu.dataset.placement = openAbove ? 'above' : 'below';
       panel.style.top = openAbove ? 'auto' : '100%';
       panel.style.bottom = openAbove ? '100%' : 'auto';
       panel.style.maxHeight = `${Math.min(280, Math.max(0, openAbove ? above : below))}px`;
@@ -45,5 +46,7 @@ export function ConversationMenu({ children }: { children: ReactNode }) {
 
   return <details className="conversation-menu" ref={details} onClick={event => {
     if ((event.target as HTMLElement).closest('.conversation-controls button')) details.current!.open = false;
-  }}><summary ref={opener}>Conversation options</summary><div className="conversation-controls">{children}</div></details>;
+  }}><summary ref={opener} onClick={() => details.current?.removeAttribute('data-placement')}
+    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') details.current?.removeAttribute('data-placement'); }}>
+    Conversation options</summary><div className="conversation-controls">{children}</div></details>;
 }
