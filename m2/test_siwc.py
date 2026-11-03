@@ -260,7 +260,7 @@ class SiwcUnitTests(unittest.TestCase):
         self.assertEqual(body['parallel_tool_calls'], False)
         self.assertEqual({tool['name'] for tool in body['tools']},
                          {'search_conversations', 'get_conversation_messages', 'get_conversation_message_page', 'get_chart',
-                          'search_references', 'get_reference_passage',
+                          'list_reference_sources', 'search_references', 'get_reference_passage',
                           'get_transit_view', 'get_transit_snapshot', 'find_transit_events',
                           'find_sky_events', 'compare_selected_charts',
                           'get_solar_return', 'get_lunar_returns', 'find_natal_mc_transits',
