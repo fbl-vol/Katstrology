@@ -4,7 +4,7 @@ from hashlib import sha256
 import unittest
 from unittest.mock import patch
 
-from m2 import tone_profiles_v1 as v1, tone_profiles_v2 as v2
+from m2 import tone_profiles_v1 as v1, tone_profiles_v2 as v2, tone_profiles_v3 as v3
 from m2.tone_profiles import archived_instructions, catalogue, instructions
 
 # Characterization of accepted instruction bytes in deployed155, independently
@@ -18,21 +18,32 @@ V1_HASHES = {
 }
 
 
-def legacy_identity(tone_id):
-    return {'tone_id': tone_id, 'tone_version': 1, 'tone_shared_version': 1,
-            'prompt_version': '2026-11-03.1.tone1', 'prompt_mode': 'hosted',
-            'prompt_sha256': V1_HASHES[tone_id]}
+# Characterization captured from released8b before adding section rhythm.
+V2_HASHES = {
+    'thoughtful-wit': '2fde8c64248a6c1d038c2bef78471e70dfe4d63eb44dfef4c7fd623e7ea6f91f',
+    'grounded-warmth': 'ec1b916c9c59ba3bffd0c82f66dec1eca6ddbf8f613cd450d770241c5687bfa1',
+    'playful-cheek': '9787c21450532f0c3853b9400f6ad89fd040886bd0db33e265077b04ff107cc0',
+    'cosmic-cabaret': 'cbc80f09c15161d1eb8bbb6209504fc88e62160d57fddcb0dc4bce46db0d9291',
+}
+
+
+def legacy_identity(tone_id, version=1):
+    hashes = V1_HASHES if version == 1 else V2_HASHES
+    return {'tone_id': tone_id, 'tone_version': version, 'tone_shared_version': version,
+            'prompt_version': f'2026-11-03.1.tone{version}', 'prompt_mode': 'hosted',
+            'prompt_sha256': hashes[tone_id]}
 
 
 class ToneVersionTests(unittest.TestCase):
     def test_all_deployed_versions_reconstruct_even_if_current_base_changes(self):
         with patch('m2.tone_profiles.HOSTED', 'a future base must not rewrite accepted tones'):
-            for tone_id, expected_hash in V1_HASHES.items():
-                with self.subTest(tone_id=tone_id):
-                    record = legacy_identity(tone_id)
-                    text, recovered = archived_instructions(record)
-                    self.assertEqual(recovered, record)
-                    self.assertEqual(sha256(text.encode()).hexdigest(), expected_hash)
+            for version, hashes in ((1, V1_HASHES), (2, V2_HASHES)):
+                for tone_id, expected_hash in hashes.items():
+                    with self.subTest(tone_id=tone_id, version=version):
+                        record = legacy_identity(tone_id, version)
+                        text, recovered = archived_instructions(record)
+                        self.assertEqual(recovered, record)
+                        self.assertEqual(sha256(text.encode()).hexdigest(), expected_hash)
 
     def test_quiet_wonder_effective_instructions_identity_and_preview_do_not_change(self):
         text, record = instructions('quiet-wonder')
@@ -53,7 +64,7 @@ class ToneVersionTests(unittest.TestCase):
         for tone_id, revision in v2.REVISIONS.items():
             with self.subTest(tone_id=tone_id):
                 text, record = instructions(tone_id)
-                self.assertEqual((record['tone_version'], profiles[tone_id]['version']), (2, 2))
+                self.assertEqual((record['tone_version'], profiles[tone_id]['version']), (3, 3))
                 self.assertNotEqual(record['prompt_sha256'], V1_HASHES[tone_id])
                 self.assertEqual(archived_instructions(record), (text, record))
                 self.assertIn(v1.HOSTED.split('\n\n', 2)[2], text)
@@ -66,6 +77,23 @@ class ToneVersionTests(unittest.TestCase):
                 self.assertNotIn('Reduce humour and theatricality for painful, serious or practical', text)
                 self.assertNotRegex(text, r'\[p-[0-9a-f]+\]')
                 self.assertEqual(profiles[tone_id]['example'], revision['preview'])
+
+    def test_section_arcs_and_final_landing_apply_to_the_complete_answer_only(self):
+        for tone_id, landing in v3.LANDINGS.items():
+            with self.subTest(tone_id=tone_id):
+                text, record = instructions(tone_id)
+                previous, _ = archived_instructions(legacy_identity(tone_id, 2))
+                self.assertTrue(text.startswith(previous + '\n\nSection rhythm and a strong final landing:'))
+                self.assertEqual(record['tone_version'], 3)
+                self.assertIn(v3.SECTION_RHYTHM, text)
+                self.assertIn(landing, text)
+                self.assertIn('existing flexible opening/body/closing arc', text)
+                self.assertIn('A provider response or tool boundary is not automatically a section or ending', text)
+                self.assertIn('Do not add an extra provider call solely to manufacture a closing', text)
+                self.assertIn('not a new visible template', text)
+                self.assertIn('Short factual sections and short answers may end naturally', text)
+        quiet, _ = instructions('quiet-wonder')
+        self.assertNotIn(v3.SECTION_RHYTHM, quiet)
 
     def test_reconstruction_refuses_missing_or_tampered_versions_without_falling_back(self):
         old = legacy_identity('cosmic-cabaret')

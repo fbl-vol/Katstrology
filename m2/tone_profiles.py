@@ -2,10 +2,11 @@
 
 from hashlib import sha256
 
-from m2 import tone_profiles_v1 as v1, tone_profiles_v2 as v2
+from m2 import tone_profiles_v1 as v1, tone_profiles_v2 as v2, tone_profiles_v3 as v3
 from m2.prompting import HOSTED, identity
 
 DEFAULT = 'quiet-wonder'
+EXPRESSIVE_VERSION = 3
 BY_ID = {profile[0]: profile for profile in v1.PROFILES}
 
 
@@ -14,7 +15,7 @@ def catalogue():
     for tone_id, name, label, description, _instruction, example in v1.PROFILES:
         revised = v2.REVISIONS.get(tone_id)
         profiles.append({
-            'id': tone_id, 'version': 2 if revised else 1, 'name': name, 'voice_label': label,
+            'id': tone_id, 'version': EXPRESSIVE_VERSION if revised else 1, 'name': name, 'voice_label': label,
             'description': revised['description'] if revised else description,
             'example': revised['preview'] if revised else example,
         })
@@ -48,6 +49,12 @@ def _versioned_instructions(tone_id, version):
                 'Invent fresh phrasing for the actual question; never infer a chart from these examples:\n'
                 + examples)
         prompt_version = '2026-11-03.1.tone2'
+    elif version == 3 and tone_id in v3.LANDINGS:
+        # Append to the exact v2 body; never change accepted v1/v2 instructions.
+        previous, _ = _versioned_instructions(tone_id, 2)
+        text = (previous + '\n\nSection rhythm and a strong final landing:\n'
+                + v3.SECTION_RHYTHM + '\n\n' + v3.LANDINGS[tone_id])
+        prompt_version = '2026-11-03.1.tone3'
     else:
         raise ValueError('Archived tone version is unavailable')
     return text, {'tone_id': tone_id, 'tone_version': version,
@@ -58,7 +65,7 @@ def _versioned_instructions(tone_id, version):
 def instructions(tone_id):
     if not isinstance(tone_id, str):
         raise ValueError('Unknown Kat tone')
-    return _versioned_instructions(tone_id, 2 if tone_id in v2.REVISIONS else 1)
+    return _versioned_instructions(tone_id, EXPRESSIVE_VERSION if tone_id in v2.REVISIONS else 1)
 
 
 def archived_instructions(record):

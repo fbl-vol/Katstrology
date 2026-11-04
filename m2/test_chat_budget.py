@@ -247,43 +247,48 @@ class ChatBudgetTests(DatabaseCase):
         class ReadThenAnswer(CapturedResponses):
             def response_events(self, _token, body):
                 self.requests.append(body)
-                if len(self.requests) == 1:
+                if len(self.requests) <= 2:
+                    index = len(self.requests)
                     yield {'type': 'response.completed', 'response': {'output': [{
-                        'type': 'function_call', 'id': 'fc_tone', 'call_id': 'call_tone',
-                        'name': 'list_reference_sources', 'arguments': '{"after":null}'}]}}, 'tone-read'
+                        'type': 'function_call', 'id': f'fc_tone_{index}',
+                        'call_id': f'call_tone_{index}', 'name': 'list_reference_sources',
+                        'arguments': '{"after":null}'}]}}, f'tone-read-{index}'
                 else:
                     yield {'type': 'response.output_text.delta', 'delta': 'Synthetic factual answer'}, 'tone-answer'
                     yield {'type': 'response.completed', 'response': {'output': []}}, 'tone-answer'
 
         prompt = 'How could I approach a creative disagreement without making a prediction?'
         for tone_id in ('thoughtful-wit', 'grounded-warmth', 'playful-cheek', 'cosmic-cabaret'):
-            for legacy in (True, False):
-                with self.subTest(tone_id=tone_id, legacy=legacy):
+            for version in (1, 2, 3):
+                with self.subTest(tone_id=tone_id, version=version):
                     revision = self.store.tone_preference(self.alice)['revision']
                     self.store.set_tone_preference(self.alice, tone_id, revision)
-                    turn_id = f'{tone_id}-{legacy}'
-                    expected = (archived_instructions(legacy_identity(tone_id)) if legacy
+                    turn_id = f'{tone_id}-v{version}'
+                    expected = (archived_instructions(legacy_identity(tone_id, version)) if version < 3
                                 else instructions(tone_id))
                     bridge = ReadThenAnswer()
                     model = ResponsesModel(bridge, 'alice', self.model.slug)
-                    if legacy:
-                        # Accept v1, switch back to current code at ACK, then reconstruct
-                        # from the immutable record for the first request and every read.
-                        accepting_v1 = patch('m2.tone_profiles.instructions', return_value=expected)
-                        accepting_v1.start()
+                    if version < 3:
+                        # Accept an older version, switch to current code at ACK, then
+                        # reconstruct the first request and every read from its record.
+                        accepting_older = patch('m2.tone_profiles.instructions', return_value=expected)
+                        accepting_older.start()
                         try:
                             status, events = self.turn(turn_id, prompt, parent='@root', model=model,
-                                                      acknowledge=lambda _: accepting_v1.stop())
+                                                      acknowledge=lambda _: accepting_older.stop())
                         finally:
-                            accepting_v1.stop()
+                            accepting_older.stop()
                     else:
                         status, events = self.turn(turn_id, prompt, parent='@root', model=model)
                     self.assertEqual(status, 'complete', events)
-                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 2)
-                    self.assertEqual(len(bridge.requests), 2)
-                    self.assertTrue(any(event['kind'] == 'tool_result' for event in events))
-                    for request in bridge.requests:
+                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 3)
+                    # Two requested reads require three calls, not an extra closing call.
+                    self.assertEqual(len(bridge.requests), 3)
+                    self.assertEqual(sum(event['kind'] == 'tool_result' for event in events), 2)
+                    for index, request in enumerate(bridge.requests):
                         self.assertEqual(request['instructions'], expected[0])
+                        for previous in range(1, index + 1):
+                            self.assertIn(f'call_tone_{previous}', json.dumps(request['input']))
                     context = next(event['payload'] for event in events if event['kind'] == 'context')
                     self.assertEqual({key: context[key] for key in expected[1]}, expected[1])
                     self.assertEqual(context['instruction_tokens'],
@@ -292,7 +297,7 @@ class ChatBudgetTests(DatabaseCase):
                                      ['events'][0]['payload']['tone'], expected[1])
                     replay, _ = self.turn(turn_id, prompt, parent='@root', model=model)
                     self.assertEqual(replay, 'complete')
-                    self.assertEqual(len(bridge.requests), 2)
+                    self.assertEqual(len(bridge.requests), 3)
 
     def test_legacy_prompt_identity_remains_archived_on_idempotent_replay(self):
         status, _ = self.turn('legacy-prompt-replay', 'Synthetic chart question.', parent='@root')
