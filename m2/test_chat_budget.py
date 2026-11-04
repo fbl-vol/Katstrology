@@ -284,7 +284,9 @@ class ChatBudgetTests(DatabaseCase):
                     self.assertEqual(instructions(tone_id)[1]['tone_version'], 3)
                     # Two requested reads require three calls, not an extra closing call.
                     self.assertEqual(len(bridge.requests), 3)
-                    self.assertEqual(sum(event['kind'] == 'tool_result' for event in events), 2)
+                    self.assertEqual(sum(event['kind'] == 'tool_result' and
+                                         event['payload'].get('name') == 'list_reference_sources'
+                                         for event in events), 2)
                     for index, request in enumerate(bridge.requests):
                         self.assertEqual(request['instructions'], expected[0])
                         for previous in range(1, index + 1):
