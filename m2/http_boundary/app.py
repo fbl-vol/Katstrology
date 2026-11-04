@@ -8,9 +8,9 @@ from starlette.staticfiles import StaticFiles
 
 from m2.deletion import ReferencedPersonAttachment
 from m2.release_drain import AdmissionBoundary
-from m2.http.boundary import Forbidden, LocalBoundary, json_response, login, logout, session
-from m2.http.config import deployment_origin
-from m2.http.runtime import BrowserRuntime
+from m2.http_boundary.boundary import Forbidden, LocalBoundary, json_response, login, logout, session
+from m2.http_boundary.config import deployment_origin
+from m2.http_boundary.runtime import BrowserRuntime
 
 
 def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root=None,

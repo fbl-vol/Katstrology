@@ -4,7 +4,7 @@ from starlette.routing import Route
 
 from m2.advanced import Advanced
 from m2.periods import Periods
-from m2.http.boundary import authorized, json_body, json_response
+from m2.http_boundary.boundary import authorized, json_body, json_response
 
 
 async def create(request):

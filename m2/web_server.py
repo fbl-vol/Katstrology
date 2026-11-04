@@ -1,6 +1,6 @@
 """Single-process browser entry: loopback local mode or explicit HTTPS deployment.
 
-Compatible import facade for existing integrations; feature routes use m2.http.boundary.
+Compatible import facade for existing integrations; feature routes use m2.http_boundary.boundary.
 """
 import argparse
 import getpass
@@ -10,11 +10,11 @@ from pathlib import Path
 import uvicorn
 
 from m2.deletion import Tombstones
-from m2.http.app import create_app
-from m2.http.boundary import (COOKIE, MAX_JSON, MAX_TEXT_JSON, Forbidden, LocalBoundary,
-                              authorized, json_body, json_response, login, logout, session)
-from m2.http.config import deployment_dsn, deployment_origin
-from m2.http.runtime import BrowserRuntime
+from m2.http_boundary.app import create_app
+from m2.http_boundary.boundary import (COOKIE, MAX_JSON, MAX_TEXT_JSON, Forbidden, LocalBoundary,
+                                       authorized, json_body, json_response, login, logout, session)
+from m2.http_boundary.config import deployment_dsn, deployment_origin
+from m2.http_boundary.runtime import BrowserRuntime
 from m2.local_fixture import ROOT, fixture_dsn
 from m2.store import Store
 

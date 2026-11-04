@@ -115,7 +115,7 @@ def migrate(dsn, transition, directory=None):
 
 
 if __name__ == '__main__':
-    from m2.http.config import deployment_dsn
+    from m2.http_boundary.config import deployment_dsn
     content = sys.stdin.buffer.read(65537)
     if len(content) > 65536:
         raise ValueError('Transition exceeds bound')

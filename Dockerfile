@@ -25,7 +25,7 @@ COPY --from=pgclient /usr/lib/x86_64-linux-gnu/libpq.so* /usr/lib/x86_64-linux-g
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libldap-2.5-0 libgssapi-krb5-2 libzstd1 liblz4-1 && rm -rf /var/lib/apt/lists/*
 COPY m2/*.py ./m2/
-COPY m2/http/*.py ./m2/http/
+COPY m2/http_boundary/*.py ./m2/http_boundary/
 COPY m2/calculation/*.py ./m2/calculation/
 COPY m2/migrations ./m2/migrations
 COPY m2/data ./m2/data

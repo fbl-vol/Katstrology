@@ -4,7 +4,7 @@ from starlette.routing import Route
 
 from m2.conversations import Conversations
 from m2.revisions import correct, select_branch
-from m2.http.boundary import MAX_TEXT_JSON, authorized, json_body, json_response
+from m2.http_boundary.boundary import MAX_TEXT_JSON, authorized, json_body, json_response
 
 
 def _offset(request):
