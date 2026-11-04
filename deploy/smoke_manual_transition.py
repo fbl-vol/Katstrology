@@ -49,9 +49,19 @@ class LocalEdge:
         headers.setdefault('Host', url.netloc)
         local = Request(f'http://127.0.0.1:{self.port}' + url.path, headers=headers)
         try:
-            return self.opener.open(local, timeout=timeout)
+            response = self.opener.open(local, timeout=timeout)
         except HTTPError as error:
-            return error
+            response = error
+        if headers['Host'] != url.netloc:
+            # The app independently denies wrong Host with403; installed Caddy
+            # denies it at the edge with421. Verify the native app denial before
+            # representing that separate, explicitly synthetic edge behavior.
+            with response:
+                if response.status != 403:
+                    raise AssertionError('Native app did not deny wrong Host')
+            response = BytesIO(b'')
+            response.status, response.headers = 421, {}
+        return response
 
 
 class NativeFixture:
@@ -338,7 +348,8 @@ def qualify(old_path, candidate_path, output):
         subprocess.run(['docker', 'load', '-i', str(path)], check=True, capture_output=True, timeout=600)
     report = {'status': 'running', 'commit': candidate['commit'], 'tree': candidate['tree'],
               'archive_sha256': candidate['image_archive_sha256'], 'migration': LANE,
-              'adapters': ['synthetic root ownership', 'synthetic edge redirect/TLS-to-owned-loopback'],
+              'adapters': ['synthetic root ownership',
+                           'synthetic edge redirect,421 and TLS-to-owned-loopback; native app403 separately checked'],
               'ssh_or_server_access': False, 'cases': []}
     try:
         for ambiguous in (False, True):

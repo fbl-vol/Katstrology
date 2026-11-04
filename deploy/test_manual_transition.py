@@ -8,7 +8,9 @@ import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+from urllib.request import Request
 
 from deploy import release_access as access, release_ci_access as ci
 from deploy import release_pipeline as pipeline, release_remote as remote
@@ -155,6 +157,27 @@ class ManualRelease(OwnedRelease):
 
     def assert_stopped(self):
         assert not self.running
+
+
+class NativeEdgeFixtureTests(unittest.TestCase):
+    def test_edge421_fixture_requires_actual_inner_app403_and_owned_destination(self):
+        from deploy.smoke_manual_transition import LocalEdge
+        edge = LocalEdge(54321, 'https://example.invalid')
+        edge.opener = Mock()
+        edge.opener.open.side_effect = HTTPError('synthetic', 403, 'denied', {}, BytesIO())
+        request = Request('https://example.invalid/api/session', headers={'Host': 'wrong.invalid'})
+        self.assertEqual(edge.open(request, 10).status, 421)
+        forwarded = edge.opener.open.call_args.args[0]
+        self.assertEqual(forwarded.full_url, 'http://127.0.0.1:54321/api/session')
+        self.assertEqual(forwarded.get_header('Host'), 'wrong.invalid')
+        accepted = BytesIO()
+        accepted.status = 200
+        edge.opener.open.side_effect = None
+        edge.opener.open.return_value = accepted
+        with self.assertRaisesRegex(AssertionError, 'did not deny'):
+            edge.open(request, 10)
+        with self.assertRaisesRegex(ValueError, 'external destination'):
+            edge.open(Request('https://foreign.invalid/'), 10)
 
 
 class ManualLifecycleTests(unittest.TestCase):
