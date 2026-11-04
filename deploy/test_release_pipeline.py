@@ -134,7 +134,7 @@ class ReleasePlanTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             receipt, archive, compose, schema = pipeline.artifact(synthetic_package(directory))
             self.assertTrue(archive.is_file())
-            self.assertEqual(schema, 23)
+            self.assertEqual(schema, 24)
             target = Path(directory) / 'target.json'
             target.write_text(json.dumps(synthetic_target()))
             with patch('deploy.release_pipeline.remote') as remote:
