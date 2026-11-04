@@ -288,6 +288,7 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .profile-row-arrow{color:var(--link);font-size:24px;transition:transform .15s}.profile-timing-row[open] .profile-row-arrow{transform:rotate(90deg)}
 .person-page .profile-timing-row{margin:0;padding:0;border:0;border-radius:0}.profile-timing-row>summary{list-style:none;cursor:pointer}.profile-timing-row>summary::-webkit-details-marker{display:none}
 .profile-timing-content{padding:12px 20px 20px;border-top:1px solid var(--line)}.profile-overview-note{color:var(--muted);font-size:12px;margin:18px 0 8px}
+.profile-draft-notice{margin:10px 0;padding:10px 12px;border-left:3px solid var(--accent);border-radius:5px;background:var(--surface-soft);font-size:12px;line-height:1.5}
 .person-page .profile-chart-heading h2{margin:0 0 4px}.profile-chart-heading{margin:2px 0 10px}
 .profile-active-chart .natal-detail{display:block}.person-natal-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);align-items:start;gap:28px;min-width:0}
 .profile-active-chart .person-natal-layout .natal-wheel-frame{margin:0;order:0;max-width:none}.person-natal-layout .natal-wheel{min-width:0;width:100%}.person-chart-data{min-width:0}

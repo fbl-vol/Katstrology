@@ -14,7 +14,7 @@ export type EditorLocation = { kind: 'catalogue' | 'manual' | 'review';
   place?: { id: string; name: string; region: string; country: string; latitude: number; longitude: number; zone: string };
   latitude_override?: number; longitude_override?: number; zone_override?: string | null };
 export type Person = {
-  id: string; name: string; active_chart_id: string | null;
+  id: string; name: string; active_chart_id: string | null; active_chart_draft_revision?: number | null;
   editor_location?: EditorLocation | null;
   drafts: { revision: number; details: Draft }[];
   birth_records: { id: string; wall_time: string | null; zone_name: string; earliest_utc: string | null; latest_utc: string | null }[];
@@ -92,7 +92,16 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
   const activeChart = (generated && generated.result.active_chart_id === generated.result.chart.id ? generated.result.chart : null) ||
     person.charts.find(chart => chart.id === person.active_chart_id);
   const hasActive = !!(person.active_chart_id || activeChart);
-  const latestDraft = generated && generated.result.active_chart_id === generated.result.chart.id ? generated.draft : person.drafts[0]?.details;
+  const generatedActive = !!generated && generated.result.active_chart_id === generated.result.chart.id;
+  const activeRevision = generatedActive ? generated?.result.draft_revision : person.active_chart_draft_revision;
+  const latestDraft = generatedActive && (!person.drafts[0] || person.drafts[0].revision <= generated!.result.draft_revision) ?
+    generated!.draft : person.drafts[0]?.details;
+  const newerDraft = !!activeChart && activeRevision != null && !!person.drafts[0] && person.drafts[0].revision > activeRevision;
+  const savedBirth = activeChart && person.birth_records.find(record => record.id === activeChart.birth_id);
+  const savedWallTime = savedBirth?.wall_time ?? activeChart?.result.birth.wall_time;
+  const savedTime = savedWallTime ? savedWallTime.slice(11, 16) : savedWallTime === null ? 'unknown' : 'not recorded';
+  const savedDate = savedWallTime?.slice(0, 10) ?? (generatedActive ? generated?.draft.birth_date :
+    person.drafts.find(item => item.revision === activeRevision)?.details.birth_date);
 
   useEffect(() => {
     if (initialEditorOpen) {
@@ -130,6 +139,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       <p className="profile-summary">{latestDraft ? <>{latestDraft.birth_date || 'Date not supplied'} · {latestDraft.time_unknown ? 'Birth time unknown' : latestDraft.birth_time || 'Time not supplied'} · {latestDraft.birthplace || 'Place not supplied'} <small>(latest user-supplied details)</small></> :
         'Birth details have not been supplied. No time or place is inferred.'}</p>
       {activeChart?.source_status !== 'current' && activeChart && <p className="profile-caution">The active chart’s source is {activeChart.source_status}; inspect its original details before relying on it.</p>}
+      {newerDraft && <p className="profile-draft-notice" role="status"><strong>Latest details are not in the current chart.</strong> The saved chart still uses {savedTime === 'unknown' ? 'an unknown birth time' : savedTime === 'not recorded' ? 'birth inputs without a recorded time' : `the saved birth time of ${savedTime}`}{savedDate ? ` on ${savedDate}` : ''}. Start conversation still uses this saved chart until you calculate an updated version.</p>}
       <button ref={editButtonRef} type="button" className="profile-edit-action" onClick={openEditor} aria-controls={`${tabsId}-editor`} aria-expanded={editorOpen}>
         {hasActive ? 'Edit birth details' : 'Add birth details'}</button>
     </div><button type="button" className="primary profile-chat-action" onClick={startConversation}>Start conversation</button></div>
@@ -146,7 +156,8 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         <button type="button" className="profile-quiet-row" onClick={() => hasActive ? setTab('charts') : openEditor()}>
           <span className="profile-row-icon" aria-hidden="true">☉</span><span><strong>{hasActive ? 'Birth chart' : 'First birth chart'}</strong>
             <small>{hasActive ? activeChart?.source_status !== 'current' ? 'Saved chart · source needs review' :
-              latestDraft?.time_unknown ? 'Limited chart · birth time unknown' : 'Your current natal, placements and aspects' :
+              activeChart?.result.natal?.status === 'unsupported_uncertain_birth_time' ? 'Limited chart · birth time unknown' :
+                activeChart?.result.natal?.status === 'complete' ? 'Your current natal, placements and aspects' : 'Limited saved chart' :
               'Create a chart from the details you know'}</small></span><span className="profile-row-arrow" aria-hidden="true">›</span>
         </button>
         <details className="profile-timing-row" onToggle={event => setTimingOpen(event.currentTarget.open)}>
@@ -172,7 +183,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
       <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>
-        <p>{activeChart ? 'Calculated from saved birth details. Earlier versions stay below.' :
+        <p>{activeChart ? <>Calculated from saved birth details{savedDate && ` · ${savedDate}`} · {savedTime === 'unknown' ? 'birth time unknown' : savedTime === 'not recorded' ? 'birth time not recorded' : `saved birth time ${savedTime}`}. Earlier versions stay below.</> :
           'No active generated natal. Nothing is guessed from a draft or an earlier chart.'}</p></div>
       </div>
       {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion personLayout /> :
@@ -202,7 +213,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       hidden={tab !== 'saved'} className="profile-panel">
       <div className="profile-saved-sections" aria-label="Saved sections">
         {([['insights', 'Insights'], ['later', 'Saved for later'], ['journal', 'Private journal']] as const).map(([key, label]) =>
-          <button key={key} type="button" aria-pressed={savedSection === key} onClick={() => setSavedSection(key)}>{label}</button>)}
+          <button key={key} type="button" aria-pressed={savedSection === key} onClick={() => openSaved(key)}>{label}</button>)}
       </div>
       <div hidden={savedSection !== 'insights'}>
         <InsightNotebook workspace={workspace} personId={person.id} active={tab === 'saved' && savedSection === 'insights'} openConversation={openConversation} />

@@ -257,7 +257,6 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await expect(timing).toContainText('Saved for later. A due reminder is off');
   await page.getByRole('tab', { name: 'Saved' }).click();
   await page.getByRole('button', { name: 'Saved for later' }).click();
-  await page.getByText('Saved for later · in-app reminders').click();
   await expect(page.getByText('Reminder off.')).toBeVisible();
   await page.getByRole('button', { name: 'Edit note or reminder' }).click();
   const watchForm = page.getByRole('form', { name: 'Edit saved item' });
@@ -283,7 +282,6 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await watchForm.getByRole('button', { name: 'Save item' }).click();
   await expect(page.getByText('Note-only update keeps due reminder')).toBeVisible();
   await page.getByRole('button', { name: 'Private journal' }).click();
-  await page.getByText('Private event journal', { exact: true }).click();
   await page.getByLabel('Date', { exact: true }).last().fill('2026-06-22');
   await page.getByLabel('Link a saved item (optional)').selectOption(saved.id);
   await page.getByLabel('Your reflection').fill('A deliberate synthetic life note');

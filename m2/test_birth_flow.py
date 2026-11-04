@@ -122,6 +122,24 @@ class BirthFlowTests(DatabaseCase):
         self.assertEqual([event['payload'] for event in replay],
                          [event['payload'] for event in hosted_events])
 
+    def test_active_chart_draft_revision_is_owned_generation_identity_not_latest_draft(self):
+        people = People(self.store)
+        self.assertIsNone(people.get(self.alice, self.person['id'])['active_chart_draft_revision'])
+        generated = self.flow.generate(self.alice, self.person['id'], self.details())
+        active = people.get(self.alice, self.person['id'])
+        self.assertEqual(active['active_chart_id'], generated['chart']['id'])
+        self.assertEqual(active['active_chart_draft_revision'], generated['draft_revision'])
+        latest = people.add_draft(self.alice, self.person['id'], {
+            'birth_date': '2024-03-21', 'birth_time': '', 'time_unknown': True,
+            'birthplace': 'Copenhagen, Capital Region, Denmark',
+        })
+        unchanged = people.get(self.alice, self.person['id'])
+        self.assertGreater(latest, unchanged['active_chart_draft_revision'])
+        self.assertEqual(unchanged['active_chart_id'], generated['chart']['id'])
+        self.assertEqual(unchanged['active_chart_draft_revision'], generated['draft_revision'])
+        with self.assertRaises(KeyError):
+            people.get(self.bob, self.person['id'])
+
     def test_unknown_time_historical_day_and_reliable_label_do_not_make_full_natal(self):
         result = self.flow.generate(self.alice, self.person['id'], self.details(
             birth_date='2024-10-27', birth_time='', time_unknown=True, fold=None, provisional=False))

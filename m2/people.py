@@ -99,6 +99,15 @@ class People:
         owner = self.store.owner(session)
         person = self._person(session, person_id)
         person['active_chart_id'] = self.active_chart_id(session, person_id)
+        # Only a generation request proves which draft produced the active chart.
+        # Older manually created charts have no such link; do not infer one from timestamps.
+        generation = self.store.db.execute('''
+            SELECT g.draft_revision FROM birth_generation_requests g
+            JOIN charts c ON c.owner_id=g.owner_id AND c.person_id=g.person_id
+              AND c.id=g.chart_id AND c.birth_id=g.birth_id
+            WHERE g.owner_id=%s AND g.person_id=%s AND g.chart_id=%s
+        ''', (owner, person_id, person['active_chart_id'])).fetchone() if person['active_chart_id'] else None
+        person['active_chart_draft_revision'] = generation['draft_revision'] if generation else None
         person['drafts'] = self.store.db.execute('''
             SELECT revision,details,created_at FROM person_drafts
             WHERE owner_id=%s AND person_id=%s ORDER BY revision DESC LIMIT 20

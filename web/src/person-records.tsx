@@ -67,7 +67,10 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
     watchPage.current = null; journalPage.current = null;
   }, [workspace, personId]);
   useEffect(() => {
-    if (journalOpen) { void loadJournal(); void loadWatch(); }
+    if (journalOpen) {
+      void loadJournal();
+      if (watchState !== 'ready' && watchState !== 'loading') void loadWatch();
+    }
   }, [journalOpen, personId]);
 
   async function loadWatch(offset = 0) {
@@ -189,7 +192,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
       <summary>Saved for later · in-app reminders</summary>
       {watchOpen && <><p>Reminders are off unless chosen per item. Due items appear here only when Kat is open; there are no external alerts.</p>
         {watchState === 'loading' && <p role="status">Opening saved items…</p>}
-        {watchState === 'error' && <p role="alert">Saved items could not be refreshed. Close and reopen this section to retry.</p>}
+        {watchState === 'error' && <p role="alert">Saved items could not be refreshed. <button type="button" onClick={() => void loadWatch()}>Try again</button></p>}
         {watch.length ? <ul>{watch.map(item => <li key={item.id}>
           <strong>{names[item.technique] || 'Saved result'}</strong>{(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc) &&
             ` · ${(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc)?.slice(0, 10)} UTC`}
@@ -235,7 +238,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
       <summary>Private event journal</summary>
       {journalOpen && <><p>Optional self-reported reflections. Not sent to Kat's model, tools or automatic recall. A linked calculation does not establish why something happened.</p>
         {journalState === 'loading' && <p role="status">Opening private reflections…</p>}
-        {journalState === 'error' && <p role="alert">Private reflections could not be refreshed. Close and reopen this section to retry.</p>}
+        {journalState === 'error' && <p role="alert">Private reflections could not be refreshed. <button type="button" onClick={() => void loadJournal()}>Try again</button></p>}
         <form className="journal-form" onSubmit={event => void addReflection(event)}>
           <label>Date <input type="date" required value={day} onChange={event => setDay(event.target.value)} /></label>
           <label>Date certainty <select value={kind} onChange={event => setKind(event.target.value as typeof kind)}>

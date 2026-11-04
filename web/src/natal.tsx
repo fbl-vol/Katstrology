@@ -17,7 +17,7 @@ export type NatalResult = { status: string; instant_utc?: string; positions: Pla
   lilith_convention?: 'mean' | 'osculating'; lilith_method?: string };
 export type Chart = { id: string; person_id: string; birth_id: string; profile_id: string; profile_revision: number;
   source_status: string; result: { natal_sun: { status: string; sun_longitude_degrees?: number };
-    birth: { zone: string; latitude: number | null; longitude: number | null; provenance: string };
+    birth: { zone: string; wall_time?: string | null; latitude: number | null; longitude: number | null; provenance: string };
     natal?: NatalResult; houses: string; engine: { method: string; version: string };
     profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean; include_lilith?: 'mean' | 'osculating' } }; } };
 

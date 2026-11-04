@@ -4,14 +4,13 @@ import { resolve } from 'node:path';
 
 const renders = resolve(import.meta.dirname, '../../.local/total-review-fixes');
 
-async function profile(page: import('@playwright/test').Page, owner = 'reader-review-records', section: 'journal' | 'later' = 'journal') {
+async function profile(page: import('@playwright/test').Page, owner = 'reader-review-records') {
   await page.goto('/');
   await page.getByLabel('Username').fill(owner);
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
   await page.getByRole('tab', { name: 'Saved' }).click();
-  await page.getByRole('button', { name: section === 'journal' ? 'Private journal' : 'Saved for later' }).click();
 }
 
 test('private journal fences a late initial read and retains drafts only for this person and session', async ({ page }) => {
@@ -33,7 +32,7 @@ test('private journal fences a late initial read and retains drafts only for thi
     delivered();
   });
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Private event journal', { exact: true }).click();
+  await page.getByRole('button', { name: 'Private journal' }).click();
   await arrived;
   await expect(records.getByText('Opening private reflections…')).toBeVisible();
   await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
@@ -73,12 +72,10 @@ test('private journal fences a late initial read and retains drafts only for thi
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Other synthetic reader' }).click();
   await page.getByRole('tab', { name: 'Saved' }).click();
   await page.getByRole('button', { name: 'Private journal' }).click();
-  await page.getByText('Private event journal', { exact: true }).click();
   await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
   await page.getByRole('tab', { name: 'Saved' }).click();
   await page.getByRole('button', { name: 'Private journal' }).click();
-  await page.getByText('Private event journal', { exact: true }).click();
   await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.getByLabel('Username').fill('reader-review-records');
@@ -87,7 +84,6 @@ test('private journal fences a late initial read and retains drafts only for thi
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
   await page.getByRole('tab', { name: 'Saved' }).click();
   await page.getByRole('button', { name: 'Private journal' }).click();
-  await page.getByText('Private event journal', { exact: true }).click();
   await expect(page.getByLabel('Your reflection', { exact: true })).toHaveValue('');
   expect((await (await page.request.get('/api/people/transit-person/journal?offset=0')).json()).entries).toHaveLength(1);
 });
@@ -100,7 +96,7 @@ test('a failed initial journal read is not described as an empty journal', async
     else await route.continue();
   });
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Private event journal', { exact: true }).click();
+  await page.getByRole('button', { name: 'Private journal' }).click();
   await expect(records.getByText('Private reflections could not be refreshed.', { exact: false })).toBeVisible();
   await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
   await page.getByText('Private event journal', { exact: true }).click();
@@ -109,7 +105,7 @@ test('a failed initial journal read is not described as an empty journal', async
 });
 
 test('watchlist ignores a read started before saving and retains an unsaved reminder edit across tabs', async ({ page }) => {
-  await profile(page, 'reader-review-records', 'later');
+  await profile(page, 'reader-review-records');
   const session = await (await page.request.get('/api/session')).json();
   const resultId = `watch-source-${crypto.randomUUID()}`;
   const result = await page.request.post('/api/advanced-results', {
@@ -140,7 +136,7 @@ test('watchlist ignores a read started before saving and retains an unsaved remi
   });
   await page.getByRole('tab', { name: 'Saved' }).click();
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Saved for later · in-app reminders').click();
+  await page.getByRole('button', { name: 'Saved for later' }).click();
   await arrived;
   await expect(records.getByText('Opening saved items…')).toBeVisible();
   await page.getByRole('tab', { name: 'Overview' }).click();
@@ -161,7 +157,7 @@ test('watchlist ignores a read started before saving and retains an unsaved remi
 
 test('watchlist pagination started before an edit cannot append a stale page', async ({ page }) => {
   test.setTimeout(60_000);
-  await profile(page, 'reader-review-page', 'later');
+  await profile(page, 'reader-review-page');
   const session = await (await page.request.get('/api/session')).json();
   const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
   const resultId = `paged-source-${crypto.randomUUID()}`;
@@ -176,7 +172,7 @@ test('watchlist pagination started before an edit cannot append a stale page', a
     })).status()).toBe(201);
   }
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Saved for later · in-app reminders').click();
+  await page.getByRole('button', { name: 'Saved for later' }).click();
   await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeVisible();
   await expect(records.locator('ul > li')).toHaveCount(20);
   let arrive!: () => void;
@@ -206,7 +202,7 @@ test('watchlist pagination started before an edit cannot append a stale page', a
 });
 
 test('watchlist read failure is not an empty list and retried read restores actual items', async ({ page }) => {
-  await profile(page, 'reader-review-records', 'later');
+  await profile(page, 'reader-review-records');
   const session = await (await page.request.get('/api/session')).json();
   const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
   const resultId = `watch-retry-source-${crypto.randomUUID()}`;
@@ -226,7 +222,7 @@ test('watchlist read failure is not an empty list and retried read restores actu
     else await route.continue();
   });
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Saved for later · in-app reminders').click();
+  await page.getByRole('button', { name: 'Saved for later' }).click();
   await expect(records.getByText('Saved items could not be refreshed.', { exact: false })).toBeVisible();
   await expect(records.getByText('No saved items yet.', { exact: false })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 560 });
@@ -238,7 +234,7 @@ test('watchlist read failure is not an empty list and retried read restores actu
 
 test('post-mutation watchlist paging cannot replace a committed first-page refresh', async ({ page }) => {
   test.setTimeout(90_000);
-  await profile(page, 'reader-review-pagination', 'later');
+  await profile(page, 'reader-review-pagination');
   const session = await (await page.request.get('/api/session')).json();
   const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
   const resultId = `review-paged-${crypto.randomUUID()}`;
@@ -253,7 +249,7 @@ test('post-mutation watchlist paging cannot replace a committed first-page refre
     })).status()).toBe(201);
   }
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Saved for later · in-app reminders').click();
+  await page.getByRole('button', { name: 'Saved for later' }).click();
   await expect(records.locator('ul > li')).toHaveCount(20);
   await expect(records.getByRole('button', { name: 'Load more saved items' })).toBeVisible();
 
@@ -320,7 +316,7 @@ test('post-mutation journal paging cannot replace a committed first-page refresh
     })).status()).toBe(201);
   }
   const records = page.getByRole('region', { name: 'Saved timing and private reflections' });
-  await page.getByText('Private event journal', { exact: true }).click();
+  await page.getByRole('button', { name: 'Private journal' }).click();
   await expect(records.locator('ul > li')).toHaveCount(20);
   await expect(records.getByRole('button', { name: 'Load more reflections' })).toBeVisible();
 
