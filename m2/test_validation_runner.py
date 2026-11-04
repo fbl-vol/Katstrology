@@ -152,6 +152,77 @@ raise SystemExit(main())
                 self.assertEqual(results['backend']['diagnostics_status'], 'unavailable')
                 self.assertNotIn('SYNTHETIC_SECRET', json.dumps(results))
 
+    def test_browser_report_is_bounded_and_excludes_payloads_and_private_paths(self):
+        marker = 'SYNTHETIC_PRIVATE_PROMPT'
+        error = {'message': marker, 'snippet': marker,
+                 'location': {'file': '/private/' + marker + '.ts', 'line': 1},
+                 'stack': f'{marker}\n    at {ROOT}/web/tests/instant-send.spec.ts:123:7\n'
+                          f'    at /private/{marker}.ts:4:2'}
+        result = {'status': 'failed', 'errors': [error], 'stdout': [marker],
+                  'attachments': [{'body': marker}]}
+        spec = {'file': 'instant-send.spec.ts', 'line': 20, 'title': marker,
+                'tests': [{'expectedStatus': 'passed', 'results': [result] * 25},
+                          {'expectedStatus': 'failed', 'results': [result]}]}
+        report = {'suites': [{'suites': [{'specs': [spec]}]}], 'errors': [error],
+                  'stats': {'expected': 1, 'unexpected': 25, 'skipped': 0, 'flaky': 0, 'private': marker}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'report.json'
+            path.write_text(json.dumps(report))
+            public = validate.browser_diagnostics(path)
+        self.assertEqual(public['failure_count'], 26)
+        self.assertEqual(public['failures_omitted'], 6)
+        self.assertEqual(len(public['failures']), 20)
+        self.assertEqual(public['failures'][0], {
+            'status': 'failed', 'test': {'file': 'web/tests/instant-send.spec.ts', 'line': 20},
+            'locations': [{'file': 'web/tests/instant-send.spec.ts', 'line': 123}]})
+        self.assertNotIn(marker, json.dumps(public))
+        self.assertEqual(set(public['counts']), {'expected', 'unexpected', 'skipped', 'flaky'})
+
+    def test_real_playwright_json_failure_survives_without_raw_content(self):
+        marker = 'SYNTHETIC_PRIVATE_BROWSER_VALUE'
+        with tempfile.TemporaryDirectory(prefix='browser-diagnostics-', dir=ROOT / '.local') as directory:
+            out = Path(directory)
+            config = out / 'playwright.config.cjs'
+            config.write_text('module.exports = ' + json.dumps({
+                'testDir': directory, 'testMatch': '*.spec.cjs', 'workers': 1,
+                'outputDir': str(out / 'output'), 'reporter': [['json']]}) + ';')
+            (out / 'synthetic.spec.cjs').write_text(
+                'const {test, expect} = require(' + json.dumps(str(ROOT / 'web/node_modules/@playwright/test')) + ');\n'
+                f'test("{marker}", () => {{ expect("{marker}").toBe("other"); }});\n')
+            report = out / 'report.json'
+            env = validate.clean_environment() | {'PLAYWRIGHT_JSON_OUTPUT_FILE': str(report)}
+            completed = subprocess.run([str(ROOT / 'web/node_modules/.bin/playwright'), 'test',
+                '--config', str(config)], env=env, cwd=ROOT / 'web', capture_output=True, timeout=30)
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn(marker, report.read_text())  # Native raw report really includes sensitive-shaped data.
+            public = validate.browser_diagnostics(report)
+            self.assertEqual(public['failure_count'], 1)
+            self.assertEqual(public['counts']['unexpected'], 1)
+            self.assertEqual(public['failures'][0]['status'], 'failed')
+            self.assertIsNone(public['failures'][0]['test'])  # Owned temporary file is not repo source.
+            self.assertNotIn(marker, json.dumps(public))
+
+    def test_failed_browser_profiles_preserve_exit_and_report_unavailability(self):
+        for profile in ('browser', 'siwc', 'clock'):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory(dir=ROOT / '.local') as directory:
+                out = Path(directory)
+                (out / 'normal-dist').mkdir()
+                (out / 'normal-dist/index.html').write_text('synthetic build placeholder')
+                (out / (profile + '-report.json')).write_text('{invalid')
+                failure = subprocess.CalledProcessError(9, ['PRIVATE_COMMAND'])
+                results = {}
+                with patch.object(validate, 'command', side_effect=failure) as command, \
+                        redirect_stderr(io.StringIO()), self.assertRaises(subprocess.CalledProcessError) as caught:
+                    validate.run_profile(profile, {}, out, results, timings=[])
+                self.assertIs(caught.exception, failure)
+                self.assertEqual(results[profile]['returncode'], 9)
+                self.assertEqual(results[profile]['status'], 'stopped')
+                self.assertEqual(results[profile]['diagnostics_status'], 'unavailable')
+                self.assertIn('--reporter=line,json', command.call_args.args[0])
+                self.assertEqual(command.call_args.kwargs['env']['PLAYWRIGHT_JSON_OUTPUT_FILE'],
+                                 str(out / (profile + '-report.json')))
+                self.assertNotIn('PRIVATE_COMMAND', json.dumps(results))
+
     def test_terminal_report_reaches_stderr_and_retains_cleanup_and_unrun_profiles(self):
         stdout, stderr = io.StringIO(), io.StringIO()
         failure = subprocess.CalledProcessError(7, ['SYNTHETIC_SECRET_COMMAND'])

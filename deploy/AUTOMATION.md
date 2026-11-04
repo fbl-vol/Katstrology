@@ -216,7 +216,13 @@ or raw log tails are published. An interrupted backend may leave a `running`
 checkpoint identifying its last-started test; that is not a completed result or
 proof that that test caused termination. Missing/corrupt diagnostics are explicit
 and never replace the original failing exit. Raw logs remain invocation-local.
-No failure artifact upload or immutable workflow repin is needed for this path.
+Browser/SIWC/clock profiles additionally retain Playwright's native JSON report
+inside the owned invocation directory. Only integer outcome counts and at most20
+unexpected results/global errors, with repository test declaration coordinates and
+at most8 source locations each, enter the public stopped-profile summary. Titles,
+messages, stacks, snippets, stdout/stderr, attachments and external paths stay local.
+Missing/malformed/oversized reports remain explicit without replacing a failing
+child exit. No failure artifact upload or immutable workflow repin is needed.
 A fresh hosted attempt is still required to diagnose an earlier failure whose
 runner-local log was lost; do not call that failure transient or fixed from local
 success alone.
