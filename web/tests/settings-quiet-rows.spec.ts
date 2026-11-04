@@ -75,6 +75,52 @@ for (const viewport of [
   });
 }
 
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 1024 },
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'short-mobile', width: 390, height: 640 },
+]) {
+  test(`Expressive tone revisions show their distinct written previews on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await page.getByLabel('Username').fill('reader-appearance');
+    await page.getByLabel('Password').fill('synthetic-browser-password');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.getByRole('button', { name: /Kat's tone/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'How should Kat sound?' });
+    const sends: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'GET' && /\/api\/conversations/.test(request.url())) sends.push(request.url());
+    });
+    for (const item of [
+      { label: 'Thoughtful Wit', id: 'wit', description: 'deliciously dry humour', preview: 'minutes of your inner committee' },
+      { label: 'Grounded Warmth', id: 'warmth', description: 'Full-hearted warmth', preview: 'verdict about you' },
+      { label: 'Playful Cheek', id: 'cheek', description: 'bold friendly cheek', preview: "earned that promotion" },
+      { label: 'Cosmic Cabaret', id: 'cabaret', description: 'Big camp energy', preview: 'however spectacular its hat' },
+    ]) {
+      const option = dialog.getByRole('button', { name: new RegExp(item.label) });
+      await expect(option).toContainText(item.description);
+      await option.scrollIntoViewIfNeeded();
+      await option.click();
+      await expect(option).toHaveAttribute('aria-pressed', 'true');
+      const example = dialog.locator('.tone-example');
+      await expect(example).toContainText(item.preview);
+      await example.scrollIntoViewIfNeeded();
+      const bounds = await dialog.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+      await page.screenshot({ path: resolve(renders, `expressive-${item.id}-${viewport.name}.png`) });
+    }
+    expect(sends).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+    await dialog.getByRole('button', { name: /Quiet Wonder/ }).click();
+    await expect(dialog.getByRole('status')).toContainText('Quiet Wonder is active');
+  });
+}
+
 test('Tone survives reload, follows the Kat owner and reports a failed save honestly', async ({ page, browser }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-shared');

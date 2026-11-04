@@ -8,7 +8,7 @@ from m2.birth_flow import BirthFlow
 from m2.advanced import Advanced
 from m2.cli import DEFAULT_MODEL, model_at
 from m2.prompting import HOSTED, SUMMARY, identity
-from m2.tone_profiles import DEFAULT, instructions
+from m2.tone_profiles import DEFAULT, archived_instructions, instructions
 from m2.recall import rebuild_pending
 from m2.gateway import run_turn
 from m2.people import People
@@ -114,13 +114,14 @@ class ChatBudgetTests(DatabaseCase):
         self.selected = [{'person_id': self.person['id'], 'chart_id': self.chart['id']}]
 
     def turn(self, turn_id, text, selected=None, parent='@active', model=None,
-             provider='chatgpt_plan', conv_id='budget-thread', cancelled=None):
+             provider='chatgpt_plan', conv_id='budget-thread', cancelled=None, acknowledge=None):
         events = []
         status = run_turn(self.store, self.alice, conv_id, turn_id, text,
                           model or self.model, events.append, parent_id=parent,
                           selected_people=self.selected if selected is None else selected,
                           model_provider=provider, cancelled=cancelled,
-                          model_slug=(model or self.model).slug if provider == 'chatgpt_plan' else None)
+                          model_slug=(model or self.model).slug if provider == 'chatgpt_plan' else None,
+                          acknowledge=acknowledge)
         return status, events
 
     def test_synthetic_provider_sees_saturn_return_and_mc_defining_metadata(self):
@@ -238,6 +239,60 @@ class ChatBudgetTests(DatabaseCase):
         self.assertEqual(bridge.requests[-1]['instructions'], instructions('grounded-warmth')[0])
         original = self.store.read_turn(self.alice, 'budget-thread', 'switch-mid-read')
         self.assertEqual(original['events'][0]['payload']['tone'], instructions(DEFAULT)[1])
+
+    def test_revised_and_old_tones_bind_real_requests_reads_budgets_and_replay(self):
+        from m2.agent_reads import TOOLS
+        from m2.test_tone_versions import legacy_identity
+
+        class ReadThenAnswer(CapturedResponses):
+            def response_events(self, _token, body):
+                self.requests.append(body)
+                if len(self.requests) == 1:
+                    yield {'type': 'response.completed', 'response': {'output': [{
+                        'type': 'function_call', 'id': 'fc_tone', 'call_id': 'call_tone',
+                        'name': 'list_reference_sources', 'arguments': '{"after":null}'}]}}, 'tone-read'
+                else:
+                    yield {'type': 'response.output_text.delta', 'delta': 'Synthetic factual answer'}, 'tone-answer'
+                    yield {'type': 'response.completed', 'response': {'output': []}}, 'tone-answer'
+
+        prompt = 'How could I approach a creative disagreement without making a prediction?'
+        for tone_id in ('thoughtful-wit', 'grounded-warmth', 'playful-cheek', 'cosmic-cabaret'):
+            for legacy in (True, False):
+                with self.subTest(tone_id=tone_id, legacy=legacy):
+                    revision = self.store.tone_preference(self.alice)['revision']
+                    self.store.set_tone_preference(self.alice, tone_id, revision)
+                    turn_id = f'{tone_id}-{legacy}'
+                    expected = (archived_instructions(legacy_identity(tone_id)) if legacy
+                                else instructions(tone_id))
+                    bridge = ReadThenAnswer()
+                    model = ResponsesModel(bridge, 'alice', self.model.slug)
+                    if legacy:
+                        # Accept v1, switch back to current code at ACK, then reconstruct
+                        # from the immutable record for the first request and every read.
+                        accepting_v1 = patch('m2.tone_profiles.instructions', return_value=expected)
+                        accepting_v1.start()
+                        try:
+                            status, events = self.turn(turn_id, prompt, parent='@root', model=model,
+                                                      acknowledge=lambda _: accepting_v1.stop())
+                        finally:
+                            accepting_v1.stop()
+                    else:
+                        status, events = self.turn(turn_id, prompt, parent='@root', model=model)
+                    self.assertEqual(status, 'complete', events)
+                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 2)
+                    self.assertEqual(len(bridge.requests), 2)
+                    self.assertTrue(any(event['kind'] == 'tool_result' for event in events))
+                    for request in bridge.requests:
+                        self.assertEqual(request['instructions'], expected[0])
+                    context = next(event['payload'] for event in events if event['kind'] == 'context')
+                    self.assertEqual({key: context[key] for key in expected[1]}, expected[1])
+                    self.assertEqual(context['instruction_tokens'],
+                                     (len((expected[0] + json.dumps(TOOLS)).encode()) + 1) // 2)
+                    self.assertEqual(self.store.read_turn(self.alice, 'budget-thread', turn_id)
+                                     ['events'][0]['payload']['tone'], expected[1])
+                    replay, _ = self.turn(turn_id, prompt, parent='@root', model=model)
+                    self.assertEqual(replay, 'complete')
+                    self.assertEqual(len(bridge.requests), 2)
 
     def test_legacy_prompt_identity_remains_archived_on_idempotent_replay(self):
         status, _ = self.turn('legacy-prompt-replay', 'Synthetic chart question.', parent='@root')
