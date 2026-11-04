@@ -95,7 +95,10 @@ stopped merely because it has a matching name. No old database/files/deletion
 journal is restored, no uncertain effect is retried, and no completed/recovered
 historical attempt is replayed or renamed as successful. Workflow/result artifacts
 report actual phase/containment; inspect them rather than using GitHub's re-run
-button as recovery. Failure during public verification also retains containment.
+button as recovery. CI remains fenced through public verification. If reopening
+succeeds but the final receipt cannot be committed, the verified candidate stays
+open: stopping it could kill newly admitted work. The outcome remains halted /
+completion unconfirmed, with the active attempt retained—not a success claim.
 
 Same-schema releases retain exact migration history. An advancing schema needs
 an installed explicit transition: exact hashed migration files, allowed new empty
@@ -103,7 +106,7 @@ tables and/or nullable columns with **no default**. There is no generic
 `allow 23 -> 24` switch. Backfills, row mutation, constraints/index changes on old
 tables, destructive SQL, skipped/extra migrations and an active Store owner are
 rejected. Snapshot uses the **old image's** exact migration set before candidate
-DDL. Migration is transactional; a durable `migration_started` boundary makes an
+DDL. Migration is transactional; a durable `migrating` boundary makes an
 ambiguous commit outcome stop-only, never an automatic rollback/old-data restore.
 The tone/account-default decision is not made here; no product migration is added.
 

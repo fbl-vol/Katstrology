@@ -84,13 +84,50 @@ class ReadinessTests(unittest.TestCase):
         name = urlsplit(request.full_url).path.lstrip('/') or 'index.html'
         return Response(200, b'corrupt' if self.bad_asset else self.bodies[name])
 
-    def verify(self):
+    def verify(self, *, ci=False):
         opener = type('Opener', (), {'open': lambda _, request, timeout: self.open(request, timeout)})()
         with patch.object(remote, 'build_opener', return_value=opener), \
              patch.object(remote, 'monotonic', self.clock.now, create=True), \
              patch.object(remote, 'sleep', self.clock.sleep, create=True), \
              patch.object(remote, 'LOCAL_READINESS_SECONDS', 3.0, create=True):
-            return self.release.phase('verify_serving_path')
+            return self.release.phase('verify_serving_path', ci_admission={} if ci else None)
+
+    def test_ci_stays_fenced_through_public_boundary_and_never_stops_work_after_reopen(self):
+        for failed_receipt in (False, True):
+            with self.subTest(failed_receipt=failed_receipt):
+                self.fixture()
+                state = {'phase': 'fenced', 'attempt': self.release.plan['attempt'], 'boot': 'b' * 32}
+                resumes = []
+                def maintenance(container, action, attempt):
+                    self.assertEqual(container, 'app-id')
+                    if action == 'resume':
+                        resumes.append(action)
+                        state.update(phase='open', attempt=None)
+                    return dict(state)
+                original = remote.os.replace
+                def replace(source, destination):
+                    if (failed_receipt and Path(source).name == 'phase.next'
+                            and json.loads(Path(source).read_text())['phase'] == 'completed'):
+                        raise OSError('Synthetic completion receipt failure')
+                    return original(source, destination)
+                with patch.object(remote, 'maintenance', side_effect=maintenance):
+                    self.assertEqual(self.verify(ci=True)['status'], 'ok')
+                    self.assertEqual(state['phase'], 'fenced')
+                    self.assertFalse(resumes, 'Local verification must not admit work before public verification')
+                    stops = sum('stop' in call for call in self.release.calls)
+                    with patch.object(remote.os, 'replace', side_effect=replace):
+                        result = self.release.phase('complete', ci_admission={})
+                    self.assertEqual(resumes, ['resume'])
+                    self.assertTrue(self.release.running)
+                    self.assertEqual(sum('stop' in call for call in self.release.calls), stops)
+                    self.assertEqual(state['phase'], 'open')
+                    if failed_receipt:
+                        self.assertEqual(result['status'], 'halted')
+                        self.assertIn('completion unconfirmed', result['serving'])
+                        self.assertTrue((self.release.root / 'active-attempt').exists())
+                    else:
+                        self.assertEqual(result['status'], 'ok')
+                        self.assertFalse((self.release.root / 'active-attempt').exists())
 
     def test_refused_then_503_then_401_proceeds_without_activation_retry(self):
         self.events = [URLError(ConnectionRefusedError(111, 'synthetic startup')), 503, 401]

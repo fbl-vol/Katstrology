@@ -83,6 +83,9 @@ def main():
     if command(['docker', 'image', 'inspect', image, '--format', '{{.Id}}']) != image:
         raise RuntimeError('The exact receipt image is not local')
     project = 'kat-acceptance-' + secrets.token_hex(6)
+    toolchain = {'docker': command(['docker', 'version', '--format', '{{.Server.Version}}']),
+                 'buildx': command(['docker', 'buildx', 'version']),
+                 'compose': command(['docker', 'compose', 'version', '--short'])}
     port = free_port()
     with tempfile.TemporaryDirectory(prefix=project + '-', dir=ROOT / '.local') as directory:
         stage = Path(directory)
@@ -175,6 +178,7 @@ def main():
                 raise RuntimeError('Owned smoke volume survived cleanup')
     print(json.dumps({'status': 'passed', 'commit': tip, 'image_id': image,
                       'project': project, 'host_port': port, 'schema': current_schema_version(),
+                      'toolchain': toolchain,
                       'empty_accounts': True, 'unauthenticated_401': True,
                       'invalid_host_403': True, 'packaged_dist_matched': True,
                       'restart': 'passed', 'state_checks': state_checks, 'cleanup': 'passed'}))

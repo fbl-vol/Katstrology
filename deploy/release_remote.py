@@ -429,6 +429,16 @@ def quarantine(target, planned, *, failure_type=None):
                         raise ValueError('Pre-stop drain owner changed')
                     resume_old_drain(stage, planned, container)
                     outcome['serving'] = 'unchanged; old app admission reopened before stop'
+                elif phase == 'reopening' and 'ci_admission' in REQUEST:
+                    reopened = json.loads((stage / 'reopen-owner.json').read_text())
+                    if (not info['State']['Running'] or container != reopened['container']
+                            or info['Image'] != planned['artifact']['config_digest']
+                            or maintenance(container, 'status', planned['attempt']) != {
+                                'phase': 'open', 'attempt': None, 'boot': reopened['boot']}):
+                        raise ValueError('Final admission outcome unconfirmed')
+                    # Public verification already succeeded. New user work may be
+                    # admitted: a receipt/fsync failure must not kill that work.
+                    outcome['serving'] = 'open; verified candidate admission resumed, completion unconfirmed'
                 else:
                     if info['State']['Running']:
                         run('docker', 'stop', container)
@@ -796,13 +806,9 @@ def release_phase():
             state = maintenance(expected_container, 'status', planned['attempt'])
             if state['phase'] != 'fenced' or state['attempt'] != planned['attempt']:
                 raise ValueError('Candidate started without the inherited fence')
-            advance('app_started', 'reopening')
-            opened = maintenance(expected_container, 'resume', planned['attempt'])
-            if opened != {'phase': 'open', 'attempt': None, 'boot': state['boot']}:
-                raise ValueError('Candidate admission reopen unconfirmed')
-            advance('reopening', 'local_verified')
-        else:
-            advance('app_started', 'local_verified')
+        # Keep CI fenced through the subsequent public-TLS checks. Only complete
+        # may reopen it after server-side public verification has also succeeded.
+        advance('app_started', 'local_verified')
         return {'phase': action, 'status': 'ok', 'assets': assets, 'readiness': readiness}
     elif action == 'complete':
         if release_files(target) != json.loads((stage / 'files.promoted.json').read_text()):
@@ -818,7 +824,18 @@ def release_phase():
         if owner.read_text().strip() != planned['attempt']:
             raise ValueError('Active release ownership changed')
         post_start_integrity(c, json.loads((stage / 'state.before.json').read_text())['state'])
-        advance('local_verified', 'completed')
+        if 'ci_admission' in REQUEST:
+            state = maintenance(container, 'status', planned['attempt'])
+            if state['phase'] != 'fenced' or state['attempt'] != planned['attempt']:
+                raise ValueError('Candidate admission changed before completion')
+            durable_text(stage / 'reopen-owner.json', json.dumps({'container': container, 'boot': state['boot']}))
+            advance('local_verified', 'reopening')
+            opened = maintenance(container, 'resume', planned['attempt'])
+            if opened != {'phase': 'open', 'attempt': None, 'boot': state['boot']}:
+                raise ValueError('Candidate admission reopen unconfirmed')
+            advance('reopening', 'completed')
+        else:
+            advance('local_verified', 'completed')
         owner.unlink()
         sync_directory(owner.parent)
     else:

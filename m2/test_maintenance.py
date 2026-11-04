@@ -33,6 +33,9 @@ class MaintenanceTests(IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         with self.assertRaises(MaintenanceUnavailable):
             gate.enter()
+        with self.assertRaisesRegex(ValueError, 'drain still executing'):
+            gate.resume('a' * 32)
+        self.assertEqual(gate.phase, 'draining')
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         self.assertFalse(draining.done(), 'Cancelling the waiter must not drain its running worker')

@@ -350,6 +350,10 @@ test('a committed creation with lost response retries the same conversation and 
 });
 
 test('release maintenance preserves the pending identity and newer draft without automatic resend', async ({ page }) => {
+  const evidence = process.env.KAT_BROWSER_DIST ?
+    resolve(process.env.KAT_BROWSER_DIST, '../release-maintenance-renders') : resolve(renders, 'release-maintenance');
+  mkdirSync(evidence, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1024 });
   await signIn(page, 'reader-instant-normal');
   const ids: string[] = [];
   await page.route('**/api/conversations/*/turns', async route => {
@@ -362,13 +366,25 @@ test('release maintenance preserves the pending identity and newer draft without
   await send(page, 'Keep this message through the update', 'Send');
   await expect(page.locator('.local-pending')).toContainText('Kat is updating');
   await page.getByLabel('Message Kat').fill('A newer unsent draft');
+  await expect(page.getByRole('alert')).toContainText('Your message is still here');
+  const retry = page.getByRole('button', { name: 'Retry this message' });
+  await retry.focus();
+  await expect(retry).toBeFocused();
+  await page.screenshot({ path: resolve(evidence, 'maintenance-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(retry).toBeInViewport();
+  await page.screenshot({ path: resolve(evidence, 'maintenance-mobile.png'), fullPage: true });
   expect(ids).toHaveLength(1);
-  await page.getByRole('button', { name: 'Retry this message' }).click();
+  await retry.press('Enter');
   await expect(page.locator('.local-pending')).toHaveCount(0);
   await expect(page.getByLabel('Message Kat')).toHaveValue('A newer unsent draft');
   expect(ids).toHaveLength(2);
   expect(ids[0]).toBe(ids[1]);
   await expect(page.locator('.turn-card')).toHaveCount(1);
+  await expect(page.locator('.turn-card')).toHaveAttribute('data-kat-status', 'complete');
+  await page.screenshot({ path: resolve(evidence, 'resumed-mobile.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.screenshot({ path: resolve(evidence, 'resumed-desktop.png'), fullPage: true });
 });
 
 test('a rejected plan keeps the user bubble and reuses the same identity after retry', async ({ page }) => {

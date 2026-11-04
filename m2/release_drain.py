@@ -106,8 +106,8 @@ class Admission:
         return self.status()
 
     def resume(self, attempt):
-        if attempt != self.attempt or self.phase == 'open':
-            raise ValueError('Maintenance owner differs')
+        if attempt != self.attempt or self.phase not in ('fenced', 'drained'):
+            raise ValueError('Maintenance owner differs or drain still executing')
         if self.fence:
             if json.loads(self.fence.read_text()) != {'attempt': attempt}:
                 raise ValueError('Persisted maintenance owner differs')
