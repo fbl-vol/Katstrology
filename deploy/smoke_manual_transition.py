@@ -16,6 +16,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import traceback
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
@@ -83,6 +84,7 @@ class NativeFixture:
         self.compose = ['docker', 'compose', '--env-file', str(self.envfile), '-f', str(self.compose_path),
                         '-p', self.project]
         self.migration_calls = 0
+        self.phase_failures = []
         self.started = False
         self.target = None
 
@@ -206,16 +208,34 @@ dsn=deployment_dsn('/run/secrets/db_password','db','kat','kat')
         def transport(alias, request, upload=None, **kwargs):
             if alias != 'owned-native-only':
                 raise ValueError('Native fixture has no SSH transport')
-            if upload:
-                with upload.open('rb') as stream:
-                    return access.dispatch(request, policy, stream)
-            return access.dispatch(request, policy, BytesIO())
+            try:
+                if upload:
+                    with upload.open('rb') as stream:
+                        return access.dispatch(request, policy, stream)
+                return access.dispatch(request, policy, BytesIO())
+            except Exception as error:
+                self.phase_failures.append({'action': request['action'], 'boundary': 'admission',
+                    'error_class': type(error).__name__, 'message': str(error)[:1000]})
+                raise
         edge = LocalEdge(self.port, self.target['origin'])
+        original_phase = remote.release_phase
+        def recorded_phase():
+            try:
+                return original_phase()
+            except Exception as error:
+                # All inputs are synthetic. Retain bounded discriminating evidence
+                # before resource cleanup, without keys, request bodies or locals.
+                self.phase_failures.append({'action': remote.REQUEST['action'],
+                    'error_class': type(error).__name__, 'message': str(error)[:1000],
+                    'frames': [{'file': Path(frame.filename).name, 'line': frame.lineno}
+                               for frame in traceback.extract_tb(error.__traceback__)[-8:]]})
+                raise
         with ExitStack() as stack:
             stack.enter_context(patch.object(access, 'protected', side_effect=self.protected))
             stack.enter_context(patch.object(remote, 'protected_file', side_effect=self.protected))
             stack.enter_context(patch.object(remote, 'SERVER_ENV', self.base_env))
             stack.enter_context(patch.object(remote, 'run', side_effect=self.phase_command))
+            stack.enter_context(patch.object(remote, 'release_phase', side_effect=recorded_phase))
             stack.enter_context(patch.object(pipeline, 'remote', side_effect=transport))
             stack.enter_context(patch.object(pipeline, 'build_opener', return_value=edge))
             stack.enter_context(patch('urllib.request.build_opener', return_value=edge))
@@ -324,11 +344,23 @@ def qualify(old_path, candidate_path, output):
         for ambiguous in (False, True):
             with tempfile.TemporaryDirectory(prefix='owned-', dir=output) as directory:
                 fixture = NativeFixture(Path(directory), old, candidate, compose, ambiguous=ambiguous)
+                case = {'project': fixture.project, 'ambiguous_control': ambiguous, 'status': 'running'}
+                report['cases'].append(case)
                 try:
                     fixture.start()
-                    report['cases'].append(fixture.execute(archive) | {'project': fixture.project})
+                    case.update(fixture.execute(archive))
+                except Exception as error:
+                    case.update(status='failed', error_class=type(error).__name__)
+                    raise
                 finally:
+                    case['phase_failures'] = fixture.phase_failures
+                    receipt = fixture.root / 'controller-result.json'
+                    if receipt.exists():
+                        shutil.copyfile(receipt, output / (fixture.project + '-controller.json'))
+                    case['phases'] = [json.loads(path.read_text()) for path in
+                                      (fixture.root / 'stages').glob('*/phase.json')]
                     fixture.cleanup()
+                    case['cleanup'] = 'passed'
         report['status'] = 'passed'
         report['cleanup'] = 'passed'
     except Exception as error:
