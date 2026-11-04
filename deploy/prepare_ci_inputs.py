@@ -4,6 +4,8 @@ from hashlib import sha256
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
+from deploy import prepare_test_model
+
 FILES = {
     'sepl_18.se1': 'ca1393ceab3a44fbc895887cf789c68819ae6a1cbc9b22225872dbe4ccd99a66',
     'semo_18.se1': '1ca07bd67c24374d77226180c20a4f9996cba013697894810518e7eb582ca4f7',
@@ -28,6 +30,7 @@ def main():
         if path.is_symlink() or sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError('Public ephemeris cache changed')
     print('Three pinned public Swiss files verified; not included in release artifacts.')
+    prepare_test_model.main()
 
 
 if __name__ == '__main__':

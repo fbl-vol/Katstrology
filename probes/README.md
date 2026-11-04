@@ -14,7 +14,7 @@ Use CPython 3.11.16 and the pinned public packages. From the checkout root:
 
 ```bash
 umask 077
-uv venv --python 3.11.16 .venv-swiss
+uv venv --seed --python 3.11.16 .venv-swiss
 uv pip install --python .venv-swiss/bin/python -r probes/requirements-swiss.txt
 # Download only public Swiss ephemeris files, verify their hashes below, and
 # place them under .local/ephe/; no personal input goes into the download.
@@ -66,6 +66,26 @@ The tested Swiss files were downloaded from the public
 
 Upstream `master` is mutable; different file hashes mean different numerical
 evidence. Retain upstream license notices before any redistribution.
+
+## Public local tokenizer fixture
+
+The complete backend suite includes five real local-tokenizer context-budget tests.
+They require the native binding and GGUF even though hosted browser startup does
+not. In a pip-enabled CPython3.11 virtualenv on Linux x86_64, prepare both with:
+
+```bash
+.venv-swiss/bin/python -m deploy.prepare_test_model
+```
+
+This installs `probes/requirements-model.txt` with the official llama-cpp-python
+0.3.36 CPU wheel pinned by SHA-256, and downloads the public
+[Qwen GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/9217f5db79a29953eb74d5343926648285ec7e67)
+`qwen2.5-0.5b-instruct-q5_k_m.gguf`: 522186592 bytes, SHA-256
+`041474553fcabfc2a2d67903f9d2c2e50bd92528e670da4f33b5d0ce6e59fd55`.
+Cold downloads and existing cache entries must match; corrupt files fail rather
+than being silently replaced. No model inference, provider call or private cache
+is used. This fixture is test-only, not included in the production image/artifacts.
+CI's existing `deploy.prepare_ci_inputs` entry point prepares it after Swiss files.
 
 ## Scope and independently checkable methods
 
