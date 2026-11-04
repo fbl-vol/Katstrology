@@ -198,8 +198,11 @@ function App() {
   }
 
   function closeSettings() {
+    const leavingFocus = document.activeElement;
     setSettingsOpen(false);
     requestAnimationFrame(() => {
+      // The reader may already be typing before this deferred restoration runs.
+      if (document.activeElement !== document.body && document.activeElement !== leavingFocus) return;
       const target = settingsOpener.current;
       if (target?.getClientRects().length && getComputedStyle(target).visibility !== 'hidden') target.focus();
       else if (window.matchMedia('(max-width:700px)').matches) menuButton.current?.focus();

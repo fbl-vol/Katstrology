@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -20,9 +21,35 @@ PASSWORD = 'synthetic_test_only'  # disposable test container, never a user cred
 def command(argv, *, env=None, cwd=ROOT, log=None, timeout=900):
     if log is None:
         return subprocess.check_output(argv, cwd=cwd, env=env, text=True, timeout=timeout).strip()
-    with log.open('x') as output:
-        subprocess.run(argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
-                       timeout=timeout, check=True)
+    with log.open('x') as output, subprocess.Popen(
+            argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+            start_new_session=True) as process:
+        try:
+            try:
+                process.wait(timeout=timeout)
+            except BaseException:
+                # Give Playwright its native interruption/teardown path before
+                # force-killing. A parent-only timeout otherwise orphans fixtures.
+                try:
+                    os.killpg(process.pid, signal.SIGINT)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                raise  # Preserve the original timeout/interrupt, never a pass.
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, argv)
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 @contextmanager
@@ -204,6 +231,33 @@ def browser_diagnostics(path):
             'failures_omitted': total - len(failures)}
 
 
+def browser_progress(path):
+    with path.open() as source:
+        text = source.read(16385)
+    if len(text) > 16384:
+        raise ValueError('Oversized browser checkpoint')
+    report = json.loads(text)
+    if report['status'] not in ('initializing', 'running', 'passed', 'failed', 'timedout', 'interrupted'):
+        raise ValueError('Unknown browser checkpoint status')
+    public = {'status': report['status']}
+    for key in ('total', 'started', 'finished', 'global_errors', 'active_omitted'):
+        if type(report[key]) is not int or report[key] < 0:
+            raise ValueError('Invalid browser checkpoint count')
+        public[key] = report[key]
+    public['active'] = [browser_location(item) if isinstance(item, dict) else None
+                        for item in report['active'][:8]]
+    for key in ('last_started_test', 'last_finished_test'):
+        value = report.get(key)
+        public[key] = browser_location(value) if isinstance(value, dict) else None
+    public['outcomes'] = {key: value for key, value in report['outcomes'].items()
+                          if key in ('passed', 'failed', 'timedOut', 'skipped', 'interrupted')
+                          and type(value) is int and value >= 0}
+    public['resources'] = {key: value for key, value in report['resources'].items()
+                           if key in ('node_rss', 'free_memory', 'total_memory', 'load1')
+                           and type(value) in (int, float) and 0 <= value < 2**60}
+    return public
+
+
 def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timings,
                 private_layout_reference=False):
     python = ROOT / '.venv-swiss/bin/python'
@@ -223,7 +277,9 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
         if profile == 'browser' and private_layout_reference:
             env['KAT_LAYOUT_PRIVATE_REFERENCE'] = '1'
         env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / (profile + '-report.json'))
-        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test', '--reporter=line,json'], web
+        env['KAT_BROWSER_PROGRESS_FILE'] = str(out / (profile + '-progress.json'))
+        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test',
+                     '--reporter=line,json,./validation-reporter.cjs'], web
         if browser_grep:
             argv.extend(['--grep', browser_grep])
     logfile = out / (profile + '.log')
@@ -251,6 +307,10 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
             except (OSError, ValueError):
                 results[profile]['diagnostics_status'] = 'unavailable'
         elif profile in PROFILES[2:]:
+            try:
+                results[profile]['progress'] = browser_progress(out / (profile + '-progress.json'))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                results[profile]['progress_status'] = 'unavailable'
             try:
                 results[profile]['diagnostics'] = browser_diagnostics(out / (profile + '-report.json'))
             except (OSError, ValueError, TypeError, KeyError, AttributeError):

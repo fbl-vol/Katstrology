@@ -4,10 +4,15 @@ from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import shlex
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
+from time import monotonic, sleep
 import unittest
 from unittest.mock import patch
 
@@ -185,12 +190,14 @@ raise SystemExit(main())
             config = out / 'playwright.config.cjs'
             config.write_text('module.exports = ' + json.dumps({
                 'testDir': directory, 'testMatch': '*.spec.cjs', 'workers': 1,
-                'outputDir': str(out / 'output'), 'reporter': [['json']]}) + ';')
+                'outputDir': str(out / 'output'),
+                'reporter': [['json'], [str(ROOT / 'web/validation-reporter.cjs')]]}) + ';')
             (out / 'synthetic.spec.cjs').write_text(
                 'const {test, expect} = require(' + json.dumps(str(ROOT / 'web/node_modules/@playwright/test')) + ');\n'
                 f'test("{marker}", () => {{ expect("{marker}").toBe("other"); }});\n')
             report = out / 'report.json'
-            env = validate.clean_environment() | {'PLAYWRIGHT_JSON_OUTPUT_FILE': str(report)}
+            env = validate.clean_environment() | {'PLAYWRIGHT_JSON_OUTPUT_FILE': str(report),
+                'KAT_BROWSER_PROGRESS_FILE': str(out / 'progress.json')}
             completed = subprocess.run([str(ROOT / 'web/node_modules/.bin/playwright'), 'test',
                 '--config', str(config)], env=env, cwd=ROOT / 'web', capture_output=True, timeout=30)
             self.assertEqual(completed.returncode, 1)
@@ -201,6 +208,74 @@ raise SystemExit(main())
             self.assertEqual(public['failures'][0]['status'], 'failed')
             self.assertIsNone(public['failures'][0]['test'])  # Owned temporary file is not repo source.
             self.assertNotIn(marker, json.dumps(public))
+            checkpoint = validate.browser_progress(out / 'progress.json')
+            self.assertEqual(checkpoint['status'], 'failed')
+            self.assertEqual(checkpoint['finished'], 1)
+            self.assertEqual(checkpoint['outcomes']['failed'], 1)
+            self.assertNotIn(marker, json.dumps(checkpoint))
+
+    def test_browser_timeout_interrupts_native_runner_and_its_detached_webserver(self):
+        with tempfile.TemporaryDirectory(prefix='browser-interrupt-', dir=ROOT / '.local') as directory:
+            out = Path(directory)
+            port = validate.free_port()
+            server = out / 'server.py'
+            pidfile = out / 'server.pid'
+            server.write_text('from http.server import HTTPServer, BaseHTTPRequestHandler\n'
+                'from pathlib import Path\nimport os\n'
+                'class Handler(BaseHTTPRequestHandler):\n'
+                ' def do_GET(self): self.send_response(200); self.end_headers()\n'
+                f'server=HTTPServer(("127.0.0.1",{port}),Handler)\n'
+                f'Path({str(pidfile)!r}).write_text(str(os.getpid()))\nserver.serve_forever()\n')
+            progress, report = out / 'progress.json', out / 'report.json'
+            (out / 'blocked.spec.cjs').write_text('const {test}=require(' +
+                json.dumps(str(ROOT / 'web/node_modules/@playwright/test')) + ');\n'
+                'test("SYNTHETIC_PRIVATE_TITLE",async()=>{test.setTimeout(0);await new Promise(()=>{});});')
+            config = out / 'playwright.config.cjs'
+            config.write_text('module.exports=' + json.dumps({'testDir': directory,
+                'testMatch': '*.spec.cjs', 'workers': 1, 'outputDir': str(out / 'output'),
+                'reporter': [['json'], [str(ROOT / 'web/validation-reporter.cjs')]],
+                'webServer': {'command': shlex.join([sys.executable, str(server)]), 'cwd': directory,
+                              'url': f'http://127.0.0.1:{port}', 'reuseExistingServer': False}}))
+            env = validate.clean_environment() | {'PLAYWRIGHT_JSON_OUTPUT_FILE': str(report),
+                'KAT_BROWSER_PROGRESS_FILE': str(progress)}
+            native_popen = subprocess.Popen
+            def ready_child(*args, **kwargs):
+                process = native_popen(*args, **kwargs)
+                deadline = monotonic() + 20
+                while monotonic() < deadline:
+                    if progress.exists() and json.loads(progress.read_text())['started'] == 1:
+                        return process
+                    if process.poll() is not None:
+                        break
+                    sleep(0.05)
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                self.fail('Native Playwright child did not reach the controlled blocked test')
+            try:
+                with patch.object(validate.subprocess, 'Popen', side_effect=ready_child), \
+                        self.assertRaises(subprocess.TimeoutExpired):
+                    validate.command([str(ROOT / 'web/node_modules/.bin/playwright'), 'test',
+                        '--config', str(config)], cwd=ROOT / 'web', env=env,
+                        log=out / 'runner.log', timeout=0.2)
+                self.assertEqual(validate.browser_progress(progress)['status'], 'interrupted')
+                self.assertNotIn('SYNTHETIC_PRIVATE_TITLE', progress.read_text())
+                self.assertTrue(report.is_file(), 'Native reporter must get its interruption callback')
+                with socket.socket() as probe:
+                    self.assertNotEqual(probe.connect_ex(('127.0.0.1', port)), 0,
+                                        'Detached fixture still serves after timeout')
+            finally:
+                # A failed regression must not leak its own synthetic HTTP child.
+                if pidfile.exists():
+                    pid = int(pidfile.read_text())
+                    cmdline = Path(f'/proc/{pid}/cmdline')
+                    try:
+                        if str(server).encode() in cmdline.read_bytes().split(b'\0'):
+                            os.kill(pid, signal.SIGKILL)
+                    except (FileNotFoundError, ProcessLookupError):
+                        pass
 
     def test_failed_browser_profiles_preserve_exit_and_report_unavailability(self):
         for profile in ('browser', 'siwc', 'clock'):
@@ -218,7 +293,7 @@ raise SystemExit(main())
                 self.assertEqual(results[profile]['returncode'], 9)
                 self.assertEqual(results[profile]['status'], 'stopped')
                 self.assertEqual(results[profile]['diagnostics_status'], 'unavailable')
-                self.assertIn('--reporter=line,json', command.call_args.args[0])
+                self.assertIn('--reporter=line,json,./validation-reporter.cjs', command.call_args.args[0])
                 self.assertEqual(command.call_args.kwargs['env']['PLAYWRIGHT_JSON_OUTPUT_FILE'],
                                  str(out / (profile + '-report.json')))
                 self.assertNotIn('PRIVATE_COMMAND', json.dumps(results))
