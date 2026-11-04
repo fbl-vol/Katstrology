@@ -275,6 +275,10 @@ class Store:
                             for row in recorded)):
                     raise ValueError('Turn ID reused with changed input, ancestry or people')
                 return False
+            # Retained file identities are replay-only. New turns must not attach
+            # person files, even through a non-HTTP gateway caller.
+            if chart_file is not None:
+                raise ValueError('New turns cannot attach person files')
             for item in attachment_ids:
                 if not self.db.execute('''
                     SELECT 1 FROM attachments WHERE owner_id=%s AND conversation_id=%s AND id=%s
@@ -383,11 +387,6 @@ class Store:
                     from m2.charts import Charts
                     if Charts(self).get_chart(session, chart_id)['source_status'] != 'current':
                         raise ValueError('Selected chart source is superseded')
-                if person_id == file_person and not self.db.execute('''
-                    SELECT 1 FROM person_attachments
-                    WHERE owner_id=%s AND person_id=%s AND id=%s
-                ''', (owner, person_id, file_id)).fetchone():
-                    raise KeyError('Selected file does not belong to person')
                 self.db.execute('''
                     INSERT INTO turn_people(owner_id,conversation_id,turn_id,person_id,
                                             draft_revision,chart_id,birth_id,profile_id,profile_revision,
@@ -397,7 +396,7 @@ class Store:
                       chart['birth_id'] if chart else None,
                       chart['profile_id'] if chart else None,
                       chart['profile_revision'] if chart else None,
-                      file_id if person_id == file_person else None))
+                      None))
                 self.db.execute('''
                     INSERT INTO conversation_people(owner_id,conversation_id,person_id)
                     VALUES (%s,%s,%s) ON CONFLICT DO NOTHING

@@ -57,7 +57,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic apogee reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
   await expect(page.getByRole('tabpanel', { name: 'Charts' }).getByRole('row', { name: /Black Moon Lilith \(mean lunar apogee\)/ }).first()).toBeVisible();
-  await page.getByRole('button', { name: 'Edit current chart' }).click();
+  await page.getByRole('button', { name: 'Edit birth details' }).click();
   await form.getByText('Advanced · chart settings and location').click();
   await form.getByLabel('Black Moon Lilith (lunar apogee)').selectOption('osculating', { timeout: 8000 });
   await expect(form.getByRole('button', { name: 'Change birthplace' })).toBeVisible();

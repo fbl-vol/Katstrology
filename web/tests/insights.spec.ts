@@ -18,8 +18,8 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   const newPerson = page.getByRole('dialog', { name: 'A space for someone new.' });
   await newPerson.getByLabel('Name').fill('Synthetic notebook reader');
   await newPerson.getByRole('button', { name: 'Create person' }).click();
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic notebook reader' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await page.getByLabel('Message Kat').fill('I collect synthetic sky sketches.');
   await page.getByRole('button', { name: 'Send message' }).click();
   const turn = page.locator('.turn-card').last();
@@ -42,7 +42,7 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   await picker.getByRole('button', { name: 'Save for this person' }).click();
   await expect(picker).toBeHidden();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic notebook reader/ }).click();
-  await page.getByRole('tab', { name: 'Insights' }).click();
+  await page.getByRole('tab', { name: 'Saved' }).click();
   const notebook = page.locator('.insight-notebook');
   await expect(notebook.getByText('synthetic sky sketches', { exact: true })).toBeVisible();
   await expect(notebook).toContainText('Current source');
@@ -58,7 +58,7 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   await expect(page.locator('.turn-card').last()).toContainText('I collect synthetic sky sketches.');
   await page.getByLabel('Message Kat').fill('Unsent follow-up remains a draft.');
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic notebook reader/ }).click();
-  await page.getByRole('tab', { name: 'Insights' }).click();
+  await page.getByRole('tab', { name: 'Saved' }).click();
   await expect(notebook.getByText('synthetic sky sketches', { exact: true })).toBeVisible();
   await notebook.getByRole('button', { name: 'Edit note' }).click();
   await notebook.getByLabel('Personal note').fill('Revised human annotation.');
@@ -85,6 +85,6 @@ test('explicit passage save, notebook edit/removal and original discussion stay 
   await page.reload();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic notebook reader/ }).click();
-  await page.getByRole('tab', { name: 'Insights' }).click();
+  await page.getByRole('tab', { name: 'Saved' }).click();
   await expect(page.locator('.insight-entry')).toHaveCount(0);
 });

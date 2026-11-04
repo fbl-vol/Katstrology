@@ -14,6 +14,7 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from m2.attachments import Attachments
 from m2.deletion import Tombstones
 from m2.local_fixture import ROOT, fixture_dsn
 from m2.store import Session, Store
@@ -50,6 +51,19 @@ def synthetic_web_dist(directory):
     dist.mkdir()
     (dist / 'index.html').write_text('<!doctype html><title>synthetic HTTP fixture</title>', encoding='utf-8')
     return dist
+
+
+def seed_legacy_person_file(store, session, person_id, file_id, filename, content,
+                            media_type='application/pdf'):
+    """Fixture for already-retained person files; no product creation API remains."""
+    owner = store.owner(session)
+    digest = Attachments(store)._store_blob(content)
+    with store.db.transaction():
+        store.db.execute('''
+            INSERT INTO person_attachments(owner_id,person_id,id,filename,media_type,digest,byte_count)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ''', (owner, person_id, file_id, filename, media_type, digest, len(content)))
+    return digest
 
 
 def seeded_session(store, owner):

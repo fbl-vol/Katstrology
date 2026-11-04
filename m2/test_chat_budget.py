@@ -692,22 +692,6 @@ class ChatBudgetTests(DatabaseCase):
         else:
             self.fail('The first tool call/result pair never reached the bounded summary source')
 
-    def test_compaction_request_never_inherits_current_turn_image(self):
-        # The real gateway attaches an image only after per-turn archive consent.
-        # A separate summary call from that very model must still be text-only.
-        self.model.chart_file = {'type': 'input_image',
-                                 'image_url': 'data:image/png;base64,SYNTHETIC'}
-        source = json.dumps({'previous_checkpoint': None,
-                             'newly_retired_eligible_turns': [['synthetic', 'report']]})
-        list(self.model.create_completion(source, instructions=SUMMARY,
-                                          summary=True, max_output_tokens=512))
-        body = self.bridge.requests[0]
-        self.assertEqual(body['instructions'], SUMMARY)
-        self.assertEqual(body['max_output_tokens'], 512)
-        self.assertEqual(body['input'][0]['content'], [
-            {'type': 'input_text', 'text': source}])
-        self.assertNotIn('tools', body)
-
     def test_route_catalog_limits_are_distinct_from_docs_and_unknown_is_not_4k(self):
         for window in (500_000, 272_000):
             with self.subTest(window=window):

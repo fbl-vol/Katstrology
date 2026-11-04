@@ -52,20 +52,19 @@ for (const viewport of [
     expect(chartId).toMatch(/^chart-[a-f0-9]+$/);
     expect(result.chart.result.natal.status).toBe('complete');
     expect(result.chart.result.birth.provenance).toBe('provisional:geonames_city_centre_2618425');
-    await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+    await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
     await expect(page.locator('.profile-active-chart')).toBeVisible();
     await expect(form.locator('.birth-status')).toHaveText('Current natal saved. Details remain provisional.');
     await expect(page.locator('.profile-active-chart')).toContainText('Birth details are provisional');
     await expect(page.locator('.profile-active-chart')).toContainText('city-centre reference, not an exact birth location');
     await expect(page.locator('.profile-active-chart')).not.toContainText('not independently verified');
-    await expect(page.locator('.profile-active-chart details.chart-supporting-data')).not.toHaveAttribute('open');
     await page.locator('.profile-active-chart').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.local/one-step/chart-handoff-${viewport.name}.png` });
     await expect(page.locator('.profile-active-chart').getByRole('table', { name: 'Planet and lunar node positions' })).toBeVisible();
     await expect(page.locator('.profile-active-chart').getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
     await page.locator('.profile-active-chart').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.local/one-step/generated-${viewport.name}.png` });
-    await page.getByRole('button', { name: 'Discuss current natal' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.locator('.person-chip')).toContainText('current natal');
     await page.getByLabel('Message Kat').fill(`saved chart ${chartId}`);
     const turnAck = page.waitForResponse(response => response.request().method() === 'POST' &&
@@ -81,14 +80,14 @@ for (const viewport of [
     await page.getByRole('tab', { name: 'Charts' }).click();
     await page.locator('.chart-history > summary').click();
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"] > summary`)).toContainText('Current natal');
-    await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+    await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
     let placeSearches = 0;
     let modelSends = 0;
     page.on('request', request => {
       if (request.url().includes('/api/places/search')) placeSearches++;
       if (/\/api\/conversations\/[^/]+\/turns$/.test(request.url()) && request.method() === 'POST') modelSends++;
     });
-    await page.getByRole('button', { name: 'Edit current chart' }).click();
+    await page.getByRole('button', { name: 'Edit birth details' }).click();
     const nextForm = page.getByRole('region', { name: 'Generate a chart' });
     await expect(nextForm.getByLabel('Birthplace search')).toHaveValue('Copenhagen, Capital Region, Denmark');
     await expect(nextForm.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
@@ -109,7 +108,7 @@ for (const viewport of [
     expect(modelSends).toBe(0);
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"] > summary`)).toContainText('Historical chart');
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${nextId}"] > summary`)).toContainText('Current natal');
-    await page.getByRole('button', { name: 'Discuss current natal' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.locator('.person-chip')).toContainText('current natal');
   });
 }
@@ -149,7 +148,7 @@ for (const viewport of [
     const renders = resolve(import.meta.dirname, '../../.local/ux07');
     mkdirSync(renders, { recursive: true });
     await page.screenshot({ path: resolve(renders, `reliable-natal-${viewport.name}.png`) });
-    await page.getByRole('button', { name: 'Edit current chart' }).click();
+    await page.getByRole('button', { name: 'Edit birth details' }).click();
     const update = page.getByRole('region', { name: 'Generate a chart' });
     await update.getByRole('button', { name: 'Update the current natal' }).click();
     await update.getByLabel('Birth date').fill('2024-03-21');
@@ -236,7 +235,7 @@ test('lost response retries the same durable generation without duplicate versio
   await expect(form.getByRole('button', { name: 'Retry same chart request' })).toBeVisible();
   await page.screenshot({ path: resolve(import.meta.dirname, '../../.local/one-step/midnight-orchid-error-desktop.png') });
   await form.getByRole('button', { name: 'Retry same chart request' }).click();
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   await expect(form.locator('.birth-status')).toHaveText('Current natal saved. Details remain provisional.');
   expect(count).toBe(2);
   expect(chartId).toBe(firstChartId);
@@ -272,7 +271,7 @@ test('committed chart remains visible when archive refresh fails, then survives 
   expect(saved.status()).toBe(201);
   const chartId = (await saved.json()).chart.id as string;
   await expect(form.locator('.birth-status')).toContainText('The chart was saved, but the person list could not refresh');
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   await expect(page.locator('.profile-active-chart')).toBeVisible();
   await expect(form.getByRole('button', { name: 'Chart saved' })).toBeDisabled();
   expect(failed).toBe(true);

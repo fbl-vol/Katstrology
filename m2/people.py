@@ -113,10 +113,6 @@ class People:
             SELECT id FROM charts WHERE owner_id=%s AND person_id=%s
             ORDER BY created_at DESC,id DESC LIMIT 20
         ''', (owner, person_id)).fetchall()]
-        person['attachments'] = self.store.db.execute('''
-            SELECT id, filename, media_type, byte_count, created_at FROM person_attachments
-            WHERE owner_id=%s AND person_id=%s ORDER BY created_at DESC,id DESC LIMIT 20
-        ''', (owner, person_id)).fetchall()
         return person
 
     def active_chart_id(self, session, person_id):

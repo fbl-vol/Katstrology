@@ -106,7 +106,7 @@ for (const view of views) {
       await page.locator('.side-main-actions .new-chat').click();
       if (view.width <= 700) await page.getByRole('button', { name: 'Open navigation' }).click();
       await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
-      await page.getByRole('button', { name: 'New conversation about Synthetic transit reader' }).click();
+      await page.getByRole('button', { name: 'Start conversation' }).click();
       const card = page.getByRole('complementary', { name: 'Current natal context' });
       await expect(card).toContainText('For your next message');
       if (view.width <= 1000) {

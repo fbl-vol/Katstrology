@@ -81,11 +81,11 @@ async def main():
                     store.register_local(owner, 'synthetic-browser-password')
                 store.register_local('reader-escaped-boundary', 'synthetic-browser-password')
                 from m2.people import People
-                from m2.attachments import Attachments
+                from m2.test_support import seed_legacy_person_file
                 legacy_session = store.authenticate('reader-handoff-file', 'synthetic-browser-password')
                 People(store).charts.add_person(legacy_session, 'legacy-file-person', 'Synthetic file-only person')
-                Attachments(store).add_person(legacy_session, 'legacy-file-person', 'existing-file',
-                                              'unreferenced.pdf', b'%PDF-1.4\nSynthetic legacy file')
+                seed_legacy_person_file(store, legacy_session, 'legacy-file-person', 'existing-file',
+                                        'unreferenced.pdf', b'%PDF-1.4\nSynthetic legacy file')
                 for owner in ('reader-transit-desktop', 'reader-transit-mobile', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-newchat-normal', 'reader-review-fixes', 'reader-review-records', 'reader-review-page', 'reader-review-pagination', 'reader-review-journal') + layout_owners:
                     session = store.authenticate(owner, 'synthetic-browser-password')
                     people = People(store)

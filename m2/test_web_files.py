@@ -11,7 +11,7 @@ from m2.attachments import Attachments
 from m2.backup import backup, restore
 from m2.charts import Charts
 from m2.people import People
-from m2.test_support import DatabaseCase
+from m2.test_support import DatabaseCase, seed_legacy_person_file
 
 
 class PersonFileRecoveryTests(DatabaseCase):
@@ -22,21 +22,20 @@ class PersonFileRecoveryTests(DatabaseCase):
         files = Attachments(self.store)
         content = b'%PDF-1.4\nSynthetic chart reference only'
         files.add(self.alice, 'thread', 'conversation-file', 'conversation.pdf', content)
-        files.add_person(self.alice, 'person', 'person-file', 'person.pdf', content)
-        with self.assertRaises(KeyError):
-            files.read_person(self.bob, 'person', 'person-file')
+        digest = seed_legacy_person_file(self.store, self.alice, 'person', 'person-file', 'person.pdf', content)
+        self.assertEqual(files._content(digest), content)
 
         self.ledger.delete_attachment(self.store, self.alice, 'thread', 'conversation-file')
-        self.assertEqual(files.read_person(self.alice, 'person', 'person-file')[1], content)
+        self.assertEqual(files._content(digest), content)
         snapshot = Path(self.directory.name) / 'person-snapshot'
         manifest = backup(self.store, snapshot)
         self.assertEqual(len(manifest['blobs']), 1)
 
         self.ledger.delete_person_attachment(self.store, self.alice, 'person', 'person-file')
-        with self.assertRaises(ValueError):
-            files.add_person(self.alice, 'person', 'person-file', 'person.pdf', content)
-        with self.assertRaises(KeyError):
-            files.read_person(self.alice, 'person', 'person-file')
+        self.assertTrue(self.ledger.contains_person_attachment('alice', 'person', 'person-file'))
+        self.assertIsNone(self.store.db.execute('''
+            SELECT 1 FROM person_attachments WHERE owner_id=%s AND person_id=%s AND id=%s
+        ''', ('alice', 'person', 'person-file')).fetchone())
 
         target = 'kat_person_restore_' + uuid4().hex[:12]
         target_dsn = make_conninfo(self.admin_dsn, dbname=target)
@@ -48,8 +47,10 @@ class PersonFileRecoveryTests(DatabaseCase):
                                self.ledger)
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertEqual(People(restored).get(alice, 'person')['name'], 'Synthetic person')
-            with self.assertRaises(KeyError):
-                Attachments(restored).read_person(alice, 'person', 'person-file')
+            self.assertIsNone(restored.db.execute('''
+                SELECT 1 FROM person_attachments WHERE owner_id=%s AND person_id=%s AND id=%s
+            ''', ('alice', 'person', 'person-file')).fetchone())
+            self.assertTrue(self.ledger.contains_person_attachment('alice', 'person', 'person-file'))
         finally:
             if restored:
                 restored.close()

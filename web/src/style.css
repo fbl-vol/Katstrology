@@ -271,3 +271,35 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .transit-motion button{min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;color:var(--link);background:var(--surface-soft);cursor:pointer}
 .transit-motion .motion-controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:12px 0}.motion-controls label{flex:1;min-width:160px}.motion-controls input{width:100%;accent-color:var(--link)}
 .motion-view .natal-wheel-scroll{max-width:480px;margin:0 auto}.motion-view .natal-wheel{width:100%;height:auto}
+/* The quiet overview keeps a reading width; only the active Charts pane expands. */
+.person-page{max-width:920px;padding-top:26px}.person-page[data-active-section="charts"]{max-width:1200px}
+.profile-header{align-items:flex-start;padding:12px 0 17px}.profile-header h1{margin:0 0 7px}
+.person-page .profile-edit-action{display:block;background:none;border:0;color:var(--link);padding:8px 0;margin:3px 0 0;min-height:44px;text-align:left}
+.person-page .profile-chat-action{border:0;background:var(--accent);color:var(--on-accent);min-height:44px;white-space:nowrap}
+.profile-tabs{gap:22px}.person-page .profile-tabs button{min-width:0;min-height:46px;padding:7px 4px;border-radius:0}
+.person-page .profile-tabs button[aria-selected="true"]{background:transparent;color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
+.profile-group-label{margin:25px 0 9px;color:var(--muted);font-size:11px;letter-spacing:.11em;text-transform:uppercase}
+.profile-quiet-group{border:1px solid var(--line);border-radius:12px;background:var(--white);overflow:hidden}
+.person-page .profile-quiet-row{display:flex;width:100%;min-height:76px;align-items:center;gap:14px;padding:14px 18px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;text-align:left;color:var(--ink)}
+.profile-quiet-group>:last-child>.profile-quiet-row,.profile-quiet-group>button:last-child{border-bottom:0}
+.person-page .profile-quiet-row:hover,.person-page .profile-quiet-row:focus-visible{background:var(--surface-soft)}
+.profile-row-icon{width:36px;height:36px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--link);font-size:19px}
+.profile-quiet-row>span:nth-child(2){flex:1;min-width:0}.profile-quiet-row strong{display:block;font-size:14px}.profile-quiet-row small{display:block;color:var(--muted);font-size:12px;line-height:1.5;margin-top:2px}
+.profile-row-arrow{color:var(--link);font-size:24px;transition:transform .15s}.profile-timing-row[open] .profile-row-arrow{transform:rotate(90deg)}
+.person-page .profile-timing-row{margin:0;padding:0;border:0;border-radius:0}.profile-timing-row>summary{list-style:none;cursor:pointer}.profile-timing-row>summary::-webkit-details-marker{display:none}
+.profile-timing-content{padding:12px 20px 20px;border-top:1px solid var(--line)}.profile-overview-note{color:var(--muted);font-size:12px;margin:18px 0 8px}
+.person-page .profile-chart-heading h2{margin:0 0 4px}.profile-chart-heading{margin:2px 0 10px}
+.profile-active-chart .natal-detail{display:block}.person-natal-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);align-items:start;gap:28px;min-width:0}
+.profile-active-chart .person-natal-layout .natal-wheel-frame{margin:0;order:0;max-width:none}.person-natal-layout .natal-wheel{min-width:0;width:100%}.person-chart-data{min-width:0}
+.person-data-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:9px}.person-page .person-data-tabs button{flex:1;min-width:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);min-height:44px;padding:8px 3px}
+.person-page .person-data-tabs button[aria-selected="true"]{border-color:var(--accent);color:var(--ink);font-weight:600}
+.person-chart-data .natal-tables{margin:0;max-width:100%;overflow-x:auto}.person-chart-data .natal-tables table{min-width:510px}.person-chart-data .natal-tables caption{font-size:14px}
+.profile-saved-sections{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 18px}.person-page .profile-saved-sections button{min-height:44px;border-radius:24px;padding:8px 14px;color:var(--muted)}
+.person-page .profile-saved-sections button[aria-pressed="true"]{border-color:var(--accent);color:var(--ink);background:var(--surface-tint)}
+.person-page .person-records details{margin:0}.person-page .person-records{margin:0}.profile-footer{display:flex;justify-content:space-between;align-items:start;gap:22px;border-top:1px solid var(--line);margin-top:32px}
+.person-page .profile-footer>details{border:0;padding:0;margin:0}.profile-footer>details>summary{display:flex;align-items:center;min-height:44px;font-size:12px;color:var(--link);cursor:pointer}
+.person-page .profile-footer>details:last-child>summary{color:var(--danger)}.profile-footer .astrology-help{flex:1}.profile-footer .profile-secondary:last-child{flex:1;text-align:right}
+.profile-footer .profile-secondary:last-child p,.profile-footer .profile-secondary:last-child button{text-align:left}.profile-footer .profile-secondary:last-child button{color:var(--danger)}
+@media(max-width:1120px){.person-natal-layout{grid-template-columns:1fr}.person-natal-layout .natal-wheel-frame{max-width:580px!important;margin:0 auto!important}}
+@media(max-width:700px){.person-page{padding:15px 18px 60px}.profile-header{display:block}.person-page .profile-chat-action{width:100%;margin-top:12px}.profile-tabs{gap:10px}.profile-group-label{margin-top:22px}.person-page .profile-quiet-row{padding:13px;gap:10px}.profile-row-icon{width:33px;height:33px}.profile-quiet-row strong{font-size:13px}.profile-quiet-row small{font-size:11px}.person-natal-layout{gap:16px}.person-natal-layout .natal-wheel-frame{padding:5px}.profile-footer{margin-top:26px}}
+@media(prefers-reduced-motion:reduce){.profile-row-arrow{transition:none}}

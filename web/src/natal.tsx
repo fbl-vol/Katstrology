@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import './chart-wheel.css';
 import { WheelExportActions } from './chart-export';
@@ -128,11 +128,53 @@ export function CompactNatalWheel({ chart }: { chart: Chart }) {
     natal.houses.angles.length > 0 ? <Wheel chart={chart} natal={natal} compact /> : null;
 }
 
-export function NatalChart({ chart, allowMotion = false }: { chart: Chart; allowMotion?: boolean }) {
+export function NatalChart({ chart, allowMotion = false, personLayout = false }: {
+  chart: Chart; allowMotion?: boolean; personLayout?: boolean;
+}) {
+  const [selectedData, setSelectedData] = useState<'positions' | 'houses' | 'aspects'>('positions');
   const natal = chart.result.natal;
   if (!natal) return null;
   const settings = chart.result.profile.settings;
   const birth = chart.result.birth;
+  const hasWheel = natal.houses.status === 'supported';
+  const dataTabs = ['positions', 'houses', 'aspects'] as const;
+  function moveDataTab(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 :
+      event.key === 'ArrowRight' ? (index + 1) % 3 :
+      event.key === 'ArrowLeft' ? (index + 2) % 3 : null;
+    if (next === null) return;
+    event.preventDefault();
+    setSelectedData(dataTabs[next]);
+    (event.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
+  }
+
+  const positions = <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
+    <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
+    <tbody>{natal.positions.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th>
+      <td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td><td>{item.house ?? '—'}</td>
+      <td>{item.retrograde ? 'Retrograde' : 'Direct'}</td></tr>)}</tbody></table></div>;
+  const houses = hasWheel && <div className="natal-tables"><table><caption>Angles and {settings.house_system} house cusps</caption>
+    <thead><tr><th scope="col">Point</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th></tr></thead>
+    <tbody>{natal.houses.angles.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th><td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td></tr>)}
+      {natal.houses.cusps.map(item => <tr key={item.number}><th scope="row">House {item.number}</th><td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td></tr>)}</tbody></table></div>;
+  const aspects = <div className="natal-tables"><table><caption>Major aspects · orb policy: {Object.entries(settings.orbs || {}).map(([name, orb]) => `${name} ${orb}°`).join(', ')}</caption>
+    <thead><tr><th scope="col">First</th><th scope="col">Aspect</th><th scope="col">Second</th><th scope="col">Orb</th></tr></thead>
+    <tbody>{natal.aspects.map((item, index) => <tr key={`${item.first}-${item.second}-${index}`}><th scope="row">{bodyLabel(item.first)}</th>
+      <td>{item.kind}</td><td>{bodyLabel(item.second)}</td><td>{item.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
+    {!natal.aspects.length && <p>No aspects fall within this profile’s selected orbs.</p>}</div>;
+
+  const chartData = personLayout && hasWheel ? <div className="person-chart-data">
+    <div className="person-data-tabs" role="tablist" aria-label="Chart data sections">
+      {dataTabs.map((item, index) => <button key={item} type="button" role="tab" id={`person-${chart.id}-${item}`}
+        aria-controls={`person-${chart.id}-data`} aria-selected={selectedData === item} tabIndex={selectedData === item ? 0 : -1}
+        onClick={() => setSelectedData(item)} onKeyDown={event => moveDataTab(event, index)}>
+        {item[0].toUpperCase() + item.slice(1)}</button>)}
+    </div>
+    <div id={`person-${chart.id}-data`} role="tabpanel" aria-labelledby={`person-${chart.id}-${selectedData}`}>
+      {selectedData === 'positions' ? positions : selectedData === 'houses' ? houses : aspects}
+    </div>
+  </div> : <>{positions}{houses}{aspects}</>;
+
   return <div className="natal-detail">
     <p>{natal.status === 'complete' ? 'Calculated natal chart' : 'Limited natal chart'} · {settings.house_system} houses · {settings.node_type} north node{natal.lilith_method ? ` · ${natal.lilith_method}` : ''}.</p>
     {(birth.provenance.startsWith('provisional:') || birth.provenance.includes('geonames_city_centre')) &&
@@ -142,23 +184,14 @@ export function NatalChart({ chart, allowMotion = false }: { chart: Chart; allow
     {chart.source_status !== 'current' ? <p className="error">Historical source: do not use these calculated degrees as current chart evidence.</p> :
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
-        {natal.houses.status === 'supported' ? <Wheel chart={chart} natal={natal} /> :
-          <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects below remain available.</p>}
+        {personLayout && hasWheel ? <div className="person-natal-layout">
+          <Wheel chart={chart} natal={natal} />{chartData}
+        </div> : <>
+          {hasWheel ? <Wheel chart={chart} natal={natal} /> :
+            <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects below remain available.</p>}
+          {chartData}
+        </>}
         {allowMotion && <TransitMotion chart={chart} />}
-        <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
-          <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
-          <tbody>{natal.positions.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th>
-            <td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td><td>{item.house ?? '—'}</td>
-            <td>{item.retrograde ? 'Retrograde' : 'Direct'}</td></tr>)}</tbody></table></div>
-        {natal.houses.status === 'supported' && <div className="natal-tables"><table><caption>Angles and {settings.house_system} house cusps</caption>
-          <thead><tr><th scope="col">Point</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th></tr></thead>
-          <tbody>{natal.houses.angles.map(item => <tr key={item.id}><th scope="row">{bodyLabel(item.id)}</th><td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td></tr>)}
-            {natal.houses.cusps.map(item => <tr key={item.number}><th scope="row">House {item.number}</th><td>{zodiac(item.longitude_degrees)}</td><td>{item.longitude_degrees.toFixed(4)}°</td></tr>)}</tbody></table></div>}
-        <div className="natal-tables"><table><caption>Major aspects · orb policy: {Object.entries(settings.orbs || {}).map(([name, orb]) => `${name} ${orb}°`).join(', ')}</caption>
-          <thead><tr><th scope="col">First</th><th scope="col">Aspect</th><th scope="col">Second</th><th scope="col">Orb</th></tr></thead>
-          <tbody>{natal.aspects.map((item, index) => <tr key={`${item.first}-${item.second}-${index}`}><th scope="row">{bodyLabel(item.first)}</th>
-            <td>{item.kind}</td><td>{bodyLabel(item.second)}</td><td>{item.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
-          {!natal.aspects.length && <p>No aspects fall within this profile’s selected orbs.</p>}</div>
         <details className="chart-supporting-data"><summary>How this chart was calculated</summary>
           <p>House membership uses ecliptic-projected longitude. The south node is the north node’s antipode; it is not a second node calculation or an aspect participant. Aspects use ecliptic longitude, not applying/separating motion. {natal.lilith_method ? `${natal.lilith_method}. “True” does not mean more accurate; not asteroid 1181 or Waldemath. ` : ''}No interpretation, synastry, rectification or future prediction is calculated.</p>
         </details>

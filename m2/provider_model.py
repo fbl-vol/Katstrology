@@ -5,7 +5,6 @@ import math
 from m2.agent_reads import TOOLS
 from m2.model_capacity import resolve_capacity
 from m2.prompting import HOSTED
-from m2.provider_media import VISION_MODELS, chart_content
 from m2.siwc import ProviderFailure
 
 MAX_RESPONSE_TEXT_BYTES = 512 * 1024
@@ -202,15 +201,9 @@ class ResponsesModel:
         self.context_limit = None
         self.reply_reserve = None
         self.capacity = admission.capacity if admission else None
-        self.chart_file = None
         self.last_usage = None
         self._continuation_input = None
         self._instructions = None
-
-    def attach_chart_file(self, row, content):
-        if self.slug not in VISION_MODELS:
-            raise ProviderFailure('chart_file_model_capability_unestablished')
-        self.chart_file = chart_content(row, content)
 
     def tokenize(self, text, **_kwargs):
         # Provider-specific tokenizers are not exposed. Charge roughly one
@@ -249,8 +242,6 @@ class ResponsesModel:
         self.last_usage = None
         token = self._token()
         content = [{'type': 'input_text', 'text': prompt}]
-        if self.chart_file and not summary:
-            content.append(self.chart_file)
         body = {'model': self.slug, 'instructions': instructions,
                 'input': [{'role': 'user', 'content': content}],
                 'store': False, 'stream': True}

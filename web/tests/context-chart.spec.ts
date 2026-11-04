@@ -35,7 +35,7 @@ for (const viewport of [
     const mobile = viewport.size.width < 700;
     if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
-    await page.getByRole('button', { name: 'New conversation about Synthetic transit reader' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.getByLabel('Message Kat')).toHaveValue(''); // Explicit new-chat action clears the old draft.
     await page.getByLabel('Message Kat').fill('This draft stays while I inspect the chart.');
     await expect(chart).toContainText('Synthetic transit reader’s natal chart');

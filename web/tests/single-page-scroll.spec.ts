@@ -164,7 +164,7 @@ for (const size of [
     await wheelMovesDocument(page, '.profile-active-chart .natal-wheel-scroll');
     await page.screenshot({ path: resolve(renders, `person-history-${size.name}.png`) });
 
-    await page.getByRole('tab', { name: 'Insights' }).click();
+    await page.getByRole('tab', { name: 'Saved' }).click();
     await expect(page.locator('.insight-notebook')).toBeVisible();
     const notebookRanges = await verticalRanges(page, ['.main', '.reader-content', '.person-page']);
     expect(notebookRanges.filter(item => item.scrollTop !== 0), JSON.stringify(notebookRanges)).toEqual([]);
@@ -181,6 +181,6 @@ for (const size of [
     else expect(await page.evaluate(() => window.scrollY)).toBe(0);
     await page.screenshot({ path: resolve(renders, `settings-${size.name}.png`) });
     await page.getByRole('button', { name: 'Back to workspace' }).click();
-    await expect(page.getByRole('tab', { name: 'Insights' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Saved' })).toHaveAttribute('aria-selected', 'true');
   });
 }

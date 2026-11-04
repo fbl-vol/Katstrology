@@ -10,14 +10,13 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from starlette.testclient import TestClient
 
-from m2.attachments import Attachments
 from m2.charts import Charts
 from m2.deletion import Tombstones
 from m2.local_fixture import ROOT
 from m2.product_policy import MODEL
 from m2.siwc import CredentialFiles, ProviderBridge
 from m2.store import Store
-from m2.test_support import synthetic_web_dist, test_fixture_dsn
+from m2.test_support import seed_legacy_person_file, synthetic_web_dist, test_fixture_dsn
 from m2.web_server import create_app
 
 
@@ -322,22 +321,19 @@ class BrowserAuthTests(unittest.TestCase):
                                             'profile_id': 'solar-default', 'revision': 1}).status_code, 404)
 
             file_url = '/api/people/' + person_id + '/files'
-            # Existing attachment archives remain readable; browser ingress is closed.
+            # The retired person-file feature has no browser read, write or delete route.
             file_id = 'file-legacy-synthetic'
             alice.portal.call(alice.app.state.runtime.call,
-                              lambda store, auth: Attachments(store).add_person(
-                                  auth.owners[a['owner']], person_id, file_id,
+                              lambda store, auth: seed_legacy_person_file(
+                                  store, auth.owners[a['owner']], person_id, file_id,
                                   'synthetic-chart.pdf', b'%PDF-1.4\nsynthetic only'))
+            self.assertNotIn('attachments', alice.get('/api/people/' + person_id).json())
             self.assertIn(alice.post(file_url, content=b'%PDF-1.4\nsynthetic only',
                                      headers={**headers, 'Content-Type': 'application/octet-stream'}).status_code,
                           (404, 405))
             self.assertEqual(bob.get(file_url + '/' + file_id).status_code, 404)
-            self.assertEqual(alice.get(file_url + '/' + file_id).content,
-                             b'%PDF-1.4\nsynthetic only')
-            self.assertEqual(alice.get(file_url + '/' + file_id).headers['content-disposition'],
-                             "attachment; filename*=UTF-8''synthetic-chart.pdf")
-            self.assertEqual(alice.delete(file_url + '/' + file_id, headers=headers).status_code, 200)
             self.assertEqual(alice.get(file_url + '/' + file_id).status_code, 404)
+            self.assertEqual(alice.delete(file_url + '/' + file_id, headers=headers).status_code, 405)
             self.assertEqual(bob.delete('/api/people/' + person_id, headers={
                 'Origin': ORIGIN, 'X-Kat-CSRF': b['csrf']}).status_code, 404)
             self.assertEqual(alice.delete('/api/people/' + person_id,
@@ -400,8 +396,9 @@ class BrowserAuthTests(unittest.TestCase):
             b = store.authenticate('bob', 'synthetic-password-bob')
             Charts(store).add_person(a, 'same-id', 'Alice synthetic person')
             Charts(store).add_person(b, 'same-id', 'Bob synthetic person')
-            Attachments(store).add_person(a, 'same-id', 'same-file', 'reference.pdf', b'%PDF-A')
-            Attachments(store).add_person(b, 'same-id', 'same-file', 'reference.pdf', b'%PDF-B')
+            alice_digest = seed_legacy_person_file(store, a, 'same-id', 'same-file', 'reference.pdf', b'%PDF-A')
+            bob_digest = seed_legacy_person_file(store, b, 'same-id', 'same-file', 'reference.pdf', b'%PDF-B')
+            self.assertNotEqual(alice_digest, bob_digest)
         with self.client() as alice:
             bob = TestClient(alice.app, base_url=ORIGIN)
             self.addCleanup(bob.close)
@@ -411,8 +408,10 @@ class BrowserAuthTests(unittest.TestCase):
                 'username': 'bob', 'password': 'synthetic-password-bob'})
             self.assertEqual(alice.get('/api/people/same-id').json()['name'], 'Alice synthetic person')
             self.assertEqual(bob.get('/api/people/same-id').json()['name'], 'Bob synthetic person')
-            self.assertEqual(alice.get('/api/people/same-id/files/same-file').content, b'%PDF-A')
-            self.assertEqual(bob.get('/api/people/same-id/files/same-file').content, b'%PDF-B')
+            self.assertEqual(alice.get('/api/people/same-id/files/same-file').status_code, 404)
+            self.assertEqual(bob.get('/api/people/same-id/files/same-file').status_code, 404)
+            self.assertNotIn('attachments', alice.get('/api/people/same-id').json())
+            self.assertNotIn('attachments', bob.get('/api/people/same-id').json())
 
     def test_same_id_accounts_do_not_share_workspace_identity(self):
         with self.client() as client:

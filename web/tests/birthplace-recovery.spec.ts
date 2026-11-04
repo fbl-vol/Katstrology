@@ -20,7 +20,8 @@ async function reopen(page: Page, name: string) {
   await page.reload();
   if (page.viewportSize()!.width <= 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: new RegExp(name) }).click();
-  await page.getByRole('button', { name: 'Edit current chart' }).click();
+  await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Edit birth details' }).click();
   return page.getByRole('region', { name: 'Generate a chart' });
 }
 
@@ -32,6 +33,7 @@ test('ten city results keep each wrapped label inside its own hit target in both
     await page.reload();
     if (page.viewportSize()!.width <= 700) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic place list/ }).click();
+    await page.getByRole('tab', { name: 'Charts' }).click();
     await page.getByRole('button', { name: 'Create first chart' }).click();
     for (const size of [{ width: 390, height: 640 }, { width: 1440, height: 1024 }]) {
       await page.setViewportSize(size);

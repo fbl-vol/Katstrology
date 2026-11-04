@@ -22,13 +22,13 @@ for (const viewport of [
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
     await expect(page.getByRole('heading', { name: 'Synthetic transit reader' })).toBeVisible();
-    const basic = page.getByRole('tab', { name: 'Basic info' });
+    const overview = page.getByRole('tab', { name: 'Overview' });
     const charts = page.getByRole('tab', { name: 'Charts' });
-    await expect(basic).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('tabpanel', { name: 'Basic info' })).toBeVisible();
+    await expect(overview).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Overview' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Generate a chart' })).toBeHidden();
     await page.screenshot({ path: resolve(renders, `saved-basic-${viewport.name}.png`) });
-    await basic.focus(); await basic.press('ArrowRight');
+    await overview.focus(); await overview.press('ArrowRight');
     await expect(charts).toBeFocused();
     await expect(charts).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
@@ -40,16 +40,16 @@ for (const viewport of [
       await page.getByRole('tab', { name: 'Charts' }).click();
       await page.screenshot({ path: resolve(renders, 'saved-chart-dark-desktop.png') });
     }
-    await page.getByRole('button', { name: 'Edit current chart' }).click();
+    await page.getByRole('button', { name: 'Edit birth details' }).click();
     const editor = page.getByRole('region', { name: 'Generate a chart' });
     await expect(editor).toBeVisible();
     await expect(page.locator('.profile-editor')).toBeFocused();
     await editor.getByLabel('Birth date').fill('2001-04-05');
     await page.getByRole('button', { name: 'Close editor' }).click();
     await expect(editor).toBeHidden();
-    await page.getByRole('button', { name: 'Edit current chart' }).click();
+    await page.getByRole('button', { name: 'Edit birth details' }).click();
     await expect(editor.getByLabel('Birth date')).toHaveValue('2001-04-05');
-    await basic.click(); await charts.click();
+    await overview.click(); await charts.click();
     await expect(editor.getByLabel('Birth date')).toHaveValue('2001-04-05');
     if (viewport.name === 'mobile') {
       await page.setViewportSize({ width: 390, height: 560 });
@@ -88,10 +88,10 @@ test('first chart empty state, unknown birth time and local generation are truth
   expect(response.status()).toBe(201);
   const result = await response.json();
   await expect(page.locator('.profile-chart-empty')).toBeHidden();
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   await expect(page.locator('.profile-active-chart')).toContainText('Unknown or uncertain birth time: no full natal positions');
   expect(modelRequests).toBe(0);
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await expect(page.getByRole('tabpanel', { name: 'Basic info' })).toContainText('Unknown — no Ascendant or houses are inferred');
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await expect(page.getByRole('button', { name: /Birth chart/ })).toContainText('Limited chart · birth time unknown');
   await page.screenshot({ path: resolve(renders, 'saved-unknown-dark-mobile.png') });
 });

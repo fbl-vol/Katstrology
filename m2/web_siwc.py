@@ -7,7 +7,6 @@ from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
 from m2.product_policy import MODEL
-from m2.provider_media import VISION_MODELS
 from m2.web_server import COOKIE, Forbidden, authorized, json_body, json_response
 from m2.web_auth import WebAuth
 
@@ -85,8 +84,7 @@ async def models(request):
     if not bridge:
         raise ValueError('ChatGPT plan is disabled')
     result = await request.app.state.runtime.offload(bridge.models, session.owner_id)
-    return json_response({'models': [{**item, 'file_input_supported':
-                                      item['slug'] in VISION_MODELS} for item in result],
+    return json_response({'models': result,
                           'chat_available': any(item['slug'] == MODEL for item in result)})
 
 

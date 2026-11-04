@@ -22,19 +22,6 @@ def _filename(value):
     return value
 
 
-def _media_type(content):
-    # This is a type gate, not a parser or a claim about file contents.
-    if content.startswith(b'%PDF-'):
-        return 'application/pdf'
-    if content.startswith(b'\x89PNG\r\n\x1a\n'):
-        return 'image/png'
-    if content.startswith(b'\xff\xd8\xff'):
-        return 'image/jpeg'
-    if content[:4] == b'RIFF' and content[8:12] == b'WEBP':
-        return 'image/webp'
-    raise ValueError('Only PDF, PNG, JPEG or WebP reference files are accepted')
-
-
 class Attachments:
     def __init__(self, store):
         self.store = store
@@ -94,46 +81,6 @@ class Attachments:
             finally:
                 pending.unlink(missing_ok=True)
         return digest
-
-    def add_person(self, session, person_id, attachment_id, filename, content):
-        owner = self.store.owner(session)
-        self.store._id(person_id)
-        self.store._id(attachment_id)
-        _filename(filename)
-        self._size(content)
-        person = self.store.db.execute('SELECT 1 FROM people WHERE owner_id=%s AND id=%s',
-                                       (owner, person_id)).fetchone()
-        if not person:
-            raise KeyError('Person not found')
-        if self.store.ledger.contains_person_attachment(owner, person_id, attachment_id):
-            raise ValueError('Deleted person attachment identity cannot be reused')
-        media_type = _media_type(content)
-        digest = self._store_blob(content)
-        with self.store.db.transaction():
-            row = self.store.db.execute('''
-                SELECT filename,digest,media_type FROM person_attachments
-                WHERE owner_id=%s AND person_id=%s AND id=%s
-            ''', (owner, person_id, attachment_id)).fetchone()
-            expected = {'filename': filename, 'digest': digest, 'media_type': media_type}
-            if row:
-                if row != expected:
-                    raise ValueError('Person attachment ID reused with different bytes')
-                return row
-            self.store.db.execute('''
-                INSERT INTO person_attachments(owner_id,person_id,id,filename,media_type,digest,byte_count)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-            ''', (owner, person_id, attachment_id, filename, media_type, digest, len(content)))
-        return expected
-
-    def read_person(self, session, person_id, attachment_id):
-        owner = self.store.owner(session)
-        row = self.store.db.execute('''
-            SELECT filename,media_type,digest FROM person_attachments
-            WHERE owner_id=%s AND person_id=%s AND id=%s
-        ''', (owner, self.store._id(person_id), self.store._id(attachment_id))).fetchone()
-        if not row:
-            raise KeyError('Person attachment not found')
-        return row, self._content(row['digest'])
 
     def list(self, session, conv_id, limit=20):
         owner = self.store.owner(session)

@@ -211,8 +211,8 @@ for (const viewport of [
       /\/api\/people\/[^/]+\/generate$/.test(new URL(response.url()).pathname));
     await form.getByRole('button', { name: 'Generate chart' }).click();
     expect((await posted).status()).toBe(201);
-    await page.getByRole('tab', { name: 'Basic info' }).click();
-    await page.getByRole('button', { name: `New conversation about Synthetic grounded ${viewport.name}` }).click();
+    await page.getByRole('tab', { name: 'Overview' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.locator('.person-chip')).toContainText('current natal');
     await page.getByLabel('Message Kat').fill('Synthetic grounded read rounds: What did I say about northern lantern, what does this saved chart show, and what does the synthetic source say?');
     await page.getByRole('button', { name: 'Send message' }).click();
@@ -333,7 +333,7 @@ test('three native reads produce an archived final answer on selected synthetic 
   await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
   await page.getByRole('navigation', { name: 'People' })
     .getByRole('button', { name: /Budget synthetic reader/ }).click();
-  await page.getByRole('button', { name: 'New conversation about Budget synthetic reader' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await expect(page.locator('.person-chip')).toContainText('current natal');
   await page.getByLabel('Message Kat').fill('SyntheticBudgetReadsFixture: ground this natal, transit and passage discussion.');
   await page.getByRole('button', { name: 'Send message' }).click();
@@ -367,7 +367,7 @@ test('eight model-directed reads finish with durable evidence on desktop and mob
   await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
   await page.getByRole('navigation', { name: 'People' })
     .getByRole('button', { name: /Budget synthetic reader/ }).click();
-  await page.getByRole('button', { name: 'New conversation about Budget synthetic reader' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await page.getByLabel('Message Kat').fill('SyntheticManyReadsFixture: check natal, sky and available sources, then answer.');
   await page.getByRole('button', { name: 'Send message' }).click();
   const turn = page.locator('.turn-card').last();
@@ -421,9 +421,9 @@ test('return to the same archived thread after correcting a saved birth year ret
   await form.getByLabel('Birthplace search').fill('Copenhagen');
   await form.getByRole('button', { name: /Copenhagen, Capital Region, Denmark/ }).click();
   await form.getByRole('button', { name: 'Generate chart' }).click();
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic continuity partner' }).click();
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   const question = 'SyntheticContinuityFixture original relationship question: How can we grow closer?';
   await page.getByLabel('Message Kat').fill(question);
   const firstSent = page.waitForResponse(response => response.request().method() === 'POST' &&
@@ -437,7 +437,7 @@ test('return to the same archived thread after correcting a saved birth year ret
 
   await page.getByRole('navigation', { name: 'People' }).getByRole('button',
     { name: /Synthetic continuity partner/ }).click();
-  await page.getByRole('button', { name: 'Edit current chart' }).click();
+  await page.getByRole('button', { name: 'Edit birth details' }).click();
   const update = page.getByRole('region', { name: 'Generate a chart' });
   await expect(update.getByLabel('Birth date')).toBeVisible({ timeout: 10000 });
   await update.getByLabel('Birth date').fill('1983-02-12');
@@ -489,9 +489,9 @@ test('generated chart selection reaches actual synthetic model input on a new di
   const response = await posted;
   expect(response.status()).toBe(201);
   const chartId = (await response.json()).chart.id as string;
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic provider natal' }).click();
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await expect(page.locator('.person-chip')).toContainText('current natal');
   await page.getByLabel('Message Kat').fill('Synthetic chart handoff: describe the natal positions in this chart.');
   await page.getByRole('button', { name: 'Send message' }).click();
@@ -529,9 +529,9 @@ for (const viewport of [
     const response = await posted;
     expect(response.status()).toBe(201);
     const chartId = (await response.json()).chart.id as string;
-    await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
-    await page.getByRole('tab', { name: 'Basic info' }).click();
-    await page.getByRole('button', { name: `New conversation about Synthetic budget reader ${viewport.name}` }).click();
+    await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
+    await page.getByRole('tab', { name: 'Overview' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.locator('.person-chip')).toContainText('current natal');
     await expect(page.getByLabel('Model source')).toHaveCount(0);
     const question = 'Synthetic chart handoff: Give a careful overview of the Venus and Mercury natal themes, ' +
@@ -660,7 +660,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1024, owner: 're
         birth_date: '2001-04-05', birth_time: '09:12', time_unknown: false, birthplace: 'Synthetic media town',
       },
     })).status()).toBe(201);
-    await page.getByRole('button', { name: 'New conversation about Synthetic Media Person' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await page.getByLabel('Model source').selectOption('chatgpt');
     await page.getByLabel('ChatGPT model').selectOption('gpt-6.1-sol');
     const file = page.getByLabel('Chart file for this turn');

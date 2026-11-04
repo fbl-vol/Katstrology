@@ -71,7 +71,7 @@ for (const viewport of [
     release();
     expect(chartId).toMatch(/^chart-[a-f0-9]+$/);
     await expect(form.locator('.birth-status')).toContainText('Current natal saved');
-    await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+    await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
     expect(posts).toBe(1);
     await expect(form.getByRole('button', { name: 'Chart saved' })).toBeDisabled();
     await form.locator('.birth-status').scrollIntoViewIfNeeded();
@@ -109,7 +109,9 @@ for (const viewport of [
     const chart = page.locator('.profile-active-chart');
     await expect(chart.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
     await expect(chart.getByRole('table', { name: /Planet and lunar node positions/ }).getByRole('row', { name: /Sun 22°25′ Scorpio/ })).toBeVisible();
+    await chart.getByRole('tab', { name: 'Houses' }).click();
     await expect(chart.getByRole('table', { name: /Angles and placidus house cusps/ }).getByRole('row', { name: /Ascendant 5°23′ Leo/ })).toBeVisible();
+    await chart.getByRole('tab', { name: 'Aspects' }).click();
     await expect(chart.getByRole('table', { name: /Major aspects/ }).getByRole('row', { name: /Jupiter opposition Uranus/ })).toBeVisible();
     await expect(chart.getByText(/ecliptic-projected longitude/)).toBeHidden();
     await chart.getByText('How this chart was calculated').click();
@@ -124,7 +126,7 @@ for (const viewport of [
     expect(markup).not.toMatch(/<text[^>]*>[^<]*natal-tropical-v1/);
     expect(markup).not.toMatch(/<script|<foreignObject|onload=|href="https?:/i);
     expect(download.suggestedFilename()).toMatch(/^kat-chart-[a-f0-9]+\.svg$/);
-    await page.getByRole('button', { name: 'Discuss current natal' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.locator('.person-chip')).toContainText('current natal');
     await page.getByLabel('Message Kat').fill(`saved chart ${chartId}`);
     await page.getByRole('button', { name: 'Send message' }).click();
@@ -172,6 +174,7 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByRole('spinbutton', { name: 'square' }).fill('0.1');
   await form.getByRole('button', { name: 'Generate chart' }).click();
+  await page.locator('.profile-active-chart').getByRole('tab', { name: 'Aspects' }).click();
   await expect(page.locator('.profile-active-chart').getByRole('table', { name: /Major aspects/ })).toBeVisible();
   await page.locator('.chart-history > summary').click();
   await expect(page.locator('.chart-history > details')).toHaveCount(3);
@@ -200,7 +203,7 @@ test('legacy partial chart and new unknown-time chart never invent a wheel', asy
   await expect(unknown.getByText(/no full natal positions, houses, angles or aspects were calculated/)).toBeVisible();
   await expect(unknown.getByRole('table')).toHaveCount(0);
   await expect(unknown.getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Discuss current natal' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   const contextChart = page.getByRole('complementary', { name: 'Current natal context' });
   await expect(contextChart).toContainText('Complete natal wheel unavailable');
   await expect(contextChart.getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
