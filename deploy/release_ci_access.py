@@ -192,7 +192,8 @@ def eligible_run(manifest, policy, identity):
 def validate_manifest(manifest):
     if (not isinstance(manifest, dict) or set(manifest) != {'contract', 'plan', 'run_id', 'run_attempt'}
             or manifest['contract'] != 1 or manifest['run_attempt'] != 1
-            or type(manifest['run_id']) is not int or manifest['run_id'] < 1):
+            or type(manifest['run_id']) is not int or manifest['run_id'] < 1
+            or 'manual_transition' in manifest['plan']):
         raise ValueError('Invalid CI manifest; reruns are not fresh releases')
 
 

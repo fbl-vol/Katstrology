@@ -335,7 +335,14 @@ def source_migrations(path):
                 if member.isfile() and re.fullmatch(r'm2/migrations/[0-9]+_[a-z0-9_]+\.sql', member.name)}
 
 
+def fenced_release():
+    return 'ci_admission' in REQUEST or 'manual_admission' in REQUEST
+
+
 def compatible_transition(target, planned, schema):
+    manual = REQUEST.get('manual_admission')
+    if manual is not None and schema != manual['lane']['from']:
+        raise ValueError('Signed manual transition old schema differs; no replay')
     old = source_migrations(target['source_offer_file'])
     new = source_migrations(Path(target['stage']) / 'source.tar')
     if (not old or sorted(int(name.split('_')[0]) for name in old) != list(range(1, schema + 1))
@@ -345,8 +352,8 @@ def compatible_transition(target, planned, schema):
         if new != old:
             raise ValueError('Same-schema migration history differs')
         return None
-    candidates = [item for item in REQUEST['ci_admission']['transitions']
-                  if item['from'] == schema and item['to'] == planned['schema_version']]
+    lanes = [manual['lane']] if manual is not None else REQUEST['ci_admission']['transitions']
+    candidates = [item for item in lanes if item['from'] == schema and item['to'] == planned['schema_version']]
     if len(candidates) != 1 or {name: digest for name, digest in new.items() if name not in old} != candidates[0]['migrations']:
         raise ValueError('Unqualified schema transition')
     return candidates[0]
@@ -445,7 +452,7 @@ def quarantine(target, planned, *, failure_type=None):
                         raise ValueError('Pre-stop drain owner changed')
                     resume_old_drain(stage, planned, container)
                     outcome['serving'] = 'unchanged; old app admission reopened before stop'
-                elif phase == 'reopening' and 'ci_admission' in REQUEST:
+                elif phase == 'reopening' and fenced_release():
                     reopened = json.loads((stage / 'reopen-owner.json').read_text())
                     if (not info['State']['Running'] or container != reopened['container']
                             or info['Image'] != candidate
@@ -575,7 +582,7 @@ def release_phase():
         check_snapshot(target, planned, app['Mounts'] + db['Mounts'])
         schema = c('exec', '-T', 'db', 'psql', '-U', 'kat', '-d', 'kat', '-At', '-c',
                    'SELECT max(version) FROM schema_migrations')
-        if 'ci_admission' in REQUEST:
+        if fenced_release():
             transition = compatible_transition(target, planned, int(schema))
             durable_text(stage / 'transition.json', json.dumps(transition))
         elif schema != str(planned['schema_version']):
@@ -583,6 +590,11 @@ def release_phase():
         files = release_files(target)
         if files['selected_image'] != app['Image']:
             raise ValueError('Canonical selection differs from running app')
+        if 'manual_admission' in REQUEST:
+            manual = REQUEST['manual_admission']
+            if (manual['old_image'] != app['Image'] or manual['old_source_sha256'] != files['source_sha256']
+                    or manual['plan_sha256'] != planned['plan_sha256'] or manual['settled_existing_work'] is not True):
+                raise ValueError('Signed manual settled-owner scope differs')
         canonical_expected = config | {'services': config['services'] | {
             'app': services['app'] | {'image': app['Image']}}}
         check_canonical_config(compose, target, canonical_expected)
@@ -628,8 +640,9 @@ def release_phase():
         check_snapshot(target, planned, app['Mounts'] + db['Mounts'])
         if release_files(target) != json.loads((stage / 'files.before.json').read_text()):
             raise ValueError('Canonical release files drifted after preflight')
-        if 'bootstrap_permit' in REQUEST:
-            permit = REQUEST['bootstrap_permit']
+        settled_owner = REQUEST.get('manual_admission', REQUEST.get('bootstrap_permit'))
+        if settled_owner is not None:
+            permit = settled_owner
             if (permit['old_image'] != previous_image
                     or permit['old_source_sha256'] != file_hash(stage / 'source.before.tar')
                     or permit['plan_sha256'] != planned['plan_sha256']
@@ -662,7 +675,7 @@ def release_phase():
                 raise ValueError('Stopped app identity changed')
             snapshot_root = check_snapshot(target, planned, stopped['Mounts'])
         except (ValueError, OSError):
-            if 'ci_admission' in REQUEST:
+            if fenced_release():
                 # After stop, a restart would have a new process/fence identity.
                 # Keep CI halted rather than report the old process as usable.
                 raise
@@ -679,9 +692,11 @@ def release_phase():
                 raise RuntimeError('Old app restart unconfirmed')
             advance('quiescing', 'recovered_old_app')
             return {'phase': action, 'status': 'recovered_old_app'}
-        if 'bootstrap_permit' in REQUEST:
-            # Only the local-root, consumed one-time adoption permit reaches here.
-            # Neither forced-command request schema accepts a bootstrap field.
+        if settled_owner is not None:
+            # The old runtime may lack a drain socket. Only an exact signed manual
+            # admission or consumed local-root bootstrap permit reaches this path.
+            # After the settled old owner stops, persist the candidate fence before
+            # backup/migration. No client-supplied admission/permit is accepted.
             script = ("import asyncio,sys; from m2.release_drain import Admission; "
                       "gate=Admission('/var/lib/kat/browser-runtime/release-fence.json'); "
                       "asyncio.run(gate.drain(sys.argv[1]))")
@@ -692,8 +707,8 @@ def release_phase():
             os.fsync(output.fileno())
         name = 'snapshot-' + planned['plan_sha256'][:16]
         transition = (json.loads((stage / 'transition.json').read_text())
-                      if 'ci_admission' in REQUEST else None)
-        backup_environment = environment | {'KAT_APP_IMAGE': previous_image} if 'ci_admission' in REQUEST else environment
+                      if fenced_release() else None)
+        backup_environment = environment | {'KAT_APP_IMAGE': previous_image} if fenced_release() else environment
         run(*compose, 'run', '--rm', '--no-deps', '-T', '-v',
             str(snapshot_root) + ':/verification', 'app',
             'python', '-m', 'm2.deployment_backup', 'backup',
@@ -820,13 +835,13 @@ def release_phase():
             if code != 200 or hashlib.sha256(body).hexdigest() != expected:
                 raise ValueError('Served asset differs from packaged image')
         durable_text(stage / 'assets.json', json.dumps(assets))
-        if 'ci_admission' in REQUEST:
+        if fenced_release():
             if preservation(c, running=True) != activation_baseline(stage):
                 raise ValueError('Fenced startup changed retained state')
             state = maintenance(expected_container, 'status', planned['attempt'])
             if state['phase'] != 'fenced' or state['attempt'] != planned['attempt']:
                 raise ValueError('Candidate started without the inherited fence')
-        # Keep CI fenced through the subsequent public-TLS checks. Only complete
+        # Keep controlled releases fenced through the public-TLS checks. Only complete
         # may reopen it after server-side public verification has also succeeded.
         advance('app_started', 'local_verified')
         return {'phase': action, 'status': 'ok', 'assets': assets, 'readiness': readiness}
@@ -844,7 +859,7 @@ def release_phase():
         if owner.read_text().strip() != planned['attempt']:
             raise ValueError('Active release ownership changed')
         post_start_integrity(c, json.loads((stage / 'state.before.json').read_text())['state'])
-        if 'ci_admission' in REQUEST:
+        if fenced_release():
             state = maintenance(container, 'status', planned['attempt'])
             if state['phase'] != 'fenced' or state['attempt'] != planned['attempt']:
                 raise ValueError('Candidate admission changed before completion')

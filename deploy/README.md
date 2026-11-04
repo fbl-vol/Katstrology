@@ -2,6 +2,8 @@
 
 For the disabled-until-adopted keyless workflow, runtime drain, native qualification
 and one-time bootstrap contract, see [Unattended releases](AUTOMATION.md).
+For the separately installed, human-signed exact-hash23→24 lane, see
+[Manual transitions](MANUAL_TRANSITIONS.md). It does not require CI enrollment.
 
 This directory is not an activation instruction or approval. These source files do
 not change the existing served deployment without a separately scoped release. Do not run
@@ -172,15 +174,18 @@ overrides are rejected before any serving mutation; the runner never silently
 switches to fresh volumes or a different port. It invokes the existing quiesced
 `deployment_backup` API against the existing DB/attachment state and independent
 deletion journal/tip, verifying snapshot schema before `compose up --no-deps app`.
-Before stop it also verifies the actual DB schema matches the signed package,
+Before stop it also verifies the actual DB schema matches the signed package
+(or the exact old schema of an explicitly admitted manual transition),
 canonical selected image equals the running image, source tar safety, and retains
 original env/source bytes and hashes. A separate native Compose evaluation uses
 the canonical env file with NO policy KAT_* environment overrides; its full effective
 configuration must match the intended configuration (old image before promotion,
 new image after). Missing/conflicting persisted secret or ephemeris paths refuse
 before image load/stop, rather than being masked by the helper's trusted overrides.
-This is strictly a **same-schema app release**,
-not a migration or model/CPU qualification workflow. After quiesced backup, retain
+The default remains a **same-schema app release**, not a model/CPU qualification
+workflow. Schema changes require the separate signed-plan/protected-policy lane
+in [Manual transitions](MANUAL_TRANSITIONS.md); merely changing the policy's
+schema number cannot authorize a migration. After quiesced backup, retain
 an independent journal/tip copy outside the snapshot and ongoing serving volumes.
 Promote the matching source archive and canonical image selection while the app is
 stopped, preserving every unrelated env byte. Source/config replacement and Docker

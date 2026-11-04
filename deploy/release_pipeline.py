@@ -135,14 +135,15 @@ def target_config(path):
     return target
 
 
-def plan(receipt, target, schema, compose, attempt, archive_bytes, source_bytes):
+def plan(receipt, target, schema, compose, attempt, archive_bytes, source_bytes, *, manual_transition=None):
     scope = {'project': target['project'], 'origin': target['origin'],
              'loopback_port': target['loopback_port'],
              'target_sha256': sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()}
-    return plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes)
+    return plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes,
+                          manual_transition=manual_transition)
 
 
-def plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes):
+def plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, source_bytes, *, manual_transition=None):
     """CI receives only an enrolled public target fingerprint, never private paths."""
     if not ATTEMPT.fullmatch(attempt):
         raise ValueError('Attempt must be a fresh 32-character lowercase hex ID')
@@ -162,6 +163,15 @@ def plan_for_scope(receipt, scope, schema, compose, attempt, archive_bytes, sour
                'steps': ['stage', 'upload', 'upload_source', 'compose', 'preflight', 'quiesce_and_snapshot',
                          'promote_release', 'activate_app_only', 'verify_serving_path', 'complete'],
                'on_ambiguity': 'halt_without_retry_or_database_restore'}
+    if manual_transition is not None:
+        if __package__:
+            from deploy.release_access import validate_manual_transition
+        else:
+            from release_access import validate_manual_transition
+        validate_manual_transition(manual_transition)
+        if manual_transition['lane']['to'] != schema:
+            raise ValueError('Manual transition differs from candidate schema')
+        content['manual_transition'] = manual_transition
     content['plan_sha256'] = sha256(json.dumps(content, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return content
 
@@ -360,11 +370,14 @@ def main(argv=None):
     parser.add_argument('--result', type=Path)
     parser.add_argument('--prepare-dir', type=Path, help='create private plan and unsigned approval; no SSH or signing')
     parser.add_argument('--ssh-config', type=Path, help='existing dedicated OpenSSH client profile; execution only')
+    parser.add_argument('--manual-transition', type=Path,
+                        help='exact installed lane and settled old image/source; bound into the fresh signed plan')
     args = parser.parse_args(argv)
     receipt, archive, compose, schema = artifact(args.artifact_receipt)
     target = target_config(args.target)
     planned = plan(receipt, target, schema, compose, args.attempt, archive.stat().st_size,
-                   Path(receipt['source_offer']).stat().st_size)
+                   Path(receipt['source_offer']).stat().st_size,
+                   manual_transition=json.loads(args.manual_transition.read_text()) if args.manual_transition else None)
     if args.prepare_dir:
         if args.execute or args.approval or args.signature or args.result or args.ssh_config:
             parser.error('--prepare-dir cannot execute, sign or consume an approval')

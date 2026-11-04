@@ -100,10 +100,12 @@ class OwnedRelease:
             return ''
         raise AssertionError(args)
 
-    def phase(self, action, *, ci_admission=None):
+    def phase(self, action, *, ci_admission=None, manual_admission=None):
         request = {'target': self.target, 'plan': self.plan, 'action': action}
         if ci_admission is not None:
             request['ci_admission'] = ci_admission
+        if manual_admission is not None:
+            request['manual_admission'] = manual_admission
         with patch.object(remote, 'REQUEST', request, create=True), \
              patch.object(remote, 'run', side_effect=self.docker), \
              patch.object(remote, 'protected_file', side_effect=lambda p: Path(p)), \

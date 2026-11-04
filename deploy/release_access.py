@@ -69,10 +69,17 @@ def protected(path):
 
 def read_policy(path=POLICY):
     policy = json.loads(protected(path).read_text())
-    if set(policy) != {'contract', 'target', 'schema_version', 'compose_file', 'max_archive_bytes', 'max_source_bytes',
-                       'approval_principal', 'approval_namespace', 'allowed_signers_file',
-                       'allowed_signers_sha256'}:
+    fields = {'contract', 'target', 'schema_version', 'compose_file', 'max_archive_bytes', 'max_source_bytes',
+              'approval_principal', 'approval_namespace', 'allowed_signers_file', 'allowed_signers_sha256'}
+    if set(policy) not in (fields, fields | {'manual_transitions'}):
         raise ValueError('Policy fields differ')
+    lanes = policy.get('manual_transitions', [])
+    if not isinstance(lanes, list) or len(lanes) > 8:
+        raise ValueError('Manual transition allowlist exceeds bound')
+    for lane in lanes:
+        validate_transition_lane(lane)
+        if lane['from'] != policy['schema_version']:
+            raise ValueError('Manual transition must start at the protected schema')
     target = policy['target']
     if set(target) != {'ssh_alias', 'project', 'stage_root', 'password_file', 'ephemeris_dir',
                        'snapshot_dir', 'origin', 'loopback_port', 'db_image', 'release_env_file', 'source_offer_file'}:
@@ -138,10 +145,50 @@ def validate(request, policy):
     return action, plan
 
 
+def validate_transition_lane(lane):
+    if (not isinstance(lane, dict)
+            or set(lane) != {'from', 'to', 'migrations', 'added_tables', 'added_columns'}
+            or type(lane['from']) is not int or type(lane['to']) is not int
+            or not 0 < lane['from'] < lane['to']
+            or not isinstance(lane['migrations'], dict) or not 0 < len(lane['migrations']) <= 8
+            or any(not isinstance(name, str) or not re.fullmatch(r'[0-9]+_[a-z0-9_]+\.sql', name)
+                   or not isinstance(digest, str) or not HEX.fullmatch(digest)
+                   for name, digest in lane['migrations'].items())
+            or not isinstance(lane['added_tables'], list) or len(lane['added_tables']) > 8
+            or not isinstance(lane['added_columns'], dict) or len(lane['added_columns']) > 8):
+        raise ValueError('Invalid explicit manual transition lane')
+    names = list(lane['added_tables']) + list(lane['added_columns'])
+    for columns in lane['added_columns'].values():
+        if not isinstance(columns, list) or len(columns) > 8:
+            raise ValueError('Invalid manual column allowlist')
+        names.extend(columns)
+    if any(not isinstance(name, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', name) for name in names):
+        raise ValueError('Invalid manual schema identifier')
+
+
+def validate_manual_transition(manual):
+    if (not isinstance(manual, dict)
+            or set(manual) != {'lane', 'old_image', 'old_source_sha256', 'settled_existing_work'}
+            or manual['settled_existing_work'] is not True
+            or not isinstance(manual['old_image'], str) or not IMAGE.fullmatch(manual['old_image'])
+            or not isinstance(manual['old_source_sha256'], str) or not HEX.fullmatch(manual['old_source_sha256'])):
+        raise ValueError('Exact signed settled-owner transition required')
+    validate_transition_lane(manual['lane'])
+
+
 def validate_plan(plan, policy):
     """Shared immutable target/artifact guard; grants no authorization by itself."""
-    if not isinstance(plan, dict) or set(plan) != PLAN_FIELDS or set(plan['artifact']) != ARTIFACT_FIELDS:
+    if (not isinstance(plan, dict) or set(plan) not in (PLAN_FIELDS, PLAN_FIELDS | {'manual_transition'})
+            or set(plan['artifact']) != ARTIFACT_FIELDS):
         raise ValueError('Plan fields differ')
+    expected_schema = policy['schema_version']
+    if 'manual_transition' in plan:
+        manual = plan['manual_transition']
+        validate_manual_transition(manual)
+        lane = manual['lane']
+        if lane['from'] != expected_schema or policy.get('manual_transitions', []).count(lane) != 1:
+            raise ValueError('Manual transition has no exact installed allowlist entry')
+        expected_schema = lane['to']
     identity = plan['artifact']
     if (not all(HEX.fullmatch(identity[key]) for key in ('image_archive_sha256', 'source_offer_sha256'))
             or not all(IMAGE.fullmatch(identity[key]) for key in ('image_id', 'config_digest'))
@@ -161,7 +208,7 @@ def validate_plan(plan, policy):
             or not isinstance(plan['source_bytes'], int) or isinstance(plan['source_bytes'], bool)
             or not 0 < plan['source_bytes'] <= policy['max_source_bytes']
             or plan['target'] != target_scope
-            or plan['schema_version'] != policy['schema_version']
+            or plan['schema_version'] != expected_schema
             or digest != plan['plan_sha256']
             or sha256(protected(__file__).read_bytes()).hexdigest() != plan['access_helper_sha256']
             or sha256(protected(phase_module().__file__).read_bytes()).hexdigest() != plan['remote_runner_sha256']
@@ -223,6 +270,17 @@ def upload(stage, plan, size, input_stream, *, source=False):
     phase_module().sync_directory(stage)
 
 
+def verify_manual_public(plan, policy, stage):
+    controller_path = protected(Path(__file__).with_name('release_pipeline.py'))
+    if sha256(controller_path.read_bytes()).hexdigest() != plan['runner_sha256']:
+        raise ValueError('Protected manual public verifier changed')
+    spec = spec_from_file_location('_kat_manual_public_verifier', controller_path)
+    controller = module_from_spec(spec)
+    spec.loader.exec_module(controller)
+    controller.verify_public(policy['target']['origin'],
+                             json.loads(protected(stage / 'assets.json').read_text()))
+
+
 def dispatch(request, policy, input_stream):
     # Serialize phases and pin one active attempt across separate SSH processes.
     # Interrupted attempts retain ownership: no second deployment can race recovery.
@@ -231,11 +289,24 @@ def dispatch(request, policy, input_stream):
     fd = os.open(root / 'release.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return dispatch_locked(request, policy, input_stream, action, plan)
+        manual = None
+        if 'manual_transition' in plan:
+            manual = plan['manual_transition'] | {
+                'plan_sha256': plan['plan_sha256'],
+                'policy_sha256': sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()}
+            stage = root / plan['attempt']
+            if action != 'stage' and json.loads(protected(stage / 'manual-admission.json').read_text()) != manual:
+                raise ValueError('Signed manual admission or installed policy changed')
+            if action == 'complete':
+                verify_manual_public(plan, policy, stage)
+        result = dispatch_locked(request, policy, input_stream, action, plan, manual_admission=manual)
+        if manual is not None and action == 'stage':
+            phase_module().durable_text(stage / 'manual-admission.json', json.dumps(manual))
+        return result
 
 
 def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission=None,
-                    bootstrap_permit=None):
+                    bootstrap_permit=None, manual_admission=None):
     target = policy['target'] | {'stage': str(Path(policy['target']['stage_root']) / plan['attempt'])}
     stage = Path(target['stage'])
     owner = Path(target['stage_root']) / 'active-attempt'
@@ -259,6 +330,10 @@ def dispatch_locked(request, policy, input_stream, action, plan, *, ci_admission
     phase.REQUEST = {'action': action, 'target': target, 'plan': plan}
     if ci_admission is not None:
         phase.REQUEST['ci_admission'] = ci_admission
+    if manual_admission is not None:
+        if ci_admission is not None or bootstrap_permit is not None:
+            raise ValueError('Manual and CI admission cannot be combined')
+        phase.REQUEST['manual_admission'] = manual_admission
     if bootstrap_permit is not None:
         phase.REQUEST['bootstrap_permit'] = bootstrap_permit
     if action == 'compose':
