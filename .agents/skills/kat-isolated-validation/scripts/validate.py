@@ -158,14 +158,34 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
         if browser_grep:
             argv.extend(['--grep', browser_grep])
     logfile = out / (profile + '.log')
-    with timed_stage(timings, profile + '-tests'):
-        command(argv, cwd=cwd, env=env, log=logfile)
+    results[profile] = {'status': 'stopped', 'log': str(logfile.relative_to(ROOT))}
+    try:
+        with timed_stage(timings, profile + '-tests'):
+            command(argv, cwd=cwd, env=env, log=logfile)
+    except (OSError, subprocess.SubprocessError) as exc:
+        results[profile]['error_type'] = type(exc).__name__
+        if isinstance(exc, subprocess.CalledProcessError):
+            results[profile]['returncode'] = exc.returncode
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            results[profile]['timeout_seconds'] = exc.timeout
+        raise
+    finally:
+        if profile == 'backend':
+            # This is the runner's structured, message-free report, never backend.log.
+            # Preserve the original process failure if its report is absent/corrupt.
+            try:
+                with (out / 'backend-timing.json').open() as source:
+                    diagnostics = source.read(131073)
+                if len(diagnostics) > 131072:
+                    raise ValueError('Oversized diagnostics')
+                results[profile]['diagnostics'] = json.loads(diagnostics)
+            except (OSError, ValueError):
+                results[profile]['diagnostics_status'] = 'unavailable'
     text = logfile.read_text(errors='replace')
     summary = re.findall(r'\b\d+ (?:passed|skipped|failed)\b|Ran \d+ tests?|^OK$', text, re.M)
-    results[profile] = {'status': 'passed', 'summary': summary[-3:],
-                        'log': str(logfile.relative_to(ROOT))}
-    if profile == 'backend':
-        results[profile]['diagnostics'] = json.loads((out / 'backend-timing.json').read_text())
+    if profile == 'backend' and results[profile].get('diagnostics_status') == 'unavailable':
+        raise RuntimeError('Backend diagnostics unavailable')
+    results[profile].update(status='passed', summary=summary[-3:])
 
 
 def main():
@@ -243,6 +263,15 @@ def main():
                 report['status'] = 'stopped'
         report['total_seconds'] = round(perf_counter() - started, 3)
         print(json.dumps(report, sort_keys=True))
+        if report['status'] != 'ok':
+            # qualify redirects stdout to its local witness. Keep failure evidence
+            # in the hosted job log even without an upload step in the pinned YAML.
+            # Exclude filters (arbitrary input), raw logs, messages and environment.
+            failure = {key: report[key] for key in (
+                'git', 'selected', 'unrun', 'results', 'timings', 'error_type',
+                'fixture_cleanup', 'cleanup_error_type') if key in report}
+            print('kat validation stopped: ' + json.dumps(failure, sort_keys=True),
+                  file=sys.stderr, flush=True)
     return 0 if report['status'] == 'ok' else 1
 
 

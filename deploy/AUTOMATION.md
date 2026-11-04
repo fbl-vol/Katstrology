@@ -205,3 +205,18 @@ checks, then full `--profile all`; the qualification command also runs the exact
 archive through native smoke. Inspect cleanup and final source tip/tree. A native
 unsigned-bundle denial or synthetic certificate fixture is not a positive GitHub
 identity check. Local Compose is not production host/Caddy/SSH verification.
+
+On a stopped synthetic profile, the validator emits `kat validation stopped:`
+JSON to stderr, which remains visible in hosted job logs even when `qualify`
+redirects its stdout witness. It includes child exit/timeout, cleanup and unrun
+profiles. Backend diagnostics retain at most 20 failures (with an omitted count),
+test identifiers, exception types and eight repository source locations per
+failure; no exception messages, source lines, locals, subtest values, environment
+or raw log tails are published. An interrupted backend may leave a `running`
+checkpoint identifying its last-started test; that is not a completed result or
+proof that that test caused termination. Missing/corrupt diagnostics are explicit
+and never replace the original failing exit. Raw logs remain invocation-local.
+No failure artifact upload or immutable workflow repin is needed for this path.
+A fresh hosted attempt is still required to diagnose an earlier failure whose
+runner-local log was lost; do not call that failure transient or fixed from local
+success alone.
