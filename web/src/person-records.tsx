@@ -43,6 +43,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
   const [watchState, setWatchState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [journalState, setJournalState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const watchRead = useRef(0);
+  const watchDemand = useRef({ version: watchVersion, watchOpen, journalOpen });
   const journalRead = useRef(0);
   const watchPage = useRef<{ read: number; next: number | null } | null>(null);
   const journalPage = useRef<{ read: number; next: number | null } | null>(null);
@@ -61,17 +62,27 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
   const editAttempt = useRef<{ key: string; id: string } | null>(null);
   const watchAttempt = useRef<{ key: string; id: string } | null>(null);
   useEffect(() => { if (clock.today) setDay(value => value || clock.today!); }, [clock.today]);
-  useEffect(() => { if (watchOpen) void loadWatch(); }, [watchVersion, watchOpen, personId]);
+  useEffect(() => {
+    const previous = watchDemand.current;
+    const changed = previous.version !== watchVersion;
+    const openedWatch = watchOpen && !previous.watchOpen;
+    const openedJournal = journalOpen && !previous.journalOpen;
+    watchDemand.current = { version: watchVersion, watchOpen, journalOpen };
+    if (changed) {
+      // A save invalidates even an in-flight read. Do not fetch while both
+      // sections are closed; the first opened section will request fresh links.
+      watchRead.current++; watchPage.current = null; setWatchNext(null);
+      setWatchState('idle');
+    }
+    if ((changed && (watchOpen || journalOpen)) ||
+        (openedWatch && watchState !== 'loading') ||
+        (openedJournal && watchState !== 'ready' && watchState !== 'loading')) void loadWatch();
+  }, [watchVersion, watchOpen, journalOpen, personId]);
   useEffect(() => () => {
     watchRead.current++; journalRead.current++;
     watchPage.current = null; journalPage.current = null;
   }, [workspace, personId]);
-  useEffect(() => {
-    if (journalOpen) {
-      void loadJournal();
-      if (watchState !== 'ready' && watchState !== 'loading') void loadWatch();
-    }
-  }, [journalOpen, personId]);
+  useEffect(() => { if (journalOpen) void loadJournal(); }, [journalOpen, personId]);
 
   async function loadWatch(offset = 0) {
     // A continuation belongs only to the last accepted page, never a pending

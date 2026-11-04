@@ -217,3 +217,91 @@ for (const viewport of viewports) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
   });
 }
+
+async function saveTimingForLater(page: Page, resultId: string) {
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByText('Saved timing', { exact: true }).click();
+  const timing = page.getByRole('region', { name: 'Where am I now' });
+  await timing.getByLabel('From (UTC)').fill('2026-01-01');
+  await timing.getByLabel('Explore').selectOption('year');
+  await timing.getByRole('button', { name: 'Show saved timing' }).click();
+  const result = timing.locator(`[data-result-id="${resultId}"]`).first();
+  await expect(result).toBeVisible();
+  await result.getByRole('button', { name: 'Save for later' }).click();
+  await expect(timing).toContainText('Saved for later. A due reminder is off');
+}
+
+for (const viewport of viewports) {
+  test(`journal link choices refresh after Save for later while Later stays closed on ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize(viewport);
+    const owner = viewport.name === 'desktop' ? 'reader-layout-wide' :
+      viewport.name === 'mobile' ? 'reader-layout-ultrawide' : 'reader-layout-large-ultrawide';
+    await openPerson(page, owner, viewport.width < 700);
+    const resultId = `journal-freshness-${crypto.randomUUID()}`;
+    await post(page, '/api/advanced-results', { id: resultId, person_id: 'transit-person',
+      technique: 'solar_return', parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } });
+    let reads = 0;
+    page.on('request', request => {
+      if (request.method() === 'GET' && request.url().includes('/people/transit-person/watchlist?offset=0')) reads++;
+    });
+    const initialRead = page.waitForResponse(response => response.url().includes('/people/transit-person/watchlist?offset=0'));
+    await page.getByRole('button', { name: 'Private journal' }).click();
+    await initialRead;
+    const link = page.getByLabel('Link a saved item (optional)');
+    await expect(page.getByText('No private reflections saved.')).toBeVisible();
+    await expect(link.locator('option')).toHaveCount(1);
+    await page.getByLabel('Your reflection', { exact: true }).fill('Unsent journal note');
+    await page.getByText('Private event journal', { exact: true }).click();
+    await saveTimingForLater(page, resultId);
+    expect(reads).toBe(1); // Later stayed closed; the mutation must not force a hidden read.
+    await page.getByRole('button', { name: 'Private journal' }).click();
+    await expect(link.locator(`option[value="${resultId}"]`)).toHaveCount(1);
+    await expect(link).toBeVisible();
+    await expect(page.getByRole('tabpanel', { name: 'Saved' }).locator('form.journal-form').first().locator('textarea'))
+      .toHaveValue('Unsent journal note');
+    expect(reads).toBe(2);
+    await link.selectOption(resultId);
+    await expect(link).toHaveValue(resultId);
+    await link.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: resolve(renders, `${viewport.name}-journal-new-link.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+  });
+}
+
+test('an in-flight old Journal link read cannot replace a saved calculation', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize(viewports[0]);
+  await openPerson(page, 'reader-layout-wide', false);
+  const resultId = `journal-pending-${crypto.randomUUID()}`;
+  await post(page, '/api/advanced-results', { id: resultId, person_id: 'transit-person',
+    technique: 'solar_return', parameters: { year: 2026, latitude: 55.68, longitude: 12.57 } });
+  let arrive!: () => void;
+  let release!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let delivered!: () => void;
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  let reads = 0;
+  await page.route('**/api/people/transit-person/watchlist?offset=0', async route => {
+    reads++;
+    if (reads === 1) {
+      const response = await route.fetch();
+      arrive(); await held; await route.fulfill({ response }); delivered();
+    } else await route.continue();
+  });
+  try {
+    const oldResponse = page.waitForResponse(response => response.url().includes('/people/transit-person/watchlist?offset=0'));
+    await page.getByRole('button', { name: 'Private journal' }).click();
+    await arrived;
+    await expect(page.getByText('No private reflections saved.')).toBeVisible();
+    await saveTimingForLater(page, resultId);
+    const link = page.getByLabel('Link a saved item (optional)');
+    await page.getByRole('tab', { name: 'Saved' }).click();
+    await expect(link.locator(`option[value="${resultId}"]`)).toHaveCount(1);
+    expect(reads).toBe(2);
+    release(); await done;
+    await (await oldResponse).finished();
+    await expect(link.locator(`option[value="${resultId}"]`)).toHaveCount(1);
+  } finally { release(); }
+});
