@@ -42,7 +42,7 @@ test('an oversized escaped draft is not sent or cleared', async ({ page }) => {
   expect(attempted).toEqual([]);
 });
 
-test('an unreferenced synthetic legacy file can be deleted without deleting its person', async ({ page }) => {
+test('retained legacy person files do not expose active controls or routes', async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-handoff-file');
@@ -50,14 +50,14 @@ test('an unreferenced synthetic legacy file can be deleted without deleting its 
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic file-only person/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
-  const person = page.locator('.profile-secondary').filter({ has: page.locator('summary', { hasText: 'Historical chart files' }) });
-  await person.locator(':scope > summary').click();
-  await expect(person.getByText('unreferenced.pdf')).toBeVisible();
-  const response = page.waitForResponse(result => result.request().method() === 'DELETE' &&
-    /\/api\/people\/[^/]+\/files\/[^/]+$/.test(new URL(result.url()).pathname));
-  await person.getByRole('button', { name: 'Delete', exact: true }).click();
-  expect((await response).status()).toBe(200);
-  await expect(person.getByText('No chart files attached.')).toBeVisible();
+  await expect(page.getByText('Historical chart files')).toHaveCount(0);
+  await expect(page.getByText('unreferenced.pdf')).toHaveCount(0);
+  const fileUrl = '/api/people/legacy-file-person/files/existing-file';
+  expect((await page.request.get(fileUrl)).status()).toBe(404);
+  const session = await (await page.request.get('/api/session')).json();
+  expect((await page.request.delete(fileUrl, { headers: {
+    'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin,
+  } })).status()).toBe(405);
   await expect(page.getByRole('heading', { name: 'Synthetic file-only person' })).toBeVisible();
 });
 
@@ -83,13 +83,13 @@ test('legacy draft and Sun-only chart remain visible without becoming the active
   await page.reload();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic Robin/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
-  await expect(page.getByText('No active generated natal. Nothing is guessed from a draft, an old chart or a file.')).toBeVisible();
+  await expect(page.getByText('No active generated natal. Nothing is guessed from a draft or an earlier chart.')).toBeVisible();
   await page.locator('.chart-history > summary').click();
   const chart = page.locator(`.chart-history > details[data-kat-chart-id="${legacy.chartId}"] > summary`);
   await expect(chart).toContainText('Historical chart');
   const chartId = legacy.chartId;
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic Robin' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await expect(page.locator('.person-chip')).not.toContainText('current natal');
   await page.getByLabel('Message Kat').fill(`Do not silently select historical chart ${chartId}`);
   const sent = page.waitForResponse(response => response.request().method() === 'POST' &&
@@ -188,16 +188,16 @@ test('person deletion is fenced by its shared conversation until the original th
   const form = page.getByRole('dialog', { name: 'A space for someone new.' });
   await form.getByLabel('Name').fill('Synthetic To Remove');
   await form.getByRole('button', { name: 'Create person' }).click();
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic To Remove' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await page.getByLabel('Message Kat').fill('Synthetic person deletion dependency');
   const deletionAck = page.waitForResponse(response => response.request().method() === 'POST' &&
     /\/api\/conversations\/[^/]+\/turns$/.test(new URL(response.url()).pathname));
   await page.getByRole('button', { name: 'Send message' }).click();
   expect((await deletionAck).status()).toBe(202);
   await page.getByRole('button', { name: /Synthetic To Remove/ }).first().click();
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.locator('.profile-secondary > summary').filter({ hasText: 'Remove this person' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.locator('.profile-footer > details > summary').filter({ hasText: 'Manage person' }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Delete this person' }).click();
   await expect(page.getByRole('alert')).toContainText('Delete related conversations first');
@@ -206,8 +206,8 @@ test('person deletion is fenced by its shared conversation until the original th
   await page.getByText('Conversation options').click();
   await page.getByRole('button', { name: 'Delete conversation' }).click();
   await page.getByRole('button', { name: /Synthetic To Remove/ }).first().click();
-  await page.getByRole('tab', { name: 'Basic info' }).click();
-  await page.locator('.profile-secondary > summary').filter({ hasText: 'Remove this person' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.locator('.profile-footer > details > summary').filter({ hasText: 'Manage person' }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Delete this person' }).click();
   await expect(page.getByText('No people yet.', { exact: true })).toBeVisible();

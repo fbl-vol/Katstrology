@@ -11,7 +11,6 @@ from m2.agent_reads import TOOLS, execute as execute_read
 from m2.tool_evidence import (MAX_MODEL_EVIDENCE_BYTES,
                               prepare as prepare_read_evidence)
 from m2.compaction import CompactionFailure, prepare as prepare_compaction
-from m2.attachments import Attachments
 from m2.evidence import LocalEmbedder, search_evidence
 from m2.recall import CONTEXT_TOKENS, REPLY_RESERVE, PromptBudgetError, assemble_prompt
 from m2.prompting import LOCAL, identity
@@ -99,7 +98,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         # Read the committed per-turn version, never the latest draft after ACK.
         archived = store.read_turn(session, conversation_id, turn_id, event_limit=1)
         selected_versions = archived['selected_people']
-        archived_file = archived['events'][0]['payload'].get('chart_file')
+        if archived['events'][0]['payload'].get('chart_file') is not None:
+            raise ValueError('Retired person-file requests cannot resume model inference')
         clock_anchor = archived['events'][0]['payload'].get('clock_anchor')
         reporting = clock_anchor['reporting'] if clock_anchor else None
         application_context = (f"UTC {clock_anchor['instant_utc']}; reported "
@@ -145,8 +145,6 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                     'source': 'supplied validated birth record for explicitly selected saved chart',
                     'details': {key: value.isoformat() if hasattr(value, 'isoformat') else value
                                 for key, value in birth.items()}}
-            if selected['attachment_id']:
-                profile['consented_chart_file_id'] = selected['attachment_id']
             selected_names.append(profile)
             if chart_id:
                 chart = Charts(store).get_chart(session, chart_id)
@@ -223,20 +221,6 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
             yield 'complete', {}
             return
 
-        file_evidence = None
-        if archived_file:
-            person_id, file_id = archived_file['person_id'], archived_file['attachment_id']
-            if not archived_file['consent'] or not any(
-                    item['person_id'] == person_id and item['attachment_id'] == file_id
-                    for item in selected_versions):
-                raise ValueError('Archived chart file consent or identity mismatch')
-            row, content = Attachments(store).read_person(session, person_id, file_id)
-            model.attach_chart_file(row, content)
-            file_evidence = {'person_id': person_id, 'attachment_id': file_id,
-                             'media_type': row['media_type'], 'digest': row['digest'],
-                             'byte_count': len(content), 'consent': 'explicit for this turn',
-                             'provider_media_tokens': 'not measured; image and PDF pages may consume additional tokens',
-                             'model_slug': model_slug}
         prompt_mode = 'hosted' if model_provider == 'chatgpt_plan' else 'local'
         instructions, prompt_id = (archived_instructions(archived['events'][0]['payload'].get('tone'))
                                    if prompt_mode == 'hosted' else (LOCAL, identity('local')))
@@ -297,8 +281,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
             }
             return
         budget.update({**prompt_id, 'model_provider': model_provider, 'model_slug': model_slug,
-                       'selected_profiles': selected_names, 'chart_file': file_evidence,
-                       'clock_anchor': clock_anchor})
+                       'selected_profiles': selected_names, 'clock_anchor': clock_anchor})
         if library is not None:
             # Archive bounded discovery identity, not duplicate untrusted titles
             # alongside potentially large selected chart/profile metadata.

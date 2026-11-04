@@ -1,6 +1,8 @@
 # Katstrology architecture
 
-![Katstrology local architecture](katstrology.png)
+The diagram below is **historical** (native-natal tip `3a82e36`), not the current deployment or feature inventory. For installed packaging and promotion boundaries, see [deployment](../../deploy/README.md); for current turn and chart contracts, see [the M2 guide](../../m2/README.md).
+
+![Historical Katstrology local architecture](katstrology.png)
 
 - [PNG diagram](katstrology.png)
 - [Scalable SVG](katstrology.svg)
@@ -15,8 +17,7 @@ represents related private storage and recovery, not a database calling the
 filesystem. The model-connection box includes its optional sign-in adapter.
 
 The browser loads React/TypeScript assets from the same loopback Python server
-that handles the API. PostgreSQL runs in an owned Docker container; the UI/backend
-are not currently packaged as a Docker Compose application.
+that handles the API. PostgreSQL is an owned dependency. The app has a container image and a Compose deployment configuration; the local synthetic fixture and deployed runtime are distinct. See [the deployment guide](../../deploy/README.md) for the actual packaging and release checks.
 
 The backend owns workspace authentication, authorization, conversation execution,
 context selection and persistence. One serialized Store worker preserves the
@@ -50,10 +51,7 @@ restore validity affect which records are eligible to reappear.
 - Selected context is sent to OpenAI in plan mode. Local archive ownership and
   `store: false` must not be described as a guarantee of local-only processing or
   provider zero retention. No provider chat history is imported.
-- Current tools are gateway-directed: selected chart loading and explicit
-  commands trigger calculations/reference retrieval. There is no autonomous
-  model-driven function-call loop in the current Responses adapter. The MCP
-  adapter's existence does not change that.
+- Hosted Responses can request bounded read-only tools and continue after committed tool results, subject to owner, capacity, cancellation and evidence limits. Browser/CLI/MCP and model reads grant different scopes; the model does not acquire a write/import tool through MCP.
 - Native tropical natal charts now provide versioned planetary positions, nodes,
   major aspects and supported Placidus/whole-sign house/angle facts. Exact birth
   time and explicit coordinates are required for full house results; uncertain
@@ -61,14 +59,9 @@ restore validity affect which records are eligible to reappear.
   drives the original SVG wheel, accessible tables and selected-chart model
   evidence. See [the natal contract](../../m2/NATAL-CHART.md) for supported dates,
   conventions, numerical references and licensing. Legacy solar methods remain
-  available; general other-body transit timing, synastry and progressions are
-  not implied by natal support.
-- Uploaded reference images/PDFs are separate from computed charts. Their use
-  requires explicit per-turn selection and disclosure for a supported model;
-  filenames/digests are archived and reading the picture does not turn it into
-  verified chart facts. Persistent conversation-wide file consent is not enabled.
-- Retrieval infrastructure exists, but a selected real interpretive library and
-  automatic interpretive retrieval during ordinary chat have not been delivered.
+  available. Other calculations, including transits, relationships and symbolic timing, have their own qualified [method contracts](../../m2/ADVANCED-TECHNIQUES.md).
+- Historical person-chart files remain in old archive/backup/deletion data and original turn attribution; there is no new person-file upload, download, deletion route or provider forwarding path. Calculated chart history and generated wheel exports are separate and remain available.
+- Reference editions and explicitly selected, bounded model reads are distinct from archived person files. An imported edition is not automatically selected or approved as an interpretive library.
 - Files are private runtime state too: attachments, credentials, journals and
   snapshots do not all live inside PostgreSQL. Independent exports/backups have
   their own retention/deletion implications.
@@ -85,9 +78,9 @@ proposal to split it into microservices or evidence of production readiness.
 | People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
 | Turn scheduling and commit-before-delivery | `m2/chat_jobs.py`, `gateway.py`, `store.py` |
 | Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |
-| Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `probes/core_calc.py` |
+| Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `core_calc.py` (`probes/core_calc.py` is a compatibility re-export) |
 | Natal SVG wheel and accessible placement/aspect tables | `web/src/natal.tsx` |
-| Optional provider authentication/inference and selected media | `m2/siwc.py`, `provider_model.py`, `provider_media.py` |
+| Optional provider authentication/inference | `m2/siwc.py`, `provider_model.py` |
 | Private files, deletion and restore | `m2/attachments.py`, `deletion.py`, `backup.py` |
 | Alternative local tools | `m2/cli.py`, `fixture_cli.py`, `mcp_server.py` |
 

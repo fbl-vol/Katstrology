@@ -1,11 +1,7 @@
 """Thin authenticated HTTP projection of the owner-scoped people services."""
 
-from urllib.parse import quote
-
-from starlette.responses import Response
 from starlette.routing import Route
 
-from m2.attachments import Attachments
 from m2.birth_flow import BirthFlow, BirthInputError
 from m2.insights import SavedInsights
 from m2.person_records import Watchlist, Journal
@@ -211,20 +207,6 @@ async def journal_entry(request):
     return json_response({'status': 'recorded'})
 
 
-async def file(request):
-    session = await authorized(request, mutate=request.method == 'DELETE')
-    person_id, attachment_id = (request.path_params[item] for item in ('person_id', 'attachment_id'))
-    if request.method == 'DELETE':
-        await request.app.state.runtime.call(
-            lambda store, _: store.ledger.delete_person_attachment(
-                store, session, person_id, attachment_id))
-        return json_response({'status': 'deleted'})
-    metadata, content = await request.app.state.runtime.call(
-        lambda store, _: Attachments(store).read_person(session, person_id, attachment_id))
-    return Response(content, media_type=metadata['media_type'], headers={
-        'Content-Disposition': "attachment; filename*=UTF-8''" + quote(metadata['filename'])})
-
-
 routes = [Route('/api/people', people, methods=['GET', 'POST']),
           Route('/api/people/{person_id}', person, methods=['GET', 'DELETE']),
           Route('/api/people/{person_id}/drafts', drafts, methods=['POST']),
@@ -233,7 +215,6 @@ routes = [Route('/api/people', people, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/births', births, methods=['POST']),
           Route('/api/profiles', profiles, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/charts', charts, methods=['POST']),
-          Route('/api/people/{person_id}/files/{attachment_id}', file, methods=['GET', 'DELETE']),
           Route('/api/people/{person_id}/insights', insights, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/insights/{entry_id}', insight_action, methods=['PATCH']),
           Route('/api/people/{person_id}/watchlist', watchlist, methods=['GET', 'POST']),

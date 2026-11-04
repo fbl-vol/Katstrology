@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { api, type Workspace } from './api';
 import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from './natal';
 import { InsightNotebook } from './insights';
@@ -19,7 +19,6 @@ export type Person = {
   drafts: { revision: number; details: Draft }[];
   birth_records: { id: string; wall_time: string | null; zone_name: string; earliest_utc: string | null; latest_utc: string | null }[];
   charts: Chart[];
-  attachments: { id: string; filename: string; byte_count: number; media_type: string }[];
 };
 
 export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
@@ -69,24 +68,24 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 }
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
-  initialEditorOpen = false, initialTab = 'basic', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
+  initialEditorOpen = false, initialTab = 'overview', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
   discussSavedResult }: {
   workspace: Workspace; person: Person; refresh: () => Promise<void>;
   startConversation: () => void; openConversation: (id: string) => void;
   discussSavedResult: (result: SelectedResult, label: string) => void;
-  onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'basic' | 'charts'; editorRequest?: number;
+  onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'charts'; editorRequest?: number;
   childFocus?: boolean; onReturn?: () => void; returnLabel?: string;
 }) {
   const tabsId = useId();
-  const [tab, setTab] = useState<'basic' | 'charts' | 'insights'>(initialEditorOpen ? 'charts' : initialTab);
+  const [tab, setTab] = useState<'overview' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab);
+  const [savedSection, setSavedSection] = useState<'insights' | 'later' | 'journal'>('insights');
+  const [savedOpenRequest, setSavedOpenRequest] = useState(0);
+  const [timingOpen, setTimingOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(initialEditorOpen);
   const [watchVersion, setWatchVersion] = useState(0);
   const [generated, setGenerated] = useState<{ result: Generation; draft: Draft } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [fileOutcome, setFileOutcome] = useState<{
-    id: string; message: string; conversations?: { id: string; title: string }[]; more?: boolean;
-  } | null>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([null, null, null]);
   const editorRef = useRef<HTMLDivElement>(null);
   const editButtonRef = useRef<HTMLButtonElement>(null);
@@ -113,85 +112,70 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       event.key === 'ArrowLeft' ? (index + 2) % 3 : null;
     if (next === null) return;
     event.preventDefault();
-    setTab((['basic', 'charts', 'insights'] as const)[next]);
+    setTab((['overview', 'charts', 'saved'] as const)[next]);
     tabRefs.current[next]?.focus();
   }
 
-  async function deleteFile(id: string) {
-    setBusy(true); setFileOutcome(null);
-    try {
-      await api(`people/${person.id}/files/${id}`, workspace.csrf, 'DELETE');
-      setFileOutcome({ id, message: 'Deletion accepted; refreshing the file list…' });
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'attachment_in_use') {
-        setFileOutcome({ id, message: 'Not deleted: an archived turn still references this file. The original file and conversation remain. Inspect where it was used below.',
-          conversations: cause.details.conversations, more: cause.details.more });
-      } else {
-        setFileOutcome({ id, message: 'File deletion was not confirmed. The file may still be present; check the archive before retrying.' });
-      }
-      setBusy(false);
-      return;
-    }
-    try { await refresh(); }
-    catch { setFileOutcome({ id, message: 'Deletion was accepted, but the file list could not refresh. Reopen this person to check the archive.' }); }
-    finally { setBusy(false); }
+  function openSaved(section: 'insights' | 'later' | 'journal') {
+    setSavedSection(section);
+    setSavedOpenRequest(request => request + 1);
+    setTab('saved');
   }
 
-  return <section className="person-page" aria-labelledby="person-heading">
+  return <section className="person-page" data-active-section={tab} aria-labelledby="person-heading">
     {onReturn && <button type="button" className="profile-return" onClick={onReturn}>← Return to {returnLabel}</button>}
     {childFocus && <p className="profile-child-note">Child’s natal uses the same numerical natal chart. It adds no child-status field, diagnosis, paid interpretation or deterministic personality label. Any later discussion is a separate, explicit choice.</p>}
-    <div className="profile-header"><div><span className="eyebrow">PERSON · LOCAL WORKSPACE</span>
+    <div className="profile-header"><div>
       <h1 id="person-heading" tabIndex={-1}>{person.name}</h1>
       <p className="profile-summary">{latestDraft ? <>{latestDraft.birth_date || 'Date not supplied'} · {latestDraft.time_unknown ? 'Birth time unknown' : latestDraft.birth_time || 'Time not supplied'} · {latestDraft.birthplace || 'Place not supplied'} <small>(latest user-supplied details)</small></> :
         'Birth details have not been supplied. No time or place is inferred.'}</p>
       {activeChart?.source_status !== 'current' && activeChart && <p className="profile-caution">The active chart’s source is {activeChart.source_status}; inspect its original details before relying on it.</p>}
-    </div><button ref={editButtonRef} type="button" className="profile-edit-action" onClick={openEditor} aria-controls={`${tabsId}-editor`} aria-expanded={editorOpen}>
-      {hasActive ? 'Edit current chart' : 'Create first chart'}</button></div>
+      <button ref={editButtonRef} type="button" className="profile-edit-action" onClick={openEditor} aria-controls={`${tabsId}-editor`} aria-expanded={editorOpen}>
+        {hasActive ? 'Edit birth details' : 'Add birth details'}</button>
+    </div><button type="button" className="primary profile-chat-action" onClick={startConversation}>Start conversation</button></div>
     <div className="profile-tabs" role="tablist" aria-label="Person sections">
-      {(['basic', 'charts', 'insights'] as const).map((item, index) => <button key={item} type="button" role="tab"
+      {(['overview', 'charts', 'saved'] as const).map((item, index) => <button key={item} type="button" role="tab"
         id={`${tabsId}-${item}-tab`} aria-controls={`${tabsId}-${item}-panel`} aria-selected={tab === item}
         tabIndex={tab === item ? 0 : -1} ref={element => { tabRefs.current[index] = element; }}
         onKeyDown={event => switchTab(event, index)} onClick={() => setTab(item)}>
-        {item === 'basic' ? 'Basic info' : item === 'charts' ? 'Charts' : 'Insights'}</button>)}
+        {item === 'overview' ? 'Overview' : item === 'charts' ? 'Charts' : 'Saved'}</button>)}
     </div>
-    <section id={`${tabsId}-basic-panel`} role="tabpanel" aria-labelledby={`${tabsId}-basic-tab`} hidden={tab !== 'basic'} className="profile-panel">
-      <h2>Basic info</h2>
-      {latestDraft ? <dl className="profile-facts"><div><dt>Birth date</dt><dd>{latestDraft.birth_date || 'Not supplied'}</dd></div>
-        <div><dt>Birth time</dt><dd>{latestDraft.time_unknown ? 'Unknown — no Ascendant or houses are inferred' : latestDraft.birth_time || 'Not supplied'}</dd></div>
-        <div><dt>Birthplace</dt><dd>{latestDraft.birthplace || 'Not supplied'}</dd></div></dl> :
-        <p>No birth date, time or place has been supplied. You can still start a conversation without chart evidence.</p>}
-      <details className="detail-section profile-secondary"><summary>Where am I now? · saved timing</summary>
-        {tab === 'basic' && <PersonTiming workspace={workspace} person={person} onDiscuss={discussSavedResult}
-          onWatch={() => setWatchVersion(value => value + 1)} />}
-      </details>
-      <PersonRecords workspace={workspace} personId={person.id}
-        onDiscuss={discussSavedResult} watchVersion={watchVersion} />
-      <AstrologyHelp />
-      <section className="conversation-entry" aria-label="Conversation about this person">
-        <p>{hasActive ? 'A new message uses the current generated natal, not an older version.' :
-          'No generated natal is active; a conversation can still be general.'}</p>
-        <button type="button" className="quiet-action" aria-label={`New conversation about ${person.name}`}
-          onClick={startConversation}>Start conversation</button>
-      </section>
-      <details className="profile-secondary"><summary>Remove this person</summary>
-        <p>Delete related conversations first. Removal is journaled; earlier external exports cannot be recalled.</p>
-        <button type="button" disabled={busy} onClick={() => {
-          if (!window.confirm(`Delete ${person.name} and their local chart versions and files? Related conversations must already be removed.`)) return;
-          setBusy(true); setError('');
-          void api(`people/${person.id}`, workspace.csrf, 'DELETE')
-            .then(onDeleted)
-            .catch(() => setError('Person deletion was blocked or unavailable. Delete related conversations first; the original records remain.'))
-            .finally(() => setBusy(false));
-        }}>Delete this person</button>
-      </details>
+    <section id={`${tabsId}-overview-panel`} role="tabpanel" aria-labelledby={`${tabsId}-overview-tab`} hidden={tab !== 'overview'} className="profile-panel">
+      <p className="profile-group-label">Explore</p>
+      <div className="profile-quiet-group">
+        <button type="button" className="profile-quiet-row" onClick={() => hasActive ? setTab('charts') : openEditor()}>
+          <span className="profile-row-icon" aria-hidden="true">☉</span><span><strong>{hasActive ? 'Birth chart' : 'First birth chart'}</strong>
+            <small>{hasActive ? activeChart?.source_status !== 'current' ? 'Saved chart · source needs review' :
+              latestDraft?.time_unknown ? 'Limited chart · birth time unknown' : 'Your current natal, placements and aspects' :
+              'Create a chart from the details you know'}</small></span><span className="profile-row-arrow" aria-hidden="true">›</span>
+        </button>
+        <details className="profile-timing-row" onToggle={event => setTimingOpen(event.currentTarget.open)}>
+          <summary className="profile-quiet-row"><span className="profile-row-icon" aria-hidden="true">◷</span>
+            <span><strong>Saved timing</strong><small>Explore calculations already saved for this person</small></span>
+            <span className="profile-row-arrow" aria-hidden="true">›</span></summary>
+          {timingOpen && <div className="profile-timing-content"><PersonTiming workspace={workspace} person={person}
+            onDiscuss={discussSavedResult} onWatch={() => setWatchVersion(value => value + 1)} /></div>}
+        </details>
+      </div>
+      <p className="profile-group-label">Saved</p>
+      <div className="profile-quiet-group">
+        {([['insights', '✧', 'Insights', 'Passages you chose to keep from conversations'],
+          ['later', '⌑', 'Saved for later', 'Saved results and optional in-app reminders'],
+          ['journal', '≋', 'Private journal', 'Your own dated reflections and notes']] as const).map(([key, icon, label, description]) =>
+          <button key={key} type="button" className="profile-quiet-row" onClick={() => openSaved(key)}>
+            <span className="profile-row-icon" aria-hidden="true">{icon}</span>
+            <span><strong>{label}</strong><small>{description}</small></span>
+            <span className="profile-row-arrow" aria-hidden="true">›</span>
+          </button>)}
+      </div>
+      <p className="profile-overview-note">The chart, conversation and notes stay separate. Open what you want to explore.</p>
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
-      <div className="profile-chart-heading"><div><h2>Current natal</h2>
-        <p>{activeChart ? 'Current generated natal. Earlier charts stay in History.' :
-          'No active generated natal. Nothing is guessed from a draft, an old chart or a file.'}</p></div>
-        {activeChart && <button type="button" className="quiet-action" onClick={startConversation}>Discuss current natal</button>}
+      <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>
+        <p>{activeChart ? 'Calculated from saved birth details. Earlier versions stay below.' :
+          'No active generated natal. Nothing is guessed from a draft or an earlier chart.'}</p></div>
       </div>
-      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion /> :
+      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion personLayout /> :
         <p>This generated chart has only supported partial/solar information. Birth time or houses were not inferred.</p>}</div> :
         <div className="profile-chart-empty"><p>{editorOpen ? 'Supply the birth details below to generate the first chart.' :
           'Choose Create first chart to supply birth details and generate a natal chart.'}</p>
@@ -213,22 +197,32 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
           </details>;
         })}
       </details>
-      <details className="detail-section profile-secondary" aria-label="Chart references"><summary>Historical chart files · {person.attachments.length}</summary>
-        <p>Saved files remain readable but are not used for new messages. No new uploads are accepted; an archived turn protects its referenced file from deletion.</p>
-        {person.attachments.length ? <ul>{person.attachments.map(item => <li key={item.id}>{item.filename} · {item.byte_count} bytes <a href={`/api/people/${person.id}/files/${item.id}`} download>Download</a> <button type="button" disabled={busy} onClick={() => void deleteFile(item.id)}>Delete</button>
-          {fileOutcome?.id === item.id && <div className="file-outcome" role="status"><p>{fileOutcome.message}</p>
-            {!!fileOutcome.conversations?.length && <ul>{fileOutcome.conversations.map(thread => <li key={thread.id}>
-              <button type="button" onClick={() => openConversation(thread.id)}>Open conversation: {thread.title || thread.id}</button>
-            </li>)}</ul>}
-            {fileOutcome.more && <p>Additional conversations also reference this file. No deletion was performed.</p>}
-          </div>}
-        </li>)}</ul> : <p>No chart files attached.</p>}
+    </section>
+    <section id={`${tabsId}-saved-panel`} role="tabpanel" aria-labelledby={`${tabsId}-saved-tab`}
+      hidden={tab !== 'saved'} className="profile-panel">
+      <div className="profile-saved-sections" aria-label="Saved sections">
+        {([['insights', 'Insights'], ['later', 'Saved for later'], ['journal', 'Private journal']] as const).map(([key, label]) =>
+          <button key={key} type="button" aria-pressed={savedSection === key} onClick={() => setSavedSection(key)}>{label}</button>)}
+      </div>
+      <div hidden={savedSection !== 'insights'}>
+        <InsightNotebook workspace={workspace} personId={person.id} active={tab === 'saved' && savedSection === 'insights'} openConversation={openConversation} />
+      </div>
+      <PersonRecords workspace={workspace} personId={person.id} onDiscuss={discussSavedResult}
+        watchVersion={watchVersion} section={tab === 'saved' ? savedSection : 'insights'} openRequest={savedOpenRequest} />
+    </section>
+    <div className="profile-footer"><AstrologyHelp />
+      <details className="profile-secondary"><summary>Manage person</summary>
+        <p>Delete related conversations first. Removal is journaled; earlier external exports cannot be recalled.</p>
+        <button type="button" disabled={busy} onClick={() => {
+          if (!window.confirm(`Delete ${person.name} and their saved chart versions? Related conversations must already be removed.`)) return;
+          setBusy(true); setError('');
+          void api(`people/${person.id}`, workspace.csrf, 'DELETE')
+            .then(onDeleted)
+            .catch(() => setError('Person deletion was blocked or unavailable. Delete related conversations first; the original records remain.'))
+            .finally(() => setBusy(false));
+        }}>Delete this person</button>
       </details>
-    </section>
-    <section id={`${tabsId}-insights-panel`} role="tabpanel" aria-labelledby={`${tabsId}-insights-tab`}
-      hidden={tab !== 'insights'} className="profile-panel">
-      <InsightNotebook workspace={workspace} personId={person.id} active={tab === 'insights'} openConversation={openConversation} />
-    </section>
+    </div>
     {error && <p className="error" role="alert">{error}</p>}
   </section>;
 }

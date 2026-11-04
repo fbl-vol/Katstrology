@@ -70,7 +70,7 @@ test('normal brand reuses New conversation from saved thread and every route', a
     });
 
     await sidebarButton(page, /Synthetic transit reader/, false);
-    await page.getByRole('button', { name: 'New conversation about Synthetic transit reader' }).click();
+    await page.getByRole('button', { name: 'Start conversation' }).click();
     await page.getByLabel('Message Kat').fill('Synthetic brand-home archived input');
     const ack = page.waitForResponse(response => response.request().method() === 'POST' &&
       /\/api\/conversations\/[^/]+\/turns$/.test(new URL(response.url()).pathname));
@@ -106,6 +106,7 @@ test('normal brand reuses New conversation from saved thread and every route', a
       await sidebarButton(page, '＋ Create chart', mobile);
       await page.getByRole('region', { name: 'Create chart' }).getByRole('button', { name: /^Synastry/ }).click();
       await expect(page.getByRole('region', { name: 'Synastry chart' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Synastry' })).toBeFocused();
       await brandHome(page, mobile);
 
       await sidebarButton(page, /Synthetic transit reader/, mobile);

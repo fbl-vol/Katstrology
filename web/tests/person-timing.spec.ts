@@ -68,7 +68,7 @@ test('saved cross-technique dates sort chronologically and open their actual cal
     expect(reply.status(), `${item.technique}: ${JSON.stringify(await reply.json())}`).toBe(201);
   }
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
-  await page.getByText('Where am I now? · saved timing').click();
+  await page.getByText('Saved timing', { exact: true }).click();
   const timing = page.getByRole('region', { name: 'Where am I now' });
   await timing.getByLabel('From (UTC)').fill('2024-01-01');
   await timing.getByLabel('Explore').selectOption('year');
@@ -161,7 +161,7 @@ test('opened progressed MC contact names its branch without inventing a planetar
   expect(empty.events).toHaveLength(0);
 
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
-  await page.getByText('Where am I now? · saved timing').click();
+  await page.getByText('Saved timing', { exact: true }).click();
   const timing = page.getByRole('region', { name: 'Where am I now' });
   await timing.getByLabel('From (UTC)').fill('2025-07-01');
   await timing.getByLabel('Explore').selectOption('year');
@@ -200,7 +200,7 @@ test('earlier natal identity is separate from source eligibility in saved timing
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
-  await page.getByText('Where am I now? · saved timing').click();
+  await page.getByText('Saved timing', { exact: true }).click();
   const timing = page.getByRole('region', { name: 'Where am I now' });
   await timing.getByLabel('Source natal').selectOption({ label: 'Earlier natal 2' });
   await timing.getByRole('button', { name: 'Show saved timing' }).click();
@@ -229,7 +229,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   const saved = await result.json();
   await page.getByLabel('Message Kat').fill('My existing unsent thought');
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
-  await page.getByText('Where am I now? · saved timing').click();
+  await page.getByText('Saved timing', { exact: true }).click();
   const timing = page.getByRole('region', { name: 'Where am I now' });
   await timing.getByLabel('From (UTC)').fill('2026-01-01');
   await timing.getByLabel('Explore').selectOption('year');
@@ -255,6 +255,8 @@ test('saved timing keeps the exact result selected for an editable draft', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2)).toBe(true);
   await createdRow.getByRole('button', { name: 'Save for later' }).first().click();
   await expect(timing).toContainText('Saved for later. A due reminder is off');
+  await page.getByRole('tab', { name: 'Saved' }).click();
+  await page.getByRole('button', { name: 'Saved for later' }).click();
   await page.getByText('Saved for later · in-app reminders').click();
   await expect(page.getByText('Reminder off.')).toBeVisible();
   await page.getByRole('button', { name: 'Edit note or reminder' }).click();
@@ -280,6 +282,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await watchForm.getByLabel('Private note (optional)').fill('Note-only update keeps due reminder');
   await watchForm.getByRole('button', { name: 'Save item' }).click();
   await expect(page.getByText('Note-only update keeps due reminder')).toBeVisible();
+  await page.getByRole('button', { name: 'Private journal' }).click();
   await page.getByText('Private event journal', { exact: true }).click();
   await page.getByLabel('Date', { exact: true }).last().fill('2026-06-22');
   await page.getByLabel('Link a saved item (optional)').selectOption(saved.id);
@@ -296,6 +299,7 @@ test('saved timing keeps the exact result selected for an editable draft', async
   await page.screenshot({ path: resolve(renders, 'corrected-journal-edit-short.png'), fullPage: true });
   await journalEdit.getByRole('button', { name: 'Save edit' }).click();
   await expect(page.getByText('A revised private synthetic life note')).toBeVisible();
+  await page.getByRole('tab', { name: 'Overview' }).click();
   const glossary = page.getByText('What do these chart terms mean?');
   await glossary.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText('A calculated angle tied to the local meridian', { exact: false })).toBeVisible();

@@ -19,7 +19,7 @@ test('current chart preview never replaces the archived turn chart after regener
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
-  await page.getByRole('button', { name: 'New conversation about Synthetic transit reader' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   const before = await page.locator('.person-chip').getAttribute('data-kat-chart-id');
   expect(before).toMatch(/^chart-[a-f0-9]+$/);
   await page.getByLabel('Message Kat').fill('One synthetic interpretation with this selected current chart.');
@@ -34,7 +34,8 @@ test('current chart preview never replaces the archived turn chart after regener
   const preview = page.getByRole('complementary', { name: 'Current natal context' });
   await expect(preview).toContainText('For your next message');
   await preview.getByRole('button', { name: /Open Synthetic transit reader’s full chart/ }).click();
-  await page.getByRole('button', { name: 'Edit current chart' }).click();
+  await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Edit birth details' }).click();
   const form = page.getByRole('region', { name: 'Generate a chart' });
   await form.getByLabel('Birth time').fill('04:15');
   await form.getByLabel('Birthplace search').fill('Copenhagen');

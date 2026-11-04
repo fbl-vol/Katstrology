@@ -43,7 +43,7 @@ async function selectPerson(page: Page, mobile: boolean) {
   const person = await (await page.request.get('/api/people/transit-person')).json();
   const chartId = person.active_chart_id as string;
   expect(chartId).toMatch(/^chart-[a-f0-9]+$/);
-  await page.getByRole('button', { name: 'New conversation about Synthetic transit reader' }).click();
+  await page.getByRole('button', { name: 'Start conversation' }).click();
   await expect(page.locator('.person-chip')).toContainText('current natal');
   return chartId;
 }

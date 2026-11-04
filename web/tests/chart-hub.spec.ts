@@ -112,13 +112,13 @@ test('child route creates one ordinary generated natal without child metadata or
   const result = await saved.json();
   expect(result.active_chart_id).toBe(result.chart.id);
   expect(result.chart.result.natal.method_version).toBe('natal-tropical-v1');
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   expect(modelRequests).toBe(0);
   await page.reload();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic family member/ }).click();
   await expect(page.locator('.profile-child-note')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Charts' }).click();
-  await expect(page.locator('.profile-chart-heading')).toContainText('Current generated natal');
+  await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   await expect(page.locator('.chart-history > summary')).toHaveText('Earlier charts and birth details');
   await page.locator('.chart-history > summary').click();
   await expect(page.locator('.chart-history > details')).toHaveCount(1);

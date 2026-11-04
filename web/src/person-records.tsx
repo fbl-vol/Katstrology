@@ -22,13 +22,20 @@ const names: Record<string, string> = {
   progressed_lunar_phases: 'Progressed lunar phase', true_solar_arc: 'Solar arc',
 };
 
-export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: {
+export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, section, openRequest }: {
   workspace: Workspace; personId: string; onDiscuss: (result: SelectedResult, label: string) => void;
-  watchVersion: number;
+  watchVersion: number; section: 'insights' | 'later' | 'journal'; openRequest: number;
 }) {
   const clock = useApplicationUtcDate();
   const [watchOpen, setWatchOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
+  const watchDetails = useRef<HTMLDetailsElement>(null);
+  const journalDetails = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (!openRequest) return;
+    const selected = section === 'later' ? watchDetails.current : section === 'journal' ? journalDetails.current : null;
+    if (selected) selected.open = true;
+  }, [openRequest]);
   const [watch, setWatch] = useState<Watch[]>([]);
   const [watchNext, setWatchNext] = useState<number | null>(null);
   const [journal, setJournal] = useState<Reflection[]>([]);
@@ -177,8 +184,8 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
     finally { setBusy(false); }
   }
 
-  return <section className="person-records" aria-label="Saved timing and private reflections">
-    <details className="detail-section profile-secondary" onToggle={event => setWatchOpen(event.currentTarget.open)}>
+  return <section className="person-records" aria-label="Saved timing and private reflections" hidden={section === 'insights'}>
+    <details ref={watchDetails} hidden={section !== 'later'} className="detail-section profile-secondary" onToggle={event => setWatchOpen(event.currentTarget.open)}>
       <summary>Saved for later · in-app reminders</summary>
       {watchOpen && <><p>Reminders are off unless chosen per item. Due items appear here only when Kat is open; there are no external alerts.</p>
         {watchState === 'loading' && <p role="status">Opening saved items…</p>}
@@ -224,7 +231,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion }: 
           onClick={() => void loadWatch(watchNext)}>Load more saved items</button>}
       </>}
     </details>
-    <details className="detail-section profile-secondary" onToggle={event => setJournalOpen(event.currentTarget.open)}>
+    <details ref={journalDetails} hidden={section !== 'journal'} className="detail-section profile-secondary" onToggle={event => setJournalOpen(event.currentTarget.open)}>
       <summary>Private event journal</summary>
       {journalOpen && <><p>Optional self-reported reflections. Not sent to Kat's model, tools or automatic recall. A linked calculation does not establish why something happened.</p>
         {journalState === 'loading' && <p role="status">Opening private reflections…</p>}

@@ -85,6 +85,7 @@ export function InsightNotebook({ workspace, personId, active, openConversation 
   workspace: Workspace; personId: string; active: boolean; openConversation: (id: string) => void;
 }) {
   const [entries, setEntries] = useState<Insight[]>([]);
+  const [loading, setLoading] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -94,10 +95,10 @@ export function InsightNotebook({ workspace, personId, active, openConversation 
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    setError('');
+    setError(''); setLoading(true);
     void api<InsightPage>(`people/${personId}/insights`).then(page => {
-      if (!cancelled) { setEntries(page.entries); setNextOffset(page.next_offset); }
-    }).catch(() => { if (!cancelled) setError('Insights could not be loaded. Return to this tab to retry.'); });
+      if (!cancelled) { setEntries(page.entries); setNextOffset(page.next_offset); setLoading(false); }
+    }).catch(() => { if (!cancelled) { setLoading(false); setError('Insights could not be loaded. Return to this tab to retry.'); } });
     return () => { cancelled = true; };
   }, [active, personId]);
   async function older() {
@@ -129,8 +130,9 @@ export function InsightNotebook({ workspace, personId, active, openConversation 
   }
   return <div className="insight-notebook">
     <h2>Saved insights</h2><p>Only passages you choose are kept here. Original messages and attribution remain in their discussion; historical sources are not current context.</p>
+    {loading && <p role="status">Opening insights…</p>}
     {error && <p role="alert" className="error">{error}</p>}
-    {!entries.length && !error && <p>No saved passages for this person yet. Open a completed conversation and choose Save passage.</p>}
+    {!entries.length && !error && !loading && <p>No saved passages for this person yet. Open a completed conversation and choose Save passage.</p>}
     {entries.map(entry => <article className="insight-entry" key={entry.id}>
       <p className="insight-source">{entry.epistemic_status === 'saved_assistant_passage' ? 'Kat’s wording · not verified facts' : 'Your original wording'} · {entry.source_status === 'current' ? 'Current source' : 'Historical source · excluded from current recall'}</p>
       <blockquote>{entry.statement}</blockquote>

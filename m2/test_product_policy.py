@@ -171,7 +171,7 @@ class ProductPolicyTests(DatabaseCase):
         response = self.client.post(f"/api/people/{person['id']}/files", headers={
             **self.headers, 'Content-Type': 'application/octet-stream'}, content=b'%PDF-1.4\nsynthetic')
         self.assertIn(response.status_code, (404, 405))
-        self.assertEqual(self.client.get('/api/people/' + person['id']).json()['attachments'], [])
+        self.assertNotIn('attachments', self.client.get('/api/people/' + person['id']).json())
 
 
 if __name__ == '__main__':
