@@ -7,8 +7,8 @@ be obtained from the ordinary dated transit view, not from the animation.
 from datetime import date, datetime, timedelta, timezone
 
 from m2.core_calc import END_YEAR, START_YEAR
-from m2.natal import BODY_IDS
-from m2.transits import Transits, _position_at
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import BODY_IDS, position_at as _position_at
 
 STEP = timedelta(minutes=15)
 MAX_SPAN = timedelta(days=7)
@@ -23,7 +23,7 @@ def frames(store, session, chart_id, first_day, last_day):
             not START_YEAR <= start.year <= END_YEAR or
             not START_YEAR <= end.year <= END_YEAR):
         raise ValueError('Choose a UTC interval of 1–7 days within 1900–2099')
-    chart, natal, unsupported = Transits(store).selected_natal(session, store._id(chart_id))
+    chart, natal, unsupported = NatalChartSource(store).selected_natal(session, store._id(chart_id))
     if unsupported:
         return {'status': unsupported, 'chart_id': chart_id}
     bodies = tuple(BODY_IDS)  # only actual transiting planets, never an interpolated apogee

@@ -6,34 +6,22 @@ stored as a chart result; rendering and conversation read the same result.
 """
 
 from datetime import timezone
-from hashlib import sha256
 from math import floor
-from pathlib import Path
 
 import swisseph as swe
 
 from m2.core_calc import ASPECTS, END_YEAR, START_YEAR, aspect_separation
+from m2.calculation.ephemeris import (BODY_IDS, LILITH_BODY_IDS, LILITH_IDS, EPHE_FILES,
+                                      CHIRON_FILE, CHIRON_SHA256, EPHE_DIRECTORY,
+                                      ephemeris, position as _position)
 
 
 # Swiss lunar-apogee points, not asteroid 1181 or a hypothetical second Moon.
 # "True" is the traditional name for an osculating calculation, not an accuracy claim.
-LILITH_IDS = {'mean': 'lilith_mean', 'osculating': 'lilith_osculating'}
-LILITH_BODY_IDS = {'lilith_mean': swe.MEAN_APOG, 'lilith_osculating': swe.OSCU_APOG}
-BODY_IDS = {
-    'sun': swe.SUN, 'moon': swe.MOON, 'mercury': swe.MERCURY,
-    'venus': swe.VENUS, 'mars': swe.MARS, 'jupiter': swe.JUPITER,
-    'saturn': swe.SATURN, 'uranus': swe.URANUS, 'neptune': swe.NEPTUNE,
-    'pluto': swe.PLUTO,
-}
 HOUSE_CODES = {'placidus': b'P', 'whole_sign': b'W'}
 DEFAULT_ORBS = {'conjunction': 8, 'opposition': 8, 'square': 6,
                 'trine': 6, 'sextile': 4}
-EPHE_FILES = ('sepl_18.se1', 'semo_18.se1')
-CHIRON_FILE = 'seas_18.se1'
-# Astrodienst's public main-asteroid file, 1800–2399 CE, pinned at
-# github.com/aloistr/swisseph commit 94621aba9f3ff9c32cb721eac0380c30dbb153fe.
-CHIRON_SHA256 = 'a2cd8fc33807c78ca9a700c91c2e042258b12fc4796519e00781440b5ad8b2e2'
-EPHE_DIRECTORY = Path(__file__).resolve().parents[1] / '.local/ephe'
+# Compatibility exports preserve existing numerical/source consumers.
 METHOD_VERSION = 'natal-tropical-v1'
 
 
@@ -58,28 +46,8 @@ def checked_natal_settings(settings):
 
 
 def _ephemeris(*, include_chiron=False):
-    directory = EPHE_DIRECTORY.resolve()
-    # Fail before calculation if the declared data files are missing. calc_ut's
-    # returned flag is checked too: Swiss can otherwise fall back to Moshier.
-    digests = {}
-    for name in EPHE_FILES + ((CHIRON_FILE,) if include_chiron else ()):
-        try:
-            digests[name] = sha256((directory / name).read_bytes()).hexdigest()
-        except FileNotFoundError as exc:
-            if name == CHIRON_FILE:
-                raise ValueError('chiron_data_missing_or_unverified') from exc
-            raise RuntimeError(f'Required Swiss data file {name} is unavailable') from exc
-        if name == CHIRON_FILE and digests[name] != CHIRON_SHA256:
-            raise ValueError('chiron_data_missing_or_unverified')
-    swe.set_ephe_path(str(directory))
-    return digests
-
-
-def _position(body_id, jd):
-    values, flags = swe.calc_ut(jd, body_id, swe.FLG_SWIEPH | swe.FLG_SPEED)
-    if not flags & swe.FLG_SWIEPH or not flags & swe.FLG_SPEED:
-        raise RuntimeError('Swiss ephemeris or speed unavailable; no fallback permitted')
-    return values
+    # Keep the original patchable public path for existing callers/tests.
+    return ephemeris(EPHE_DIRECTORY, include_chiron=include_chiron)
 
 
 def _house_facts(jd, latitude, longitude, settings, positions):

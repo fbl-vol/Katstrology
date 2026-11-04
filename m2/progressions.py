@@ -11,10 +11,11 @@ from math import isfinite
 
 import swisseph as swe
 
-from m2.natal import BODY_IDS, _position
-from m2.returns import _anniversary, _jd
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import BODY_IDS, position as _position
+from m2.calculation.time import julian_ut as _jd, signed_angle as _angle, utc as _utc
+from m2.returns import _anniversary
 from m2.synastry import pair_aspects
-from m2.transits import Transits, _angle, _utc
 from m2.core_calc import ASPECTS, END_YEAR, aspect_separation
 
 METHOD = 'secondary-utc-calendar-naibod-mc-v1'
@@ -68,7 +69,7 @@ def _contact(first, second, settings):
 
 class Progressions:
     def __init__(self, store):
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def mc_events(self, session, chart_id, start, end, branch, body, aspect):
         """Bounded effective-date exact contacts for one independently named MC branch."""
@@ -77,7 +78,7 @@ class Progressions:
             raise ValueError('Choose a positive progressed MC window of at most 732 days')
         if branch not in ('mcp', 'mcr'):
             raise ValueError('Choose progressed MC or progressed planets to natal MC')
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
         settings = chart['result']['profile']['settings']
@@ -182,7 +183,7 @@ class Progressions:
 
     def calculate(self, session, chart_id, effective):
         effective = _utc(effective)
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
         source = chart['result']['natal_sun']

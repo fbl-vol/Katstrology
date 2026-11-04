@@ -4,8 +4,11 @@ from datetime import datetime, timedelta, timezone
 
 import swisseph as swe
 
-from m2.natal import BODY_IDS
-from m2.transits import Transits, _angle, _position_at, _root, _utc
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import BODY_IDS, position_at as _position_at
+from m2.calculation.time import (signed_angle as _angle, crossing_root as _root,
+                                 utc as _utc, julian_ut as _jd,
+                                 instant_from_julian_ut as _utc_from_jdut)
 from m2.core_calc import aspect_separation
 
 METHOD = 'actual-geocentric-lunations-global-eclipses-v1'
@@ -13,18 +16,6 @@ STEP = timedelta(hours=6)
 MAX_WINDOW = timedelta(days=2 * 366)
 MAX_ECLIPSES_PER_FAMILY = 32
 PHASE_ANGLES = {'new': 0, 'full': 180}
-
-
-def _jd(instant):
-    instant = _utc(instant)
-    return swe.utc_to_jd(instant.year, instant.month, instant.day, instant.hour,
-                          instant.minute, instant.second + instant.microsecond / 1e6,
-                          swe.GREG_CAL)[1]
-
-
-def _utc_from_jdut(jd):
-    year, month, day, hour, minute, second = swe.jdut1_to_utc(jd, swe.GREG_CAL)
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc) + timedelta(seconds=second)
 
 
 def _eclipse_type(planet, flags):
@@ -42,13 +33,13 @@ def _eclipse_type(planet, flags):
 
 class Lunations:
     def __init__(self, store):
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_id, start, end, natal_target, aspect):
         start, end = _utc(start), _utc(end)
         if not start < end <= start + MAX_WINDOW:
             raise ValueError(f'Choose a positive real-sky lunation window of at most {MAX_WINDOW.days} days')
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
         settings = chart['result']['profile']['settings']

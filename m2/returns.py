@@ -4,31 +4,21 @@ The crossing is geocentric and independent of the reference place. UTC/UT1
 conversion and the source's checked Swiss data are shared with natal calculation.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from math import isfinite
 
 import swisseph as swe
 
-from m2.natal import BODY_IDS, _position, calculate_natal
-from m2.transits import Transits, _utc
+from m2.calculation.ephemeris import BODY_IDS, position as _position
+from m2.natal import calculate_natal
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.time import utc as _utc, julian_ut as _jd, instant_from_julian_ut as _instant
 
 METHOD = 'solar-return-utc-anniversary-v1'
 LUNAR_METHOD = 'lunar-return-utc-interval-v1'
 ROOT_SECONDS = 1
 MAX_LUNAR_DAYS = 2 * 366
 MAX_LUNAR_RETURNS = 32  # > two years of lunar cycles, while bounding chart generation
-
-
-def _jd(instant):
-    instant = _utc(instant)
-    return swe.utc_to_jd(instant.year, instant.month, instant.day,
-                         instant.hour, instant.minute,
-                         instant.second + instant.microsecond / 1e6, swe.GREG_CAL)[1]
-
-
-def _instant(jd):
-    year, month, day, hour, minute, second = swe.jdut1_to_utc(jd, swe.GREG_CAL)
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc) + timedelta(seconds=second)
 
 
 def _distance(jd, body, target):
@@ -74,14 +64,14 @@ def _place(latitude, longitude):
 
 class Returns:
     def __init__(self, store):
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_id, technique, *, year=None, start=None, end=None,
                   latitude=None, longitude=None):
         if technique not in ('solar_return', 'lunar_return'):
             raise ValueError('Choose solar or lunar return')
         _place(latitude, longitude)
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'technique': technique, 'chart_id': chart_id}
         if chart['result']['profile']['settings'].get('chart_kind') != 'natal':

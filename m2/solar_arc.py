@@ -2,7 +2,7 @@
 
 from m2.progressions import Progressions
 from m2.synastry import pair_aspects
-from m2.transits import Transits
+from m2.calculation.chart_source import NatalChartSource
 
 METHOD = 'true-progressed-sun-forward-solar-arc-v1'
 
@@ -10,13 +10,13 @@ METHOD = 'true-progressed-sun-forward-solar-arc-v1'
 class SolarArc:
     def __init__(self, store):
         self.progressions = Progressions(store)
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_id, effective):
         progressed = self.progressions.calculate(session, chart_id, effective)
         if progressed['status'] != 'supported':
             return progressed
-        chart, natal, missing = self.transits.selected_natal(session, chart_id)
+        chart, natal, missing = self.chart_source.selected_natal(session, chart_id)
         if missing:
             return {'status': missing, 'chart_id': chart_id}
         natal_sun = next(point['longitude_degrees'] for point in natal['positions']

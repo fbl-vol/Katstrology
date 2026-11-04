@@ -4,69 +4,27 @@ This is ecliptic-longitude calculation, not a forecast interpretation, house
 transit, progression or claimed compatibility with specialist prognosis software.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-import swisseph as swe
-
-from m2.charts import Charts
-from m2.natal import BODY_IDS, LILITH_BODY_IDS, LILITH_IDS, _ephemeris, _position
-from m2.core_calc import ASPECTS, START_YEAR, END_YEAR, aspect_separation
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import (BODY_IDS, LILITH_BODY_IDS, LILITH_IDS,
+                                      ephemeris as _ephemeris, position_at as _position_at)
+from m2.calculation.time import utc as _utc, signed_angle as _angle, crossing_root as _root
+from m2.core_calc import ASPECTS, aspect_separation
 
 STEP = timedelta(hours=1)
 TOLERANCE = timedelta(seconds=60)
 MAX_SCAN_DAYS = 2 * 366  # same hourly sampling and refinement as shorter windows
 
 
-def _utc(value):
-    if not isinstance(value, datetime) or value.tzinfo is None:
-        raise ValueError('Timezone-aware instant required')
-    instant = value.astimezone(timezone.utc)
-    if not START_YEAR <= instant.year <= END_YEAR:
-        raise ValueError('Transit instant outside supported 1900–2099 range')
-    return instant
-
-
-def _position_at(body, instant):
-    utc = _utc(instant)
-    _, jd = swe.utc_to_jd(utc.year, utc.month, utc.day, utc.hour, utc.minute,
-                          utc.second + utc.microsecond / 1e6, swe.GREG_CAL)
-    values = _position(swe.CHIRON if body == 'chiron' else
-                       LILITH_BODY_IDS[body] if body in LILITH_BODY_IDS else BODY_IDS[body], jd)
-    return values[0], values[3]
-
-
-def _angle(value):
-    """Signed shortest ecliptic distance to target; safe for <=1h planet motion."""
-    return (value + 180) % 360 - 180
-
-
-def _root(left, right, measure):
-    left_value = measure(left)
-    while right - left > TOLERANCE:
-        middle = left + (right - left) / 2
-        if (measure(middle) >= 0) == (left_value >= 0):
-            left, left_value = middle, measure(middle)
-        else:
-            right = middle
-    return left + (right - left) / 2
-
-
 class Transits:
     def __init__(self, store):
-        self.charts = Charts(store)
+        self.source = NatalChartSource(store)
+        self.charts = self.source.charts
 
     def selected_natal(self, session, chart_id):
-        """Validate one immutable natal version against current engine and source."""
-        chart = self.charts.get_chart(session, chart_id)
-        if chart['source_status'] != 'current':
-            return chart, None, 'unsupported_stale_birth_source'
-        natal = chart['result'].get('natal')
-        if not natal or natal['status'] not in ('complete', 'partial_unsupported_houses'):
-            return chart, None, 'unsupported_uncertain_birth_time_or_non_natal_chart'
-        if chart['engine_version'] != swe.version or natal['ephemeris_sha256'] != _ephemeris(
-                include_chiron=chart['result']['profile']['settings'].get('include_chiron', False)):
-            raise ValueError('Natal and transit engine/data versions differ')
-        return chart, natal, None
+        """Compatibility facade for existing transit and tool callers."""
+        return self.source.selected_natal(session, chart_id)
 
     def snapshot(self, session, chart_id, instant, transit_body, natal_body, aspect):
         instant = _utc(instant)

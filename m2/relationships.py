@@ -4,9 +4,11 @@ from datetime import datetime
 
 import swisseph as swe
 
-from m2.natal import BODY_IDS, _aspects, calculate_natal
+from m2.calculation.ephemeris import BODY_IDS
+from m2.natal import _aspects, calculate_natal
 from m2.synastry import Synastry
-from m2.transits import Transits, _angle
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.time import signed_angle as _angle
 
 COMPOSITE_METHOD = 'midpoint-composite-shortest-ecliptic-v1'
 DAVISON_METHOD = 'davison-uncorrected-algebraic-geography-v1'
@@ -24,7 +26,7 @@ def circular_midpoint(first, second):
 class Relationships:
     def __init__(self, store):
         self.synastry = Synastry(store)
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_a_id, chart_b_id, technique):
         if technique not in ('midpoint_composite', 'uncorrected_davison'):
@@ -34,8 +36,8 @@ class Relationships:
         if checked['status'] != 'supported':
             return {key: checked[key] for key in ('status', 'chart_a_id', 'chart_b_id',
                                                    'person_a_id', 'person_b_id')}
-        first, natal_a, missing_a = self.transits.selected_natal(session, chart_a_id)
-        second, natal_b, missing_b = self.transits.selected_natal(session, chart_b_id)
+        first, natal_a, missing_a = self.chart_source.selected_natal(session, chart_a_id)
+        second, natal_b, missing_b = self.chart_source.selected_natal(session, chart_b_id)
         if missing_a or missing_b:
             return {'status': missing_a or missing_b, 'chart_a_id': chart_a_id,
                     'chart_b_id': chart_b_id}
