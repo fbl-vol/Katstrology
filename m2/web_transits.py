@@ -10,7 +10,7 @@ from m2.people import People
 from m2.product_policy import REPORTING_ZONE
 from m2.transit_animation import frames
 from m2.transit_views import TransitInputError, view
-from m2.web_server import authorized, json_response
+from m2.http.boundary import authorized, json_response
 
 
 async def transit_view(request):

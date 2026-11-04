@@ -8,7 +8,7 @@ from starlette.routing import Route
 
 from m2.product_policy import MODEL
 from m2.provider_media import VISION_MODELS
-from m2.web_server import COOKIE, Forbidden, authorized, json_body, json_response
+from m2.http.boundary import COOKIE, Forbidden, authorized, json_body, json_response
 from m2.web_auth import WebAuth
 
 
