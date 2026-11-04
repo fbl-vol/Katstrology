@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const renders = resolve(import.meta.dirname, '../../.local/person-page-redesign/renders');
+test.beforeAll(() => mkdirSync(renders, { recursive: true }));
 
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 1024 },
@@ -19,7 +24,7 @@ for (const viewport of [
     await expect(page.getByRole('button', { name: 'Birth chart' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Private journal' })).toBeVisible();
     await expect(page.getByText('Historical chart files')).toHaveCount(0);
-    await page.screenshot({ path: test.info().outputPath(`person-overview-${viewport.name}.png`), fullPage: true });
+    await page.screenshot({ path: resolve(renders, `person-overview-${viewport.name}.png`), fullPage: true });
     await page.getByRole('button', { name: 'Private journal' }).click();
     await expect(page.getByLabel('Your reflection', { exact: true })).toBeVisible();
 
@@ -38,12 +43,12 @@ for (const viewport of [
     await chart.getByRole('tab', { name: 'Aspects' }).click();
     await expect(chart.getByRole('table', { name: /Major aspects/ })).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: test.info().outputPath(`person-charts-${viewport.name}.png`), fullPage: true });
+    await page.screenshot({ path: resolve(renders, `person-charts-${viewport.name}.png`), fullPage: true });
 
     await page.getByRole('tab', { name: 'Saved' }).click();
     await page.getByRole('button', { name: 'Private journal' }).click();
     await expect(page.getByText('Private event journal', { exact: true })).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath(`person-saved-${viewport.name}.png`), fullPage: true });
+    await page.screenshot({ path: resolve(renders, `person-saved-${viewport.name}.png`), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
     await page.getByRole('button', { name: 'Start conversation' }).click();
     await expect(page.getByLabel('Chart file for this turn')).toHaveCount(0);
