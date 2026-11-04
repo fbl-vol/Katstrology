@@ -336,6 +336,7 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
     from m2.web_conversations import routes as conversation_routes
     from m2.web_chat import routes as chat_routes
     from m2.web_siwc import routes as siwc_routes
+    from m2.web_tones import routes as tone_routes
     from m2.web_transits import routes as transit_routes
     from m2.web_synastry import routes as synastry_routes
     from m2.web_advanced import routes as advanced_routes
@@ -347,6 +348,7 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
                             *conversation_routes,
                             *chat_routes,
                             *siwc_routes,
+                            *tone_routes,
                             *transit_routes,
                             *synastry_routes,
                             *advanced_routes,

@@ -48,6 +48,39 @@ class BrowserAuthTests(unittest.TestCase):
         return TestClient(create_app(self.dsn, self.files, self.ledger,
                                      self.dist), base_url=ORIGIN)
 
+    def test_tone_preference_http_requires_owner_csrf_revision_and_survives_restart(self):
+        with self.client() as alice:
+            login = alice.post('/api/login', headers={'Origin': ORIGIN}, json={
+                'username': 'alice', 'password': 'synthetic-password-alice'}).json()
+            csrf = {'Origin': ORIGIN, 'X-Kat-CSRF': login['csrf']}
+            self.assertEqual(alice.get('/api/settings/tone').json()['tone_id'], 'quiet-wonder')
+            self.assertEqual(alice.get('/api/settings/tone').json()['revision'], 0)
+            self.assertEqual(alice.put('/api/settings/tone', headers={'Origin': ORIGIN}, json={
+                'tone_id': 'thoughtful-wit', 'revision': 0}).status_code, 403)
+            self.assertEqual(alice.put('/api/settings/tone', headers=csrf, json={
+                'tone_id': 'thoughtful-wit', 'revision': 0, 'owner_id': 'bob'}).status_code, 400)
+            self.assertEqual(alice.put('/api/settings/tone', headers=csrf, json={
+                'tone_id': 'not-a-profile', 'revision': 0}).status_code, 400)
+            self.assertEqual(alice.put('/api/settings/tone', headers=csrf, json={
+                'tone_id': 'thoughtful-wit', 'revision': 0}).json(),
+                {'tone_id': 'thoughtful-wit', 'revision': 1})
+            stale = alice.put('/api/settings/tone', headers=csrf, json={
+                'tone_id': 'cosmic-cabaret', 'revision': 0})
+            self.assertEqual((stale.status_code, stale.json()['error']),
+                             (409, 'tone_preference_changed'))
+            self.assertEqual(alice.get('/api/settings/tone').json()['tone_id'], 'thoughtful-wit')
+        with self.client() as bob:
+            other = bob.post('/api/login', headers={'Origin': ORIGIN}, json={
+                'username': 'bob', 'password': 'synthetic-password-bob'}).json()
+            self.assertEqual(bob.get('/api/settings/tone').json()['tone_id'], 'quiet-wonder')
+            self.assertEqual(bob.put('/api/settings/tone', headers={
+                'Origin': ORIGIN, 'X-Kat-CSRF': other['csrf']}, json={
+                'tone_id': 'grounded-warmth', 'revision': 0}).status_code, 200)
+        with self.client() as restarted:
+            restarted.post('/api/login', headers={'Origin': ORIGIN}, json={
+                'username': 'alice', 'password': 'synthetic-password-alice'})
+            self.assertEqual(restarted.get('/api/settings/tone').json()['tone_id'], 'thoughtful-wit')
+
     def test_https_deployment_keeps_exact_browser_boundary_and_offline_enrollment(self):
         origin = 'https://katstrology.dk'
         app = create_app(self.dsn, self.files, self.ledger, self.dist,

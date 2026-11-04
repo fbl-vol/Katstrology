@@ -6,6 +6,7 @@ from m2.birth_flow import BirthFlow, BirthInputError
 from m2.cli import DEFAULT_MODEL, model_at
 from m2.gateway import run_turn
 from m2.prompting import HOSTED, LOCAL, identity
+from m2.tone_profiles import DEFAULT, instructions
 from m2.people import People
 from m2.places import search
 from m2.test_support import DatabaseCase
@@ -104,7 +105,8 @@ class BirthFlowTests(DatabaseCase):
                                   hosted_events.append, parent_id='@root', selected_people=selected,
                                   model_provider='chatgpt_plan', model_slug='synthetic'), 'complete')
         context = next(event['payload'] for event in hosted_events if event['kind'] == 'context')
-        self.assertEqual({key: context[key] for key in identity('hosted')}, identity('hosted'))
+        tone_id = instructions(DEFAULT)[1]
+        self.assertEqual({key: context[key] for key in tone_id}, tone_id)
         self.assertLessEqual(context['prompt_tokens'] + context['instruction_tokens']
                              + context['reply_reserve'], 500000)
         self.assertGreater(context['instruction_tokens'], 0)

@@ -8,6 +8,7 @@ from m2.birth_flow import BirthFlow
 from m2.advanced import Advanced
 from m2.cli import DEFAULT_MODEL, model_at
 from m2.prompting import HOSTED, SUMMARY, identity
+from m2.tone_profiles import DEFAULT, instructions
 from m2.recall import rebuild_pending
 from m2.gateway import run_turn
 from m2.people import People
@@ -182,12 +183,13 @@ class ChatBudgetTests(DatabaseCase):
         self.assertEqual(context['reply_reserve'], 16_384)
         self.assertEqual(context['capacity_source'], 'openai_api_model_docs_direct_plan_unverified')
         self.assertFalse(context['capacity_route_verified'])
-        self.assertEqual({key: context[key] for key in identity('hosted')}, identity('hosted'))
+        tone_text, tone_identity = instructions(DEFAULT)
+        self.assertEqual({key: context[key] for key in tone_identity}, tone_identity)
         from m2.agent_reads import TOOLS
         self.assertEqual(context['instruction_tokens'],
-                         (len((HOSTED + json.dumps(TOOLS)).encode()) + 1) // 2)
+                         (len((tone_text + json.dumps(TOOLS)).encode()) + 1) // 2)
         sent = self.bridge.requests[0]
-        self.assertEqual(sent['instructions'], HOSTED)
+        self.assertEqual(sent['instructions'], tone_text)
         self.assertNotIn(HOSTED, sent['input'][0]['content'][0]['text'])
         self.assertIn(self.chart['id'], sent['input'][0]['content'][0]['text'])
         self.assertIn('positions=', sent['input'][0]['content'][0]['text'])
@@ -195,6 +197,47 @@ class ChatBudgetTests(DatabaseCase):
         self.assertIn(text, sent['input'][0]['content'][0]['text'])
         self.assertEqual(self.store.read_turn(self.alice, 'budget-thread', 'paragraph')
                          ['selected_people'][0]['chart_id'], self.chart['id'])
+
+    def test_switch_during_provider_read_keeps_accepted_identity_on_continuation_and_replay(self):
+        case = self
+
+        class SwitchDuringRead(CapturedResponses):
+            def response_events(self, _token, body):
+                self.requests.append(body)
+                if len(self.requests) == 1:
+                    case.store.set_tone_preference(case.alice, 'grounded-warmth', 0)
+                    yield {'type': 'response.completed', 'response': {'usage': {
+                        'input_tokens': 500, 'output_tokens': 30, 'total_tokens': 530},
+                        'output': [{'type': 'function_call', 'id': 'fc_1', 'call_id': 'call_1',
+                                    'name': 'list_reference_sources',
+                                    'arguments': '{"after":null}'}]}}, 'synthetic-first'
+                else:
+                    yield {'type': 'response.output_text.delta', 'delta': 'Read complete'}, 'synthetic-next'
+                    yield {'type': 'response.completed', 'response': {'usage': {
+                        'input_tokens': 600, 'output_tokens': 20, 'total_tokens': 620},
+                        'output': []}}, 'synthetic-next'
+
+        bridge = SwitchDuringRead()
+        model = ResponsesModel(bridge, 'alice', 'gpt-6.1-sol')
+        status, events = self.turn('switch-mid-read', 'Which sources are selected?', model=model)
+        self.assertEqual(status, 'complete', events[-1]['payload'])
+        self.assertEqual(len(bridge.requests), 2)
+        first, continuation = bridge.requests
+        self.assertEqual(first['instructions'], instructions(DEFAULT)[0])
+        self.assertEqual(continuation['instructions'], first['instructions'])
+        self.assertEqual(continuation['store'], False)
+        self.assertEqual(next(e['payload'] for e in events if e['kind'] == 'context')['prompt_sha256'],
+                         instructions(DEFAULT)[1]['prompt_sha256'])
+        self.assertTrue(any(e['kind'] == 'tool_result' for e in events))
+        replay, _ = self.turn('switch-mid-read', 'Which sources are selected?', model=model)
+        self.assertEqual(replay, 'complete')
+        self.assertEqual(len(bridge.requests), 2)
+        next_status, next_events = self.turn('regenerated-after-switch',
+                                              'Which sources are selected?', parent='@root', model=model)
+        self.assertEqual(next_status, 'complete', next_events[-1]['payload'])
+        self.assertEqual(bridge.requests[-1]['instructions'], instructions('grounded-warmth')[0])
+        original = self.store.read_turn(self.alice, 'budget-thread', 'switch-mid-read')
+        self.assertEqual(original['events'][0]['payload']['tone'], instructions(DEFAULT)[1])
 
     def test_legacy_prompt_identity_remains_archived_on_idempotent_replay(self):
         status, _ = self.turn('legacy-prompt-replay', 'Synthetic chart question.', parent='@root')
@@ -261,7 +304,7 @@ class ChatBudgetTests(DatabaseCase):
         self.assertIn(self.chart['id'], transport.requests[1]['input'][0]['content'][0]['text'])
         self.assertIn('positions=', transport.requests[1]['input'][0]['content'][0]['text'])
         self.assertIn(paragraph, transport.requests[1]['input'][0]['content'][0]['text'])
-        self.assertEqual(transport.requests[1]['instructions'], HOSTED)
+        self.assertEqual(transport.requests[1]['instructions'], instructions(DEFAULT)[0])
 
     def test_greeting_followups_keep_all_eligible_history_below_threshold(self):
         status, events = self.turn('greeting', 'hi')
@@ -457,7 +500,7 @@ class ChatBudgetTests(DatabaseCase):
         revision = context['compaction_revision']
         self.assertEqual(_last_usage(self.store, self.alice, conv, latest, compact,
                                      context['selected_sha256'], revision,
-                                     context['compaction_checkpoint_id']),
+                                     context['compaction_checkpoint_id'], context),
                          next(e['payload']['input_tokens'] for e in self.store.read_turn(
                              self.alice, conv, latest)['events'] if e['kind'] == 'usage'))
         self.assertIsNone(_last_usage(self.store, self.alice, conv, latest, compact,
@@ -469,11 +512,13 @@ class ChatBudgetTests(DatabaseCase):
         self.assertIsNone(_last_usage(self.store, self.alice, conv, latest, changed_policy,
                                       context['selected_sha256'], revision,
                                       context['compaction_checkpoint_id']))
-        with patch('m2.compaction.identity', return_value={
-                'prompt_version': 'synthetic-next', 'prompt_sha256': 'a' * 64}):
-            history = [(turn_id, '') for turn_id in self.store.ancestry(self.alice, conv, latest)]
-            self.assertIsNone(_checkpoint(self.store, owner, conv, history, revision,
-                                           compact, context['selected_sha256']))
+        history = [(turn_id, '') for turn_id in self.store.ancestry(self.alice, conv, latest)]
+        changed_tone = instructions('cosmic-cabaret')[1]
+        self.assertIsNone(_checkpoint(self.store, owner, conv, history, revision,
+                                       compact, context['selected_sha256'], changed_tone))
+        self.assertIsNone(_last_usage(self.store, self.alice, conv, latest, compact,
+                                      context['selected_sha256'], revision,
+                                      context['compaction_checkpoint_id'], changed_tone))
         with self.assertRaises(KeyError):
             self.store.ancestry(self.bob, conv, latest)
         self.assertEqual(self.store.db.execute('''

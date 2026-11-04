@@ -67,7 +67,7 @@ class DeploymentSnapshotTests(DatabaseCase):
 
         with deployment_snapshot_source(self.dsn, self.store.files, self.ledger.path) as source:
             manifest = backup(source, destination, dump_database=synthetic_dump)
-        self.assertEqual(manifest['schema_version'], 23)
+        self.assertEqual(manifest['schema_version'], 24)
         self.assertTrue((destination / 'manifest.json').is_file())
         self.assertEqual(self.ledger.path.read_bytes(), before)
 

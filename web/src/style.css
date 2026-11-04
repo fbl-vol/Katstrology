@@ -136,6 +136,8 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .settings-rows{border:1px solid var(--line);border-radius:12px;background:var(--white);overflow:hidden}
 .settings-row{display:flex;align-items:center;gap:14px;width:100%;min-height:84px;padding:17px 20px;border:0;background:transparent;text-align:left;color:var(--ink)}
 .settings-row:hover{background:var(--surface-soft)}
+.settings-row + .settings-row{border-top:1px solid var(--line)}
+.settings-voice{font:16px Georgia,serif;background:var(--surface-tint)}
 .settings-row strong{font-size:14px}
 .settings-row-main{flex:1;min-width:0;display:grid;gap:3px}
 .settings-row-main small{font-size:12px;line-height:1.45;color:var(--muted)}
@@ -162,6 +164,14 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .settings-picker .appearance-current{position:absolute;right:7px;bottom:7px}
 .settings-picker .appearance-option{position:relative;padding-bottom:22px}
 .settings-picker .appearance-option[aria-pressed="true"]{padding-bottom:21px}
+.tone-picker .tone-options{display:grid;gap:8px;margin:16px 0}
+.tone-options button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:64px;padding:11px 14px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);text-align:left}
+.tone-options button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
+.tone-options button:disabled{opacity:.7;cursor:wait}
+.tone-options strong,.tone-options small{display:block}
+.tone-options strong{font-size:13px}.tone-options small{color:var(--muted);font-size:11px;line-height:1.5;margin-top:3px}
+.tone-example{background:var(--surface-soft);border:1px solid var(--line);border-radius:9px;padding:14px}
+.tone-example strong{font-size:12px}.tone-example p{margin:9px 0 0}
 .settings-connection{position:relative;overflow-wrap:anywhere;background:var(--white);border:1px solid var(--line);border-radius:11px;padding:18px;margin-top:8px}
 .settings-connection h2{font:normal 20px Georgia,serif;margin:0 0 13px}
 .settings-connection .settings-disconnect{display:block;color:var(--danger);margin-top:15px;min-height:44px;padding:10px 0}

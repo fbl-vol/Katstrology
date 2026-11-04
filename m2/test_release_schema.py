@@ -14,9 +14,9 @@ class ReleaseSchemaTests(DatabaseCase):
     def lane(self, statement, *, tables=(), columns=None):
         directory = Path(self.directory.name) / 'synthetic-migrations'
         shutil.copytree(Path(__file__).parent / 'migrations', directory)
-        path = directory / '024_synthetic_release_fixture.sql'
+        path = directory / '025_synthetic_release_fixture.sql'
         path.write_text(statement)
-        return directory, {'from': 23, 'to': 24,
+        return directory, {'from': 24, 'to': 25,
                            'migrations': {path.name: sha256(path.read_bytes()).hexdigest()},
                            'added_tables': list(tables), 'added_columns': columns or {}}
 
@@ -25,7 +25,7 @@ class ReleaseSchemaTests(DatabaseCase):
         self.store.close()
         directory, lane = self.lane('CREATE TABLE synthetic_release_note (id text PRIMARY KEY);',
                                     tables=['synthetic_release_note'])
-        self.assertEqual(migrate(self.dsn, lane, directory), {'schema': 24, 'status': 'migrated'})
+        self.assertEqual(migrate(self.dsn, lane, directory), {'schema': 25, 'status': 'migrated'})
         with psycopg.connect(self.dsn) as db:
             self.assertEqual(db.execute('SELECT id FROM conversations').fetchall(), [('retained',)])
             self.assertEqual(db.execute('SELECT count(*) FROM synthetic_release_note').fetchone(), (0,))
@@ -45,7 +45,7 @@ class ReleaseSchemaTests(DatabaseCase):
         directory, lane = self.lane('DROP TABLE conversations;')
         with self.assertRaisesRegex(ValueError, 'narrow additive'):
             migrate(self.dsn, lane, directory)
-        path = directory / '024_synthetic_release_fixture.sql'
+        path = directory / '025_synthetic_release_fixture.sql'
         path.write_text('CREATE TABLE unapproved_table (id text);')
         with self.assertRaisesRegex(ValueError, 'allowlist'):
             migrate(self.dsn, lane, directory)
@@ -53,5 +53,5 @@ class ReleaseSchemaTests(DatabaseCase):
         with self.assertRaisesRegex(ValueError, 'added/removed tables'):
             migrate(self.dsn, lane, directory)
         with psycopg.connect(self.dsn) as db:
-            self.assertEqual(db.execute('SELECT max(version) FROM schema_migrations').fetchone(), (23,))
+            self.assertEqual(db.execute('SELECT max(version) FROM schema_migrations').fetchone(), (24,))
             self.assertIsNone(db.execute("SELECT to_regclass('public.unapproved_table')").fetchone()[0])

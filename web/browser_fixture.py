@@ -538,8 +538,9 @@ async def main():
                             return
                         if 'Synthetic chart handoff' in parts[0]['text']:
                             from m2.prompting import HOSTED
+                            from m2.tone_profiles import DEFAULT, instructions
                             prompt = parts[0]['text']
-                            if body.get('instructions') != HOSTED or HOSTED in prompt:
+                            if body.get('instructions') != instructions(DEFAULT)[0] or HOSTED in prompt:
                                 raise AssertionError('Hosted instruction missing or duplicated in model input')
                             selected = re.search(r'Chart (chart-[a-f0-9]+) source=current', prompt)
                             if not selected or 'positions=' not in prompt or 'cusps=' not in prompt:

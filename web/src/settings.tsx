@@ -4,8 +4,9 @@ import { AppearanceSettings } from './appearance';
 import { ProviderSettings, useProvider } from './provider';
 import { SourceNotice } from './source-notice';
 import { themes, readTheme } from './themes';
+import { ToneSettings, useTone } from './tone-settings';
 
-type Panel = 'appearance' | 'connection' | 'about';
+type Panel = 'appearance' | 'tone' | 'connection' | 'about';
 
 function connectionSummary(provider: ReturnType<typeof useProvider>): string {
   const { status, error } = provider;
@@ -28,6 +29,8 @@ export function SettingsView({ workspace, provider, onClose }: {
   const opener = useRef<HTMLButtonElement>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [palette, setPalette] = useState(readTheme);
+  const tone = useTone(workspace);
+  const selectedTone = tone.saved?.profiles.find(item => item.id === tone.saved?.tone_id);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => heading.current?.focus());
@@ -55,6 +58,12 @@ export function SettingsView({ workspace, provider, onClose }: {
         <span className="settings-value"><span className="settings-swatch" data-preview={palette} aria-hidden="true" />
           {themes.find(theme => theme.id === palette)?.label}<span aria-hidden="true">›</span></span>
       </button>
+      <button type="button" className="settings-row" onClick={event => open('tone', event.currentTarget)}>
+        <span className="settings-icon settings-voice" aria-hidden="true">Aa</span>
+        <span className="settings-row-main"><strong>Kat's tone</strong><small>{tone.error && !tone.saved ? 'Status unavailable' :
+          selectedTone?.description || 'Loading choice…'}</small></span>
+        <span className="settings-value">{selectedTone?.voice_label || 'Choose'} <span aria-hidden="true">›</span></span>
+      </button>
     </div>
     <h2 className="settings-caption">Your connection</h2>
     <div className="settings-rows">
@@ -76,9 +85,11 @@ export function SettingsView({ workspace, provider, onClose }: {
       }}>
       <div className="dialog-body">
         <div className="dialog-top"><h2 id="settings-dialog-title">{panel === 'appearance' ? 'Choose a palette' :
+          panel === 'tone' ? 'How should Kat sound?' :
           panel === 'connection' ? 'Chat connection' : 'About Kat'}</h2>
           <button type="button" aria-label="Close settings panel" onClick={close}>×</button></div>
         {panel === 'appearance' && <AppearanceSettings onChange={setPalette} />}
+        {panel === 'tone' && <ToneSettings tone={tone} />}
         {panel === 'connection' && <ProviderSettings provider={provider} workspace={workspace} />}
         {panel === 'about' && <section aria-label="About and source"><p>Kat brings your charts, questions and conversations together.</p><SourceNotice /></section>}
       </div>

@@ -30,6 +30,10 @@ MAX_ANCESTORS = 2000
 UNCHANGED = object()
 
 
+class ToneConflict(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class Session:
     owner_id: str
@@ -122,6 +126,32 @@ class Store:
         if session is None or self.sessions.get(id(session)) is not session:
             raise PermissionError('Authentication required')
         return session.owner_id
+
+    def tone_preference(self, session):
+        owner = self.owner(session)
+        row = self.db.execute('SELECT tone_id, revision FROM account_tones WHERE owner_id=%s',
+                              (owner,)).fetchone()
+        from m2.tone_profiles import DEFAULT
+        return {'tone_id': row['tone_id'] if row else DEFAULT,
+                'revision': row['revision'] if row else 0}
+
+    def set_tone_preference(self, session, tone_id, expected_revision):
+        from m2.tone_profiles import BY_ID
+        owner = self.owner(session)
+        if not isinstance(tone_id, str) or tone_id not in BY_ID or (
+                type(expected_revision) is not int or expected_revision < 0):
+            raise ValueError('Invalid tone selection or revision')
+        with self.db.transaction():
+            self.db.execute('SELECT id FROM accounts WHERE id=%s FOR UPDATE', (owner,))
+            current = self.tone_preference(session)
+            if current['revision'] != expected_revision:
+                raise ToneConflict('Tone preference has changed')
+            self.db.execute('''
+                INSERT INTO account_tones(owner_id,tone_id,revision) VALUES (%s,%s,%s)
+                ON CONFLICT (owner_id) DO UPDATE SET tone_id=excluded.tone_id,
+                  revision=excluded.revision
+            ''', (owner, tone_id, expected_revision + 1))
+        return {'tone_id': tone_id, 'revision': expected_revision + 1}
 
     def _conversation(self, owner, conv_id, lock=False):
         query = 'SELECT * FROM conversations WHERE owner_id=%s AND id=%s'
@@ -300,6 +330,10 @@ class Store:
                 source_status = ('current' if all(chart_owner.active_chart_id(session, person_id) == chart_id
                                                    for chart_id, person_id in sources) else 'historical')
             clock_anchor = snapshot(clock, reporting_zone) if clock is not None else None
+            tone = None
+            if model_provider == 'chatgpt_plan':
+                from m2.tone_profiles import instructions
+                _, tone = instructions(self.tone_preference(session)['tone_id'])
             self.db.execute('''
                 INSERT INTO turns(owner_id, conversation_id, id, parent_id, prompt, source, status,
                                   revision_kind, replaces_turn_id, parent_revision)
@@ -313,6 +347,7 @@ class Store:
                                                    'attachments': attachment_ids,
                                                    'model_provider': model_provider,
                                                    'model_slug': model_slug,
+                                                   'tone': tone,
                                                    'chart_file': chart_file,
                                                    'selected_result': selected_result,
                                                    'clock_anchor': clock_anchor,

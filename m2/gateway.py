@@ -14,7 +14,8 @@ from m2.compaction import CompactionFailure, prepare as prepare_compaction
 from m2.attachments import Attachments
 from m2.evidence import LocalEmbedder, search_evidence
 from m2.recall import CONTEXT_TOKENS, REPLY_RESERVE, PromptBudgetError, assemble_prompt
-from m2.prompting import HOSTED, LOCAL, identity
+from m2.prompting import LOCAL, identity
+from m2.tone_profiles import archived_instructions
 from m2.references import References
 from m2.provider_steps import ProviderFlush, ProviderStep
 from m2.tool_answers import _chart_prompt_evidence, chart_answer, event_answer, reference_answer
@@ -237,6 +238,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                              'provider_media_tokens': 'not measured; image and PDF pages may consume additional tokens',
                              'model_slug': model_slug}
         prompt_mode = 'hosted' if model_provider == 'chatgpt_plan' else 'local'
+        instructions, prompt_id = (archived_instructions(archived['events'][0]['payload'].get('tone'))
+                                   if prompt_mode == 'hosted' else (LOCAL, identity('local')))
         if prompt_mode == 'hosted' and hasattr(model, 'validate'):
             model.validate()  # Resolve catalog/docs capacity before budgeting, never on replay.
         # Hosted instructions travel separately; reserve their estimated context cost.
@@ -248,7 +251,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         library = (References(store).selected_library(session)
                    if prompt_mode == 'hosted' and tool_definitions else None)
         reference_context = json.dumps(library, ensure_ascii=False) if library is not None else ''
-        instruction_tokens = (len(model.tokenize((HOSTED + tool_definitions).encode(),
+        instruction_tokens = (len(model.tokenize((instructions + tool_definitions).encode(),
                                                 add_bos=True, special=True))
                               if prompt_mode == 'hosted' else 0)
         def render(recent=None, summary=None, covered=()):
@@ -271,7 +274,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
             if prompt_mode == 'hosted' and getattr(model, 'capacity', None):
                 prompt, budget = yield from prepare_compaction(
                     store, session, conversation_id, parent_id, request + tool_text,
-                    selected_names, model, cancelled, render, defer_provider)
+                    selected_names, model, cancelled, render, defer_provider,
+                    prompt_id=prompt_id)
             else:
                 prompt, budget = render()
         except CompactionFailure as exc:
@@ -292,7 +296,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                     model, 'count_method', 'estimated_text_units'),
             }
             return
-        budget.update({**identity(prompt_mode), 'model_provider': model_provider, 'model_slug': model_slug,
+        budget.update({**prompt_id, 'model_provider': model_provider, 'model_slug': model_slug,
                        'selected_profiles': selected_names, 'chart_file': file_evidence,
                        'clock_anchor': clock_anchor})
         if library is not None:
@@ -318,7 +322,8 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
             yield 'interrupted', {'reason': 'local cancellation'}
             return
         stream = model.create_completion(prompt, max_tokens=budget['reply_reserve'],
-                                         temperature=0, stop=['<|im_end|>'], stream=True)
+                                         temperature=0, stop=['<|im_end|>'], stream=True,
+                                         **({'instructions': instructions} if prompt_mode == 'hosted' else {}))
         chunks, rounds, evidence_bytes = 0, 0, 0
         meaningful_chunks = 0
         seen_calls = set()

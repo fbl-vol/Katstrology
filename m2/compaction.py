@@ -70,8 +70,8 @@ def model_policy(model):
                    model.capacity.source, model.reply_reserve, model.count_method])
 
 
-def _checkpoint(store, owner, conv_id, history, revision, model, selected_sha):
-    prompt_id = identity('hosted')
+def _checkpoint(store, owner, conv_id, history, revision, model, selected_sha, prompt_id=None):
+    prompt_id = prompt_id or identity('hosted')
     rows = store.db.execute('''
         SELECT * FROM compaction_checkpoints WHERE owner_id=%s AND conversation_id=%s
           AND compaction_revision=%s AND model_provider='chatgpt_plan' AND model_slug=%s
@@ -161,7 +161,8 @@ def _summary(model, previous, retired, cancelled, defer_provider=False):
     return text, input_units, _estimate(model, text), model.last_usage
 
 
-def _last_usage(store, session, conv_id, head_id, model, selected_sha, revision, checkpoint_id):
+def _last_usage(store, session, conv_id, head_id, model, selected_sha, revision, checkpoint_id, prompt_id=None):
+    prompt_id = prompt_id or identity('hosted')
     if not head_id:
         return None
     events = store.db.execute('''
@@ -176,7 +177,7 @@ def _last_usage(store, session, conv_id, head_id, model, selected_sha, revision,
     if not context or any((
             context.get('model_provider') != 'chatgpt_plan',
             context.get('model_slug') != model.slug,
-            context.get('prompt_sha256') != identity('hosted')['prompt_sha256'],
+            context.get('prompt_sha256') != prompt_id['prompt_sha256'],
             context.get('selected_sha256') != selected_sha,
             context.get('model_policy_sha256') != model_policy(model),
             context.get('compaction_revision') != revision,
@@ -187,19 +188,20 @@ def _last_usage(store, session, conv_id, head_id, model, selected_sha, revision,
 
 
 def prepare(store, session, conv_id, head_id, request, selected_context,
-            model, cancelled, render, defer_provider=False):
+            model, cancelled, render, defer_provider=False, prompt_id=None):
     """Yield progress for one bounded pre-dispatch compaction, then a strict prompt.
 
     render(recent_texts, summary, covered_ids) returns a measured prompt/budget
     or raises PromptBudgetError. No failed or repeated archived turn is resent.
     """
     owner = store.owner(session)
+    prompt_id = prompt_id or identity('hosted')
     snapshot = store._conversation(owner, conv_id)
     chain = store.ancestry(session, conv_id, head_id)
     history = _history(store, session, conv_id, chain)
     selected_sha = digest(selected_context)
     revision = snapshot['compaction_revision']
-    checkpoint = _checkpoint(store, owner, conv_id, history, revision, model, selected_sha)
+    checkpoint = _checkpoint(store, owner, conv_id, history, revision, model, selected_sha, prompt_id)
     covered = checkpoint['covered_ids'] if checkpoint else []
     summary = checkpoint['summary'] if checkpoint else None
     remaining = history[len(covered):]
@@ -222,7 +224,7 @@ def prepare(store, session, conv_id, head_id, request, selected_context,
         prompt = budget = None
         projected = model.context_limit + 1
     anchor = _last_usage(store, session, conv_id, head_id, model, selected_sha,
-                         revision, checkpoint_id)
+                         revision, checkpoint_id, prompt_id)
     if anchor:
         # Measured provider input plus new input/answer estimate is a *trigger*
         # signal only; units differ and strict assembled fit is always rechecked.
@@ -284,7 +286,7 @@ def prepare(store, session, conv_id, head_id, request, selected_context,
                 VALUES (%s,%s,%s,%s,'chatgpt_plan',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             ''', (owner, conv_id, head_id, revision, model.slug,
-                  identity('hosted')['prompt_version'], identity('hosted')['prompt_sha256'],
+                  prompt_id['prompt_version'], prompt_id['prompt_sha256'],
                   summary_identity()['summary_version'], summary_identity()['summary_sha256'],
                   selected_sha, model_policy(model), psycopg.types.json.Jsonb(new_covered), retained[0][0],
                   digest(history[:len(new_covered)]), new_summary,

@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from m2.product_policy import MODEL, REPORTING_ZONE
 from m2.prompting import HOSTED, identity
+from m2.tone_profiles import DEFAULT, instructions
 from m2.siwc import ProviderBridge
 from m2.test_siwc import FakeOpenAI
 from m2.test_support import DatabaseCase, synthetic_web_dist
@@ -106,7 +107,7 @@ class ProductPolicyTests(DatabaseCase):
         self.assertEqual(self.client.post(url, headers=self.headers, json=request).status_code, 202)
         self.client.get(url + '/visual-question/events')
         body = next(call[2] for call in self.transport.calls if call[0] == 'responses')
-        self.assertEqual(body['instructions'], HOSTED)
+        self.assertEqual(body['instructions'], instructions(DEFAULT)[0])
         self.assertIn('skip known method, birth-time and default-zone boilerplate unless asked or material', body['instructions'])
         self.assertIn('Copenhagen/default-zone setup belongs in chart/message details', body['instructions'])
         self.assertIn('semantic Markdown when helpful: subject headings, short paragraphs', body['instructions'])
@@ -118,7 +119,8 @@ class ProductPolicyTests(DatabaseCase):
         self.assertEqual(body['store'], False)
         context = next(item['payload'] for item in self.client.get(
             url + '/visual-question').json()['events'] if item['kind'] == 'context')
-        self.assertEqual({key: context[key] for key in identity('hosted')}, identity('hosted'))
+        tone_id = instructions(DEFAULT)[1]
+        self.assertEqual({key: context[key] for key in tone_id}, tone_id)
 
     def test_active_natal_is_resolved_at_ack_and_old_turn_replays_unchanged(self):
         self.grant_synthetic_plan()

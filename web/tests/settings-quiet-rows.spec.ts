@@ -28,7 +28,7 @@ for (const viewport of [
     await expect(appearance).toContainText('Reading Room');
     await expect(page.getByRole('button', { name: /ChatGPT.*Manage/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'About Kat & source' })).toBeVisible();
-    await expect(page.getByText("Kat's tone")).toHaveCount(0); // No unfinished preference UI.
+    await expect(page.getByRole('button', { name: /Kat's tone/ })).toContainText('Quiet Wonder');
     await page.screenshot({ path: resolve(renders, `overview-${viewport.name}.png`) });
 
     await appearance.click();
@@ -49,16 +49,75 @@ for (const viewport of [
     await expect(appearance).toBeFocused();
     await expect(appearance).toContainText('Midnight Orchid');
 
+    await page.getByRole('button', { name: /Kat's tone/ }).click();
+    const tones = page.getByRole('dialog', { name: 'How should Kat sound?' });
+    await expect(tones.locator('.tone-options button')).toHaveCount(5);
+    await expect(tones.getByText('A square is an angle of roughly 90°', { exact: false })).toBeVisible();
+    await tones.getByRole('button', { name: /Cosmic Cabaret/ }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: resolve(renders, `tone-picker-${viewport.name}.png`) });
+    await tones.getByRole('button', { name: /Cosmic Cabaret/ }).click();
+    await expect(tones.getByRole('status')).toContainText('Cosmic Cabaret is active');
+    await tones.getByRole('button', { name: 'Close settings panel' }).click();
+    await expect(page.getByRole('button', { name: /Kat's tone/ })).toContainText('Cosmic Cabaret');
     await page.getByRole('button', { name: 'About Kat & source' }).click();
     await expect(page.getByRole('link', { name: 'Read the license' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'About Kat & source' })).toBeFocused();
+    await page.getByRole('button', { name: /Kat's tone/ }).click();
+    await page.getByRole('dialog', { name: 'How should Kat sound?' })
+      .getByRole('button', { name: /Quiet Wonder/ }).click();
+    await expect(page.getByRole('dialog').getByRole('status')).toContainText('Quiet Wonder is active');
+    await page.getByRole('dialog').getByRole('button', { name: 'Close settings panel' }).click();
     await page.getByRole('button', { name: 'Back to workspace' }).click();
     await expect(page.getByLabel('Message Kat')).toHaveValue('Unsent settings draft');
     expect(sends).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
   });
 }
+
+test('Tone survives reload, follows the Kat owner and reports a failed save honestly', async ({ page, browser }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-shared');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /Kat's tone/ }).click();
+  let dialog = page.getByRole('dialog', { name: 'How should Kat sound?' });
+  await dialog.getByRole('button', { name: /Thoughtful Wit/ }).click();
+  await expect(dialog.getByRole('status')).toContainText('Thoughtful Wit is active');
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: /Kat's tone/ })).toContainText('Thoughtful Wit');
+
+  const other = await browser.newContext();
+  try {
+    const otherPage = await other.newPage();
+    await otherPage.goto(page.url());
+    await otherPage.getByLabel('Username').fill('reader-shared');
+    await otherPage.getByLabel('Password').fill('synthetic-browser-password');
+    await otherPage.getByRole('button', { name: 'Open workspace' }).click();
+    await otherPage.getByRole('button', { name: 'Settings' }).click();
+    await expect(otherPage.getByRole('button', { name: /Kat's tone/ })).toContainText('Thoughtful Wit');
+    await otherPage.getByRole('button', { name: 'Sign out' }).click();
+    await otherPage.getByLabel('Username').fill('reader-people');
+    await otherPage.getByLabel('Password').fill('synthetic-browser-password');
+    await otherPage.getByRole('button', { name: 'Open workspace' }).click();
+    await otherPage.getByRole('button', { name: 'Settings' }).click();
+    await expect(otherPage.getByRole('button', { name: /Kat's tone/ })).toContainText('Quiet Wonder');
+  } finally { await other.close(); }
+
+  await page.route('**/api/settings/tone', route => route.request().method() === 'PUT' ?
+    route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"tone_preference_changed"}' }) :
+    route.continue());
+  await page.getByRole('button', { name: /Kat's tone/ }).click();
+  dialog = page.getByRole('dialog', { name: 'How should Kat sound?' });
+  await dialog.getByRole('button', { name: /Cosmic Cabaret/ }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Tone was not changed');
+  await expect(dialog.getByRole('button', { name: /Thoughtful Wit/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.unroute('**/api/settings/tone');
+  await dialog.getByRole('button', { name: /Cosmic Cabaret/ }).click();
+  await expect(dialog.getByRole('status')).toContainText('Cosmic Cabaret is active');
+});
 
 test('ChatGPT Manage shows real account status, keeps selection available and confirms disconnect', async ({ page }) => {
   let disconnects = 0;
