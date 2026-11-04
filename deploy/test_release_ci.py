@@ -186,6 +186,32 @@ class CIAdmissionTests(unittest.TestCase):
                     self.assertFalse(release.running)
                     self.assertEqual(backups, [release.old])
 
+    def test_containerd_runtime_index_is_frozen_without_weakening_classic_config_pin(self):
+        with TemporaryDirectory() as directory:
+            release = OwnedRelease(Path(directory))
+            index = 'sha256:' + 'f' * 64
+            release.plan['artifact']['image_id'] = index
+            release.new = index
+            self.assertEqual(remote.native_image_identity(release.plan['artifact'], []),
+                             release.plan['artifact']['config_digest'])
+            native = release.docker
+            def docker(*args, **kwargs):
+                if args[:2] == ('docker', 'info'):
+                    return json.dumps([['driver-type', 'io.containerd.snapshotter.v1']])
+                return native(*args, **kwargs)
+            release.docker = docker
+            self.assertEqual(release.phase('preflight')['status'], 'ok')
+            self.assertEqual((release.stage / 'runtime-image').read_text().strip(), index)
+            self.assertIn(('docker', 'image', 'inspect', index), release.calls)
+            self.assertEqual(release.phase('quiesce_and_snapshot')['status'], 'ok')
+            self.assertEqual(release.phase('promote_release')['status'], 'ok')
+            self.assertEqual(remote.selected_image(release.env.read_bytes()), index)
+            self.assertEqual(release.phase('activate_app_only')['status'], 'ok')
+            self.assertEqual(release.image, index)
+            (release.stage / 'runtime-image').write_text('sha256:' + '9' * 64)
+            with self.assertRaisesRegex(ValueError, 'attested identities'):
+                remote.selected_runtime_image(release.stage, release.plan)
+
     def test_native_maintained_verifier_denies_unsigned_bundle_without_credentials(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

@@ -19,6 +19,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from m2.backup import current_schema_version
+from deploy.release_pipeline import artifact
+from deploy.release_remote import native_image_identity
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,8 +82,22 @@ def main():
         print(json.dumps({'status': 'plan', 'commit': tip, 'image_id': image,
                           'scope': 'new disposable Compose project, dynamic loopback port, fake DB secret; no activation'}))
         return
-    if command(['docker', 'image', 'inspect', image, '--format', '{{.Id}}']) != image:
-        raise RuntimeError('The exact receipt image is not local')
+    receipt, archive, _, _ = artifact(args.receipt)
+    driver = json.loads(command(['docker', 'info', '--format', '{{json .DriverStatus}}']))
+    image = native_image_identity(receipt, driver)
+    existing = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True, text=True)
+    if existing.returncode == 0:
+        info = json.loads(existing.stdout)[0]
+        if (info['Id'] != image or info['Config']['Labels'].get('org.opencontainers.image.revision') != tip
+                or command(['docker', 'ps', '-aq', '--filter', 'ancestor=' + image])):
+            raise RuntimeError('Candidate is not exclusively unused owned build output')
+        # Exercise import from the actual archive, not merely a builder-resident image.
+        # No force/prune: another tag/container reference causes a safe refusal.
+        command(['docker', 'image', 'rm', image])
+    command(['docker', 'load', '-i', str(archive)])
+    loaded = json.loads(command(['docker', 'image', 'inspect', image]))[0]
+    if loaded['Id'] != image or loaded['Config']['Labels'].get('org.opencontainers.image.revision') != tip:
+        raise RuntimeError('Native archive load changed candidate identity')
     project = 'kat-acceptance-' + secrets.token_hex(6)
     toolchain = {'docker': command(['docker', 'version', '--format', '{{.Server.Version}}']),
                  'buildx': command(['docker', 'buildx', 'version']),
@@ -178,7 +194,8 @@ def main():
                 raise RuntimeError('Owned smoke volume survived cleanup')
     print(json.dumps({'status': 'passed', 'commit': tip, 'image_id': image,
                       'project': project, 'host_port': port, 'schema': current_schema_version(),
-                      'toolchain': toolchain,
+                      'toolchain': toolchain, 'archive_load': 'passed; exact owned image import',
+                      'archive_image_id': receipt['image_id'], 'config_digest': receipt['config_digest'],
                       'empty_accounts': True, 'unauthenticated_401': True,
                       'invalid_host_403': True, 'packaged_dist_matched': True,
                       'restart': 'passed', 'state_checks': state_checks, 'cleanup': 'passed'}))

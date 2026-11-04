@@ -323,6 +323,7 @@ class ReleasePlanTests(unittest.TestCase):
                     return json.dumps([{'Id': argv[-1], 'Config': {
                         'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
                 if argv[:2] == ('docker', 'load'): return ''
+                if argv[:2] == ('docker', 'info'): return '[]'
                 raise AssertionError(argv)
             for field, name in (('release_env_file', 'env'), ('source_offer_file', 'source')):
                 target[field] = str(Path(directory) / name)
@@ -585,6 +586,7 @@ class ReleasePlanTests(unittest.TestCase):
                     return json.dumps([{'Id': argv[-1] if argv[-1].startswith('sha256:') else 'sha256:' + 'e' * 64,
                                         'Config': {'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
                 if argv[:2] == ('docker', 'load'): return ''
+                if argv[:2] == ('docker', 'info'): return '[]'
                 if 'stop' in argv:
                     self.assertEqual(argv[-1], 'app')
                     running = False

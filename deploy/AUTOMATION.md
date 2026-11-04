@@ -69,7 +69,12 @@ files are size/hash checked, token-free and do not include a private chart.
 The validator accepts the setup action's explicit local Unix Docker socket only
 on a hosted runner; ordinary local validation still fixes `/var/run/docker.sock`.
 The image archive index/platform/config, loaded ID, source offer and receipt are
-validated before native use. Cross-job paths are basename-relative. The database
+validated before native use. Qualification removes only its unused owned build
+image (never force/prune), reloads the actual archive and exercises that import.
+Classic Docker's native identity is the config digest; containerd's is the saved
+index. Both are attested. Preflight selects by the native store type, checks the
+exact loaded ID/revision, and freezes it for Compose/promotion/containment; there
+is no alias or unverified identity fallback. Cross-job paths are basename-relative. The database
 image remains digest-pinned. Native qualification checks effective Compose config,
 loopback Host admission, packaged assets, startup/restart, empty fresh DB, retained
 synthetic rows through backup/independent-ledger restore/additive migration,

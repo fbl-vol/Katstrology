@@ -35,9 +35,10 @@ per-file hashes; the checked-in `m2/public_model.py` and
 `m2/public-model-LICENSE.txt` supply the manifest and upstream MIT notice.
 `build_local.py` produces an ignored `.local/fresh-production/package/<tip>/` containing an amd64
 Docker image archive, `git archive` corresponding source offer and a receipt with
-SHA, tree, OS/arch, inspected image config ID and both file SHA-256 digests. It
-compares the saved archive manifest/config with the inspected ID; do not treat a
-Docker archive index digest or a tar hash as the runtime image ID. This is a local
+SHA, tree, OS/arch, archive index/config digests and both file SHA-256 digests.
+Classic Docker addresses the config; Docker's containerd store addresses the
+saved index. Native preflight freezes the store-specific attested identity and
+checks it exactly after load; never substitute a tar hash or guess between IDs. This is a local
 artifact, not an upload, registry publication or release. The Node, Python and
 PostgreSQL bases are pinned by digest; browser dependencies use `npm ci` and the
 Python application pins direct versions. **Transitive Python wheel hashes are not
@@ -47,7 +48,7 @@ licenses before promotion; refresh pinned bases through a separate review. See
 the pinned public model files, not private data or indexes; no ephemeris, real
 credentials, account state or journal is in the image or source offer. The
 source offer includes the public model manifest/licence, never its binary cache.
-Check the actual old server CPU, base pulls and archive config ID in its separately
+Check the actual old server CPU, base pulls and native image identity in its separately
 authorized private preflight, not by assuming this local build can run there.
 
 `compose.yaml` is a template, not a server command. It names a new project and
@@ -92,7 +93,7 @@ Keep a private, untracked JSON target file (mode 0600) with exactly these keys:
 Compose project), `stage_root` (pre-existing root-owned, symlink-free `/srv/...` Kat-only directory),
 `password_file` (existing app-owned 0400 path), `ephemeris_dir` (existing licensed
 read-only directory), `db_image` (the **inspected installed immutable DB runtime
-config ID**, `sha256:...`, supplied under the exact approval; not a registry tag
+runtime ID**, `sha256:...`, supplied under the exact approval; not a registry tag
 or the source template RepoDigest), `snapshot_dir` (pre-existing independent
 `/srv/...` directory owned by app UID 10001, distinct from staging and all serving
 volumes), `origin`
@@ -161,11 +162,11 @@ The installed helper stages the archive only under the **root-protected policy's
 fixed staging root at a fresh signed attempt ID and uses the root-owned protected Compose template. It
 writes a stage-local DB-image-only override from the installed policy's immutable
 `db_image`, without pulling/retagging/recreating the DB. A source template registry
-alias may not exist after archive import; the installed config ID must exist and
+alias may not exist after archive import; the installed native ID must exist and
 match the unchanged DB container. It checks the resulting effective Compose
 project **against the running app and DB** (actual state,
 credential, ephemeris and DB mounts; command/origin, runtime flags, network and
-loopback route), loaded immutable config ID, and independent app-owned empty
+loopback route), loaded immutable native image ID, and independent app-owned empty
 snapshot destination before stopping **only the app**. Unsupported runtime
 overrides are rejected before any serving mutation; the runner never silently
 switches to fresh volumes or a different port. It invokes the existing quiesced

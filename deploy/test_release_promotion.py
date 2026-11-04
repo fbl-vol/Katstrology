@@ -56,6 +56,8 @@ class OwnedRelease:
         self.calls.append(args)
         if 'config' in args:
             config = json.loads(json.dumps(self.config))
+            if kwargs.get('env', {}).get('KAT_APP_IMAGE'):
+                config['services']['app']['image'] = kwargs['env']['KAT_APP_IMAGE']
             if '--env-file' in args:
                 config['services']['app']['image'] = remote.selected_image(self.env.read_bytes())
             return json.dumps(config)
@@ -69,6 +71,8 @@ class OwnedRelease:
             return json.dumps([runtime_inspect(self.config, self.target, app=False)])
         if args[:3] == ('docker', 'image', 'inspect'):
             return json.dumps([{'Id': args[-1], 'Config': {'Labels': {'org.opencontainers.image.revision': 'c' * 40}}}])
+        if args[:2] == ('docker', 'info'):
+            return '[]'  # Existing manual fixtures model Docker's classic store.
         if args[:2] == ('docker', 'load'):
             return ''
         if 'psql' in args:

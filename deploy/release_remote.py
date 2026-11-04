@@ -352,6 +352,21 @@ def compatible_transition(target, planned, schema):
     return candidates[0]
 
 
+def native_image_identity(artifact, driver_status):
+    """Docker's containerd store addresses the saved index; classic uses config."""
+    containerd = ['driver-type', 'io.containerd.snapshotter.v1'] in driver_status
+    return artifact['image_id'] if containerd else artifact['config_digest']
+
+
+def selected_runtime_image(stage, planned):
+    path = stage / 'runtime-image'
+    # Before native preflight, Compose config is only rendered, never activated.
+    image = path.read_text().strip() if path.exists() else planned['artifact']['config_digest']
+    if image not in (planned['artifact']['config_digest'], planned['artifact'].get('image_id')):
+        raise ValueError('Frozen native image differs from attested identities')
+    return image
+
+
 def activation_baseline(stage):
     path = stage / 'state.migrated.json'
     return json.loads((path if path.exists() else stage / 'state.before.json').read_text())
@@ -407,7 +422,8 @@ def quarantine(target, planned, *, failure_type=None):
         elif phase == 'completed':
             outcome['serving'] = 'verified release already completed'
         else:
-            env = {**SERVER_ENV, 'KAT_APP_IMAGE': planned['artifact']['config_digest'],
+            candidate = selected_runtime_image(stage, planned)
+            env = {**SERVER_ENV, 'KAT_APP_IMAGE': candidate,
                    'KAT_DB_PASSWORD_FILE': target['password_file'], 'KAT_EPHE_DIR': target['ephemeris_dir']}
             command = ['docker', 'compose', '-f', str(stage / 'compose.yaml'),
                        '-f', str(stage / 'runtime.yaml'), '-p', target['project']]
@@ -419,7 +435,7 @@ def quarantine(target, planned, *, failure_type=None):
             if container:
                 info = json.loads(run('docker', 'inspect', container))[0]
                 previous = (stage / 'previous-image').read_text().strip()
-                if info['Image'] not in (previous, planned['artifact']['config_digest']):
+                if info['Image'] not in (previous, candidate):
                     raise ValueError('Containment image drift')
                 # Validate all runtime/mount/route identities even if already stopped.
                 inspected = info | {'State': info['State'] | {'Running': True}}
@@ -432,7 +448,7 @@ def quarantine(target, planned, *, failure_type=None):
                 elif phase == 'reopening' and 'ci_admission' in REQUEST:
                     reopened = json.loads((stage / 'reopen-owner.json').read_text())
                     if (not info['State']['Running'] or container != reopened['container']
-                            or info['Image'] != planned['artifact']['config_digest']
+                            or info['Image'] != candidate
                             or maintenance(container, 'status', planned['attempt']) != {
                                 'phase': 'open', 'attempt': None, 'boot': reopened['boot']}):
                         raise ValueError('Final admission outcome unconfirmed')
@@ -472,8 +488,9 @@ def release_phase():
     target, planned, action = REQUEST['target'], REQUEST['plan'], REQUEST['action']
     stage = Path(target['stage'])
     marker = stage / 'phase.json'
-    # OCI index identity is not the Docker runtime image ID; Compose pins config.
-    image = planned['artifact']['config_digest']
+    # Native preflight freezes the store-specific identity, always hash-bound to
+    # the same archive. Do not confuse classic config IDs with containerd indices.
+    image = selected_runtime_image(stage, planned)
     project = target['project']
     environment = {**SERVER_ENV, 'KAT_APP_IMAGE': image,
                    'KAT_DB_PASSWORD_FILE': target['password_file'],
@@ -585,9 +602,12 @@ def release_phase():
         durable_text(stage / 'previous-db-image', db['Image'] + '\n')
         # No pull, tag substitution or build on the server.
         run('docker', 'load', '-i', str(archive), timeout=600)
+        driver_status = json.loads(run('docker', 'info', '--format', '{{json .DriverStatus}}'))
+        image = native_image_identity(planned['artifact'], driver_status)
         loaded = json.loads(run('docker', 'image', 'inspect', image))[0]
         if loaded['Id'] != image or loaded['Config']['Labels'].get('org.opencontainers.image.revision') != planned['artifact']['commit']:
             raise ValueError('Loaded image identity mismatch')
+        durable_text(stage / 'runtime-image', image + '\n')
         advance('composed', 'preflight_ok')
     elif action == 'quiesce_and_snapshot':
         app_id = (stage / 'previous-container').read_text().strip()
