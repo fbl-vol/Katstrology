@@ -14,11 +14,6 @@ async function connect(page: Page, context: BrowserContext, owner: string, mobil
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === base.origin || url.origin === provider) return route.continue();
-    if (url.origin === 'https://auth.openai.com' && url.pathname === '/api/accounts/authorize') {
-      const state = url.searchParams.get('state');
-      expect(state).toBeTruthy();
-      return route.fulfill({ status: 303, headers: { location: `${provider}/authorize?state=${encodeURIComponent(state!)}` }, body: '' });
-    }
     return route.abort();
   });
   await page.goto('/');
@@ -67,12 +62,31 @@ for (const viewport of [
     await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
     await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
     await page.getByRole('button', { name: 'Close settings panel' }).click();
-    await page.getByRole('button', { name: 'Back to workspace' }).click();
+    const back = page.getByRole('button', { name: 'Back to workspace' });
+    // Hold only this navigation's deferred restoration until the reader has
+    // chosen the composer. The callback must not steal that newer focus.
+    const deferredFocus = await back.evaluateHandle(button => {
+      const callbacks: FrameRequestCallback[] = [];
+      button.addEventListener('click', () => {
+        const original = window.requestAnimationFrame;
+        window.requestAnimationFrame = callback => {
+          window.requestAnimationFrame = original;
+          callbacks.push(callback);
+          return 0;
+        };
+      }, { capture: true, once: true });
+      return callbacks;
+    });
+    await back.click();
     const composer = page.getByLabel('Message Kat');
     await composer.fill('Synthetic full transit chart fixture: please calculate today’s natal transits.');
     await composer.press('Shift+Enter');
     await expect(composer).toHaveValue('Synthetic full transit chart fixture: please calculate today’s natal transits.\n');
     await composer.focus();
+    expect(await deferredFocus.evaluate(callbacks => callbacks.length)).toBe(1);
+    await deferredFocus.evaluate(callbacks => callbacks.splice(0).forEach(callback => callback(performance.now())));
+    await deferredFocus.dispose();
+    await expect(composer).toBeFocused();
     await composer.pressSequentially('Keep the uncertainty visible.', { delay: 25 });
     await expect(composer).toHaveValue('Synthetic full transit chart fixture: please calculate today’s natal transits.\nKeep the uncertainty visible.');
     await composer.press('Enter');

@@ -1,7 +1,7 @@
 # Personal production candidate (source and local fixture preparation only)
 
 For the disabled-until-adopted keyless workflow, runtime drain, native qualification
-and one-time bootstrap contract, see [Unattended releases](AUTOMATION.md).
+and current-runtime adoption contract, see [Unattended releases](AUTOMATION.md).
 For the separately installed, human-signed exact-hash23→24 lane, see
 [Manual transitions](MANUAL_TRANSITIONS.md). It does not require CI enrollment.
 

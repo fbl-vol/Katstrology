@@ -38,6 +38,25 @@ async def synthetic_provider(reader, writer, app_port):
     await writer.wait_closed()
 
 
+def synthetic_auth_origin(app, provider_origin):
+    """Substitute the one allowed provider, not the browser's security checks."""
+    async def wrapped(scope, receive, send):
+        async def scoped_send(message):
+            if message['type'] == 'http.response.start':
+                headers = []
+                for name, value in message['headers']:
+                    if name.lower() == b'content-security-policy':
+                        original = b"form-action 'self' https://auth.openai.com"
+                        if original not in value:
+                            raise ValueError('Synthetic provider requires the exact production form boundary')
+                        value = value.replace(original, b"form-action 'self' " + provider_origin.encode('ascii'))
+                    headers.append((name, value))
+                message = {**message, 'headers': headers}
+            await send(message)
+        await app(scope, receive, scoped_send)
+    return wrapped
+
+
 async def main():
     base = test_fixture_dsn()
     port = int(os.environ.get('KAT_BROWSER_TEST_PORT', '8765'))
@@ -586,6 +605,12 @@ async def main():
                         state, url = super().begin(owner, session_digest, callback_uri, client_id)
                         self.transport.nonce = self.pending[state]['nonce']
                         self.transport.permission = owner != 'reader-siwc-identity'
+                        # Redirect directly to the separate synthetic loopback
+                        # provider. Chromium need not resolve a real auth host or
+                        # intercept a later URL in a server-side redirect chain.
+                        if synthetic_siwc:
+                            provider_port = port + 1 if port < 65535 else port - 1
+                            url = f'http://127.0.0.2:{provider_port}/authorize?{urlsplit(url).query}'
                         return state, url
 
                 provider_factory = lambda root: BrowserProviderBridge(root, BrowserCapture())
@@ -604,6 +629,9 @@ async def main():
             app = create_app(dsn, files, ledger, dist, port=port,
                              siwc_factory=provider_factory, siwc_root=Path(directory) / 'siwc',
                              clock=fixed_clock)
+            if synthetic_siwc:
+                provider_port = port + 1 if port < 65535 else port - 1
+                app = synthetic_auth_origin(app, f'http://127.0.0.2:{provider_port}')
             config = uvicorn.Config(app, host='127.0.0.1', port=port, access_log=False,
                                     log_level='warning')
             if synthetic_siwc:

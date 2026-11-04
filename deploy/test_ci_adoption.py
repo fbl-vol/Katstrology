@@ -4,6 +4,7 @@ from hashlib import sha256
 from io import BytesIO
 import json
 import os
+import tarfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -14,6 +15,16 @@ from deploy import bootstrap_bridge as bridge, ci_transport, hosted_tools, prepa
 from deploy import release_access as access, release_ci_access as ci, release_pipeline as pipeline
 from deploy import release_remote as remote
 from deploy.test_release_access import fixture
+from deploy.test_manual_transition import LANE, migration_archive
+
+
+def retained24(root, original):
+    offer = root / 'running-source.tar'
+    offer.write_bytes(migration_archive(24))
+    with tarfile.open(offer, 'a') as archive:
+        for name in ('release_access.py', 'release_remote.py', 'release_pipeline.py'):
+            archive.add(pipeline.ROOT / 'deploy' / name, arcname='deploy/' + name)
+    return original['artifact'] | {'source_offer': str(offer)}
 
 
 class AdoptionTests(unittest.TestCase):
@@ -55,7 +66,8 @@ class AdoptionTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             original, manual = fixture(directory)
-            manual['schema_version'] = 23
+            manual.update(schema_version=24, manual_transitions=[])
+            running = retained24(root, original)
             manual_path = root / 'manual.json'
             manual_path.write_text(json.dumps(manual))
             verifier, trusted_root = root / 'gh', root / 'trusted-root.jsonl'
@@ -63,8 +75,11 @@ class AdoptionTests(unittest.TestCase):
             trusted_root.write_bytes(b'synthetic-public-root')
             workflow = (pipeline.ROOT / '.github/workflows/trusted-release.yml').read_bytes()
             results = [b'', 'a' * 40, 'b' * 40, workflow, 'gh version 2.97.0 (synthetic)\n']
-            with patch.object(prepare_enrollment.subprocess, 'check_output', side_effect=results):
-                plan = prepare_enrollment.prepare(manual_path, 'c' * 40, verifier, trusted_root, root / 'output')
+            with patch.object(prepare_enrollment.subprocess, 'check_output', side_effect=results), \
+                    patch.object(prepare_enrollment, 'artifact', return_value=(
+                        running, None, (pipeline.ROOT / 'deploy/compose.yaml').read_bytes(), 24)):
+                plan = prepare_enrollment.prepare(manual_path, 'c' * 40, verifier, trusted_root,
+                    root / 'output', running_receipt=root / 'retained24.json')
             policy = json.loads((root / 'output/ci-policy.json').read_text())
             scope = json.loads((root / 'output/target-scope.json').read_text())
             self.assertIs(policy['enabled'], False)
@@ -72,10 +87,73 @@ class AdoptionTests(unittest.TestCase):
             self.assertEqual(policy['qualification_job'], 'release / qualify / candidate')
             self.assertEqual(scope, original['target'])
             self.assertEqual(plan['commit'], 'a' * 40)
-            self.assertIn('bootstrap_bridge.py', plan['helper_sha256'])
+            self.assertNotIn('bootstrap_bridge.py', plan['helper_sha256'])
+            self.assertIsNone(plan['bootstrap'])
+            self.assertEqual(plan['mode'], 'existing-drain-runtime')
+            self.assertEqual(plan['baseline_schema'], 24)
+            self.assertEqual(plan['manual_policy_sha256'], sha256(ci.canonical(manual)).hexdigest())
+            self.assertEqual(plan['manual_policy_file_sha256'], sha256(manual_path.read_bytes()).hexdigest())
+            self.assertEqual(json.loads(manual_path.read_text()), manual)
+            self.assertEqual(plan['manual_schema_baseline'], 24)
+            self.assertNotIn('baseline_schema', policy)  # No new gateway override contract.
+            policy_path = root / 'output/ci-policy.json'
+            installed = {policy['verifier']: verifier, policy['trusted_root']: trusted_root}
+            with patch.object(ci, 'protected', side_effect=lambda path: installed.get(str(path), Path(path))):
+                self.assertEqual(ci.read_policy(policy_path, enrollment=True), policy)
+                with self.assertRaisesRegex(ValueError, 'disabled'):
+                    ci.read_policy(policy_path)
             output = ''.join(p.read_text() for p in (root / 'output').iterdir())
             self.assertNotIn(manual['target']['password_file'], output)
             self.assertNotIn(manual['target']['stage_root'], output)
+
+    def test_existing24_preparation_refuses_old_runtime_and_stale_manual_baseline(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, manual = fixture(directory)
+            manual_path = root / 'manual.json'
+            running = retained24(root, original)
+            workflow = (pipeline.ROOT / '.github/workflows/trusted-release.yml').read_bytes()
+            for baseline, schema, lanes in ((24, 23, []), (23, 24, [LANE]), (24, 24, [LANE])):
+                manual.update(schema_version=baseline, manual_transitions=lanes)
+                manual_path.write_text(json.dumps(manual))
+                with self.subTest(baseline=baseline, schema=schema, lanes=bool(lanes)), \
+                        patch.object(prepare_enrollment.subprocess, 'check_output',
+                                     side_effect=[b'', 'a' * 40, 'b' * 40, workflow]), \
+                        patch.object(prepare_enrollment, 'artifact', return_value=(
+                            running, None, (pipeline.ROOT / 'deploy/compose.yaml').read_bytes(), schema)), \
+                        self.assertRaises(ValueError):
+                    prepare_enrollment.prepare(manual_path, 'c' * 40, root / 'unread-verifier',
+                        root / 'unread-root', root / 'output', running_receipt=root / 'retained.json')
+                self.assertFalse((root / 'output').exists())
+
+    def test_existing_gateway_admits_finalized24_without_bootstrap_or_new_lane(self):
+        # Native identity verification is substituted only in this owned unit
+        # fixture. This is admission-order/preservation evidence, not provenance.
+        with TemporaryDirectory() as directory:
+            original, manual = fixture(directory)
+            manual.update(schema_version=24, manual_transitions=[])
+            policy = {'transitions': []}
+            bundle = b'synthetic-verifier-input'
+            stage = Path(manual['target']['stage_root']) / original['attempt']
+            def request(schema):
+                plan = pipeline.plan(original['artifact'], manual['target'], schema,
+                    Path(manual['compose_file']).read_bytes(), original['attempt'], 7, 7)
+                return {'action': 'stage', 'bytes': len(bundle), 'manifest': {
+                    'contract': 1, 'plan': plan, 'run_id': 123, 'run_attempt': 1}}
+            with patch.object(access, 'protected', side_effect=Path), \
+                    patch.object(ci, 'protected', side_effect=Path), \
+                    patch.object(ci, 'verify', return_value={'run_number': 12}) as verify:
+                for schema in (23, 25):
+                    with self.assertRaisesRegex(ValueError, 'no installed compatibility lane'):
+                        ci.dispatch(request(schema), policy, manual, access, BytesIO(bundle))
+                verify.assert_not_called()
+                self.assertFalse(stage.exists())
+                allowed = request(24)
+                self.assertEqual(ci.dispatch(allowed, policy, manual, access, BytesIO(bundle))['status'], 'ok')
+                witness = json.loads((stage / 'ci-admission.json').read_text())
+                self.assertNotIn('mode', witness)
+                self.assertFalse((stage / 'manual-admission.json').exists())
+                self.assertEqual(verify.call_count, 1)
 
     def test_one_time_permit_is_consumed_before_effects_and_never_replayed(self):
         for fail_phase in (None, 'promote_release'):

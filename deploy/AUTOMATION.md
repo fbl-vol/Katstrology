@@ -113,7 +113,7 @@ tables, destructive SQL, skipped/extra migrations and an active Store owner are
 rejected. Snapshot uses the **old image's** exact migration set before candidate
 DDL. Migration is transactional; a durable `migrating` boundary makes an
 ambiguous commit outcome stop-only, never an automatic rollback/old-data restore.
-The tone/account-default decision is not made here; no product migration is added.
+Enrollment does not change tone/account defaults or backfill existing accounts.
 
 ## One-time adoption — separate authorization, no commands run by this document
 
@@ -121,8 +121,8 @@ The tone/account-default decision is not made here; no product migration is adde
    trusted-workflow commit used by `release.yml`; a later workflow change requires
    a new reviewed signer pin on the server. Publish only with explicit permission.
    Source tests and lints do **not** show these files are installed or ran hosted.
-2. Configure main protections: no force-push/deletion, required `Kat checks`,
-   protected trust-boundary changes and an explicit bypass policy. Configure the
+2. Verify the existing main protections: no force-push/deletion, required `Kat checks`,
+   protected trust-boundary changes and an explicit bypass policy. Verify the
    fixed `kat-production` environment for main only, **without required human
    reviewers** (those would reintroduce a routine gate). No PR or tag may access it.
    This repository has no automatic configuration writer; inspect actual settings.
@@ -132,11 +132,13 @@ The tone/account-default decision is not made here; no product migration is adde
    fetch a new root or verifier during a release. A stale root fails closed.
 4. Prepare a fresh disabled adoption plan, using the existing manual protocol4
    target policy **only under adoption approval**, the public verifier/root files
-   and the reviewed signer commit:
+   and the reviewed signer commit. Supply the retained **currently deployed
+   schema24** receipt, not a future candidate or the old schema23 package:
 
    ```sh
    python -m deploy.prepare_enrollment \
      --manual-policy /approved/input/manual-policy.json \
+     --running-receipt /retained/current-schema24/receipt.json \
      --signer-sha <immutable-workflow-commit> \
      --verifier /approved/public/gh \
      --trusted-root /approved/public/trusted-root.jsonl \
@@ -145,34 +147,42 @@ The tone/account-default decision is not made here; no product migration is adde
 
    This writes only `ci-policy.json` (`enabled:false`), the non-secret public
    `target-scope.json`, and exact helper/Compose/source hashes. It neither installs
-   anything nor reads/generates an SSH/signing key. The manual root policy's helper,
-   controller and template pins must be deliberately updated to these exact bytes;
-   it must retain its signer and target restrictions. Root-owned installed helper
-   files/parents must not be symlinks or group/other-writable. No service restart,
-   old key mutation, schema migration or historical receipt rewrite is implicit.
+   anything nor reads/generates an SSH/signing key. The shared manual helper,
+   controller and template bytes must match the retained installed package;
+   preparation refuses an implicit update. Preserve the complete manual policy,
+   signer, target and allowlist. This preparation requires the actual finalized
+   manual24 baseline with no pending transition. Completed155 policy finalization
+   retired its consumed23→24 lane under separate completion guards; do not restore
+   the old policy. Preparation itself never advances a baseline or retires a lane.
+   The existing gateway derives its baseline directly from that manual policy;
+   no schema-override field or changed gateway contract is needed. An empty CI
+   transition list admits same-schema24, not23, a new migration or manual-lane replay.
+   The adoption plan records both `manual_policy_file_sha256` (exact file bytes)
+   and `manual_policy_sha256` (sorted compact JSON plus newline). These are
+   preparation/preflight evidence, not new gateway authority or an installation
+   claim. Recheck current policy/package facts before installation.
+   Root-owned installed helper files/parents must not be symlinks or group/other-
+   writable. No service restart, old key mutation, schema migration or historical
+   receipt rewrite is implicit.
 5. Set only the public `KAT_CI_TARGET_SCOPE` variable first. Leave
    `KAT_AUTOMATION_ENABLED` unset/false and the transport secret unenrolled. The
-   configured-main workflow can now generate a qualified, attested bootstrap
+   configured-main workflow can now generate a qualified, attested candidate
    package but cannot contact production. Validate a real native verifier result
    for this repository's certificate/run identity and the actual successful job
    name; do not replace certificate checks with test JSON. Negative cases must
    still reject. No production preservation claim follows from this hosted build.
-6. The old dfc/schema23 app has no drain socket. During a separately approved
-   **one-time** planned maintenance window, let existing work settle, stage the
-   fresh CI-attested package as root-owned bytes, and install an exact root-only
-   `/etc/kat-release/bootstrap.json` permit containing `plan_sha256`, `old_image`,
-   `old_source_sha256` and `settled_existing_work:true`. These are measured old
-   image/source identities and the newly attested plan, not a reusable idle flag.
-   The local-root `bootstrap_bridge.py` defaults to a non-mutating plan. Its
-   `--execute --package <root-owned-package>` operation additionally verifies fresh
-   keyless identity/eligibility and all bytes, consumes the permit exclusively as
-   `bootstrap.used.json` **before effects**, and drives the shared lifecycle. It
-   stops the settled old owner, seeds the new persisted fence, snapshots with the
-   old image, promotes/starts/verifies and reopens the drain-capable same-schema
-   app. No human signature is needed. Failure consumes the permit and retains
-   attempt evidence; do not recreate/replay it. There is no bootstrap field/action
-   in either SSH protocol, and ordinary CI cannot resume a bootstrap witness.
-   A bridge installation is not an unattended-release proof.
+6. Match the actual running image/source/schema to that retained package, verify
+   the existing maintenance socket/open admission and absence of an active release
+   attempt. An already drain-capable schema24 app (including155) needs no bridge.
+   Use the ordinary CI lifecycle: native quiesce, old-image snapshot, preservation,
+   promotion and public verification before reopening. Do not create a bootstrap
+   permit, stop via historical idle consent, downgrade or restore the old schema23
+   runtime. `bootstrap_bridge.py` remains historical schema23-only source, is
+   omitted from this adoption plan, and is inapplicable to the current target.
+   A disabled plan, manual deployment or locally invoked genuine-provenance release
+   is not proof of hosted unattended transport. If a priority manual release has
+   since changed the running package or policy, regenerate preparation from its
+   retained receipt and recheck current facts; never overwrite immutable evidence.
 7. Enroll a **new dedicated** CI transport identity only with explicit approval;
    never inspect/copy/migrate an existing private key. Install its public half with
    `restrict` and the fixed root-owned `release_ci_access.py` forced command (the
@@ -192,7 +202,7 @@ The tone/account-default decision is not made here; no product migration is adde
 
 These are you/your agent's separately authorized adoption steps, not a handoff to
 an invented operator. Missing host access, public verifier/root bytes, repository
-settings, new transport enrollment or a maintenance window are concrete remaining
+settings, new transport enrollment or current runtime preflight are concrete remaining
 prerequisites. The routine path after adoption has no human release gate.
 
 ## Local qualification
@@ -216,7 +226,13 @@ or raw log tails are published. An interrupted backend may leave a `running`
 checkpoint identifying its last-started test; that is not a completed result or
 proof that that test caused termination. Missing/corrupt diagnostics are explicit
 and never replace the original failing exit. Raw logs remain invocation-local.
-No failure artifact upload or immutable workflow repin is needed for this path.
+Browser/SIWC/clock profiles additionally retain Playwright's native JSON report
+inside the owned invocation directory. Only integer outcome counts and at most20
+unexpected results/global errors, with repository test declaration coordinates and
+at most8 source locations each, enter the public stopped-profile summary. Titles,
+messages, stacks, snippets, stdout/stderr, attachments and external paths stay local.
+Missing/malformed/oversized reports remain explicit without replacing a failing
+child exit. No failure artifact upload or immutable workflow repin is needed.
 A fresh hosted attempt is still required to diagnose an earlier failure whose
 runner-local log was lost; do not call that failure transient or fixed from local
 success alone.

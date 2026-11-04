@@ -20,13 +20,6 @@ async function syntheticNavigation(context: BrowserContext, origin: string, prov
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === origin || url.origin === provider) { await route.continue(); return; }
-    if (url.origin === 'https://auth.openai.com' && url.pathname === '/api/accounts/authorize') {
-      const state = url.searchParams.get('state');
-      expect(state).toBeTruthy();
-      expect(url.searchParams.get('code_challenge')).toBeTruthy();
-      await route.fulfill({ status: 303, headers: { location: `${provider}/authorize?state=${encodeURIComponent(state!)}` }, body: '' });
-      return;
-    }
     if (url.origin === hostile && url.pathname === '/') {
       await route.fulfill({ status: 200, contentType: 'text/html', body:
         `<form method="post" action="${origin}/auth/chatgpt/start"><input name="csrf" value="invalid"><input name="client_id" value=""><button>Submit hostile form</button></form>` });
@@ -37,7 +30,11 @@ async function syntheticNavigation(context: BrowserContext, origin: string, prov
 }
 
 async function openSyntheticSignIn(page: Page, owner: string) {
-  await page.goto('/');
+  const { origin, provider } = origins();
+  const home = await page.goto('/');
+  const csp = home!.headers()['content-security-policy'];
+  expect(csp).toContain(`form-action 'self' ${provider}`);
+  expect(csp).not.toContain('https://auth.openai.com');
   await page.getByLabel('Username').fill(owner);
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
@@ -48,7 +45,6 @@ async function openSyntheticSignIn(page: Page, owner: string) {
   // A previous scenario may have connected this synthetic owner; the same flow reconnects it.
   const connect = connection.getByRole('button', { name: /^(Connect ChatGPT plan|Reconnect ChatGPT account)$/ });
   await expect(connect).toBeVisible();
-  const { origin, provider } = origins();
   const started = page.waitForResponse(response =>
     response.url() === `${origin}/auth/chatgpt/start` && response.request().method() === 'POST');
   await connect.click();
@@ -56,6 +52,11 @@ async function openSyntheticSignIn(page: Page, owner: string) {
   expect(start.request().headers()['origin']).toBe(origin);
   expect(start.status()).toBe(303);
   expect(start.headers()['referrer-policy']).toBe('no-referrer');
+  const destination = new URL(start.headers()['location']);
+  expect(destination.origin).toBe(provider);
+  expect(destination.pathname).toBe('/authorize');
+  expect(destination.searchParams.get('state')).toBeTruthy();
+  expect(destination.searchParams.get('code_challenge')).toBeTruthy();
   await page.waitForURL(`${provider}/authorize?*`);
 }
 

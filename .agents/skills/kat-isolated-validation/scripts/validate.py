@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -20,9 +21,35 @@ PASSWORD = 'synthetic_test_only'  # disposable test container, never a user cred
 def command(argv, *, env=None, cwd=ROOT, log=None, timeout=900):
     if log is None:
         return subprocess.check_output(argv, cwd=cwd, env=env, text=True, timeout=timeout).strip()
-    with log.open('x') as output:
-        subprocess.run(argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
-                       timeout=timeout, check=True)
+    with log.open('x') as output, subprocess.Popen(
+            argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+            start_new_session=True) as process:
+        try:
+            try:
+                process.wait(timeout=timeout)
+            except BaseException:
+                # Give Playwright its native interruption/teardown path before
+                # force-killing. A parent-only timeout otherwise orphans fixtures.
+                try:
+                    os.killpg(process.pid, signal.SIGINT)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                raise  # Preserve the original timeout/interrupt, never a pass.
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, argv)
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 @contextmanager
@@ -136,6 +163,101 @@ def browser_env(base, profile, dist):
     return env
 
 
+def browser_location(location):
+    """Only repository test-code coordinates; never messages or external paths."""
+    path = Path(location.get('file', ''))
+    if path.is_absolute():
+        try:
+            path = path.relative_to(ROOT / 'web')
+        except ValueError:
+            return None
+    elif not path.parts or path.parts[0] != 'tests':
+        path = Path('tests') / path
+    name = path.as_posix()
+    if ('..' in path.parts or not re.fullmatch(r'tests/[A-Za-z0-9_/.-]{1,240}\.ts', name)
+            or not (ROOT / 'web' / path).is_file()
+            or type(location.get('line')) is not int or location['line'] < 1):
+        return None
+    return {'file': 'web/' + name, 'line': location['line']}
+
+
+def browser_errors(errors):
+    locations = []
+    for error in errors:
+        candidates = [error.get('location', {})]
+        # Native JSON has assertion stack coordinates but also raw message/source
+        # snippets. Extract coordinates only, never publish the stack itself.
+        for match in re.finditer(r'(?:\s|\()([/A-Za-z0-9_.-]+\.ts):(\d+):\d+(?:\)|$)',
+                                 error.get('stack', ''), re.M):
+            candidates.append({'file': match[1], 'line': int(match[2])})
+        for candidate in candidates:
+            location = browser_location(candidate)
+            if location and location not in locations:
+                locations.append(location)
+    return locations[-8:]
+
+
+def browser_diagnostics(path):
+    with path.open() as source:
+        text = source.read(8 * 1024 * 1024 + 1)
+    if len(text) > 8 * 1024 * 1024:
+        raise ValueError('Oversized browser report')
+    report = json.loads(text)
+    failures = []
+    total = 0
+
+    def record(failure):
+        nonlocal total
+        total += 1
+        if len(failures) < 20:
+            failures.append(failure)
+
+    suites = list(report['suites'])
+    while suites:
+        suite = suites.pop()
+        suites.extend(suite.get('suites', []))
+        for spec in suite.get('specs', []):
+            for test in spec['tests']:
+                for result in test['results']:
+                    status = result['status']
+                    if status in ('failed', 'timedOut', 'interrupted', 'passed') and status != test['expectedStatus']:
+                        record({'status': status, 'test': browser_location(spec),
+                                'locations': browser_errors(result.get('errors', []))})
+    for error in report.get('errors', []):
+        record({'status': 'global_error', 'test': None, 'locations': browser_errors([error])})
+    return {'counts': {key: value for key, value in report['stats'].items()
+                       if key in ('expected', 'unexpected', 'flaky', 'skipped') and type(value) is int},
+            'failures': failures, 'failure_count': total,
+            'failures_omitted': total - len(failures)}
+
+
+def browser_progress(path):
+    with path.open() as source:
+        text = source.read(16385)
+    if len(text) > 16384:
+        raise ValueError('Oversized browser checkpoint')
+    report = json.loads(text)
+    if report['status'] not in ('initializing', 'running', 'passed', 'failed', 'timedout', 'interrupted'):
+        raise ValueError('Unknown browser checkpoint status')
+    public = {'status': report['status']}
+    for key in ('total', 'started', 'finished', 'global_errors', 'active_omitted'):
+        if type(report[key]) is not int or report[key] < 0:
+            raise ValueError('Invalid browser checkpoint count')
+        public[key] = report[key]
+    public['active'] = [browser_location(item) if isinstance(item, dict) else None
+                        for item in report['active'][:8]]
+    for key in ('last_started_test', 'last_finished_test'):
+        value = report.get(key)
+        public[key] = browser_location(value) if isinstance(value, dict) else None
+    public['outcomes'] = {key: value for key, value in report['outcomes'].items()
+                          if key in ('passed', 'failed', 'timedOut', 'skipped', 'interrupted')
+                          and type(value) is int and value >= 0}
+    public['resources'] = {key: value for key, value in report['resources'].items()
+                           if key in ('node_rss', 'free_memory', 'total_memory', 'load1')
+                           and type(value) in (int, float) and 0 <= value < 2**60}
+    return public
+
+
 def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timings,
                 private_layout_reference=False):
     python = ROOT / '.venv-swiss/bin/python'
@@ -154,7 +276,10 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
         env = browser_env(env, profile, dist)
         if profile == 'browser' and private_layout_reference:
             env['KAT_LAYOUT_PRIVATE_REFERENCE'] = '1'
-        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test'], web
+        env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / (profile + '-report.json'))
+        env['KAT_BROWSER_PROGRESS_FILE'] = str(out / (profile + '-progress.json'))
+        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test',
+                     '--reporter=line,json,./validation-reporter.cjs'], web
         if browser_grep:
             argv.extend(['--grep', browser_grep])
     logfile = out / (profile + '.log')
@@ -181,10 +306,19 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
                 results[profile]['diagnostics'] = json.loads(diagnostics)
             except (OSError, ValueError):
                 results[profile]['diagnostics_status'] = 'unavailable'
+        elif profile in PROFILES[2:]:
+            try:
+                results[profile]['progress'] = browser_progress(out / (profile + '-progress.json'))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                results[profile]['progress_status'] = 'unavailable'
+            try:
+                results[profile]['diagnostics'] = browser_diagnostics(out / (profile + '-report.json'))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                results[profile]['diagnostics_status'] = 'unavailable'
     text = logfile.read_text(errors='replace')
     summary = re.findall(r'\b\d+ (?:passed|skipped|failed)\b|Ran \d+ tests?|^OK$', text, re.M)
-    if profile == 'backend' and results[profile].get('diagnostics_status') == 'unavailable':
-        raise RuntimeError('Backend diagnostics unavailable')
+    if results[profile].get('diagnostics_status') == 'unavailable':
+        raise RuntimeError('Profile diagnostics unavailable')
     results[profile].update(status='passed', summary=summary[-3:])
 
 
