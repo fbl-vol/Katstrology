@@ -168,6 +168,90 @@ for (const viewport of [
   });
 }
 
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 1024 },
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'short-mobile', width: 390, height: 560 },
+]) {
+  for (const timing of ['timely', 'delayed'] as const) {
+    test(`deliberately cleared return year survives natal recovery ${timing} ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      let releaseClock: () => void = () => {};
+      const held = new Promise<void>(resolve => { releaseClock = resolve; });
+      await page.route('**/api/clock?zone=UTC', async route => {
+        if (timing === 'delayed') await held;
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ instant_utc: '2027-06-01T09:30:00+00:00' }) });
+      });
+      const destination = resolve(import.meta.dirname, '../../.local/year-f2-review-fixes');
+      try {
+        await page.goto('/');
+        await page.getByLabel('Username').fill('reader-advanced-ux');
+        await page.getByLabel('Password').fill('synthetic-browser-password');
+        await page.getByRole('button', { name: 'Open workspace' }).click();
+        if (viewport.width < 500) await page.getByRole('button', { name: 'Open navigation' }).click();
+        await page.getByRole('button', { name: '＋ Create chart' }).click();
+        await page.getByRole('button', { name: /Solar return Choose a person/ }).click();
+        const view = page.getByRole('region', { name: 'Solar return chart' });
+        const year = view.getByLabel('UTC anniversary year');
+        if (timing === 'timely') await expect(year).toHaveValue('2027');
+        await year.fill('2026');
+        await year.fill('');
+        await expect(year).toBeFocused();
+        await view.getByLabel('Person with a current natal').selectOption('legacy-transit-person');
+        await expect(view.getByRole('button', { name: 'Create or review natal' })).toBeVisible();
+        await expect(year).toHaveValue('');
+        mkdirSync(destination, { recursive: true });
+        await page.screenshot({ path: resolve(destination,
+          `${viewport.name}-${timing}-cleared.png`), fullPage: true });
+        await view.getByRole('button', { name: 'Create or review natal' }).click();
+        await expect(page.locator('.profile-editor')).toBeVisible();
+        await page.getByRole('button', { name: /Return to workspace/ }).click();
+        await expect(year).toHaveValue('');
+        if (timing === 'delayed') {
+          const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/clock');
+          releaseClock();
+          await response;
+          await page.evaluate(() => new Promise<void>(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+          await expect(year).toHaveValue('');
+        }
+        await page.screenshot({ path: resolve(destination,
+          `${viewport.name}-${timing}-returned-empty.png`), fullPage: true });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
+      } finally { releaseClock(); }
+    });
+  }
+}
+
+test('untouched return year receives a late clock after natal recovery', async ({ page }) => {
+  let releaseClock: () => void = () => {};
+  const held = new Promise<void>(resolve => { releaseClock = resolve; });
+  await page.route('**/api/clock?zone=UTC', async route => {
+    await held;
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ instant_utc: '2027-06-01T09:30:00+00:00' }) });
+  });
+  try {
+    await page.goto('/');
+    await page.getByLabel('Username').fill('reader-advanced-ux');
+    await page.getByLabel('Password').fill('synthetic-browser-password');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: '＋ Create chart' }).click();
+    await page.getByRole('button', { name: /Solar return Choose a person/ }).click();
+    const view = page.getByRole('region', { name: 'Solar return chart' });
+    const year = view.getByLabel('UTC anniversary year');
+    await view.getByLabel('Person with a current natal').selectOption('legacy-transit-person');
+    await view.getByRole('button', { name: 'Create or review natal' }).click();
+    await page.getByRole('button', { name: /Return to workspace/ }).click();
+    await expect(year).toHaveValue('');
+    const response = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/clock');
+    releaseClock();
+    await response;
+    await expect(year).toHaveValue('2027');
+  } finally { releaseClock(); }
+});
+
 test('failed clock leaves the return year editable without an invented default', async ({ page }) => {
   await page.route('**/api/clock?zone=UTC', route => route.fulfill({ status: 503,
     contentType: 'application/json', body: '{"error":"unavailable"}' }));
@@ -180,6 +264,13 @@ test('failed clock leaves the return year editable without an invented default',
   const view = page.getByRole('region', { name: 'Solar return chart' });
   await expect(view.getByText('Application date is unavailable. Choose a year or dates yourself.')).toBeVisible();
   const year = view.getByLabel('UTC anniversary year');
+  await expect(year).toHaveValue('');
+  await year.fill('2026');
+  await expect(year).toHaveValue('2026');
+  await year.fill('');
+  await view.getByLabel('Person with a current natal').selectOption('legacy-transit-person');
+  await view.getByRole('button', { name: 'Create or review natal' }).click();
+  await page.getByRole('button', { name: /Return to workspace/ }).click();
   await expect(year).toHaveValue('');
   await year.fill('2026');
   await expect(year).toHaveValue('2026');

@@ -9,8 +9,8 @@ import { birthReference, ReturnReferencePlace, type ReferenceChoice } from './re
 import type { SelectedResult } from './archive';
 
 type Technique = 'solar_return' | 'lunar_return';
-export type AdvancedDraft = { personId: string; year: string; start: string; end: string;
-  reference: ReferenceChoice };
+export type AdvancedDraft = { personId: string; year: string; yearEdited: boolean;
+  start: string; end: string; reference: ReferenceChoice };
 type ReturnResult = {
   id?: string; status: string; technique: Technique; method_version?: string; source_status?: string;
   person_id?: string; source_birth_id?: string; source_birth?: Chart['result']['birth'];
@@ -35,9 +35,9 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
   const [active, setActive] = useState<Chart | null>(null);
   const [loadingSource, setLoadingSource] = useState(false);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
-  const [year, setYear] = useState(initialDraft?.year || '');
+  const [year, setYear] = useState(initialDraft?.year ?? '');
   const yearInput = useRef<HTMLInputElement>(null);
-  const yearEdited = useRef(!!initialDraft?.year);
+  const yearEdited = useRef(initialDraft?.yearEdited ?? false);
   const [start, setStart] = useState(initialDraft?.start || '');
   const [end, setEnd] = useState(initialDraft?.end || '');
   const clock = useApplicationUtcDate();
@@ -154,7 +154,7 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
         {active ? 'A supplied exact birth time is needed for this return; no time was assumed.' :
           'No current generated natal is available for this person.'}<br />
         <button type="button" onClick={() => onCreateNatal(personId,
-          { personId, year, start, end, reference })}>Create or review natal</button>
+          { personId, year, yearEdited: yearEdited.current, start, end, reference })}>Create or review natal</button>
         {' '}<button type="button" onClick={() => personInput.current?.focus()}>Choose another person</button>
       </p>}
       {technique === 'solar_return' ? <label>UTC anniversary year <input ref={yearInput} required type="number" min={birthYear || 1900} max="2098"
