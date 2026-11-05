@@ -10,6 +10,7 @@ import json
 from hashlib import sha256
 
 from m2.agent_reads import project_transit_view
+from m2.evidence_links import project_read_links
 from m2.store import MAX_TOOL_RESULT_BYTES
 
 MAX_MODEL_RESULT_BYTES = 256 * 1024
@@ -160,21 +161,7 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
 def prepare(name, call_id, result, round_count, prior_bytes, model, budget):
     """Return an archived owner result and one bounded, honest provider output."""
     archived = {'id': call_id, 'name': name, 'result': result}
-    if name in ('get_chart', 'get_transit_view', 'get_transit_snapshot',
-                'find_transit_events', 'find_sky_events', 'get_solar_return',
-                'get_lunar_returns', 'find_natal_mc_transits',
-                'get_secondary_progression', 'find_progressed_mc_contacts',
-                'get_true_solar_arc', 'find_progressed_lunar_phases',
-                'find_actual_lunations_eclipses', 'get_planetary_returns') and result.get('chart_id'):
-        archived['chart_id'] = result['chart_id']
-    if name in ('get_midpoint_composite', 'get_uncorrected_davison') and result.get('chart_a_id'):
-        archived['chart_id'] = result['chart_a_id']
-        archived['chart_b_id'] = result['chart_b_id']
-    if name == 'search_references':
-        archived['results'] = result.get('results', [])
-    if name == 'get_reference_passage' and 'passage_id' in result:
-        archived['results'] = [{'kind': 'reference_passage',
-            'source_id': result['source_id'], 'passage_id': result['passage_id']}]
+    archived.update(project_read_links(name, result))
     archive_bytes = len(str(archived).encode('utf-8'))
     scope, used, limit = None, archive_bytes, MAX_TOOL_ARCHIVE_BYTES - ARCHIVE_ENVELOPE_RESERVE
     if archive_bytes > limit:

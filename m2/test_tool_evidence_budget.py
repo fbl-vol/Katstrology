@@ -90,6 +90,22 @@ class ToolEvidenceBudgetTests(DatabaseCase):
                 if e['kind'] == 'tool_result' and e['payload'].get('id') in
                 {'call-1', 'call-2', 'call-3'}], ['call-1', 'call-2', 'call-3'])
             self.assertEqual(len(bridge.requests), 4)
+            reads = {event['payload'].get('id'): event['sequence'] for event in archive['events']
+                     if event['kind'] == 'tool_result'}
+            self.assertEqual([row['event_sequence'] for row in self.store.db.execute('''
+                SELECT event_sequence FROM chart_evidence
+                WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND chart_id=%s
+                  AND event_sequence IN (%s,%s) ORDER BY event_sequence
+            ''', ('alice', 'budget-thread', 'three-reads', chart,
+                  reads['call-1'], reads['call-2'])).fetchall()],
+                [reads['call-1'], reads['call-2']])
+            self.assertEqual(self.store.db.execute('''
+                SELECT source_id,passage_id,event_sequence FROM reference_evidence
+                WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
+                  AND event_sequence=%s
+            ''', ('alice', 'budget-thread', 'three-reads', reads['call-3'])).fetchone(),
+                {'source_id': 'source-danish', 'passage_id': 'passage-danish',
+                 'event_sequence': reads['call-3']})
             self.assertEqual([json.loads(bridge.requests[i]['input'][-1]['output']).get('chart_id')
                               for i in (1, 2)], [chart, chart])
             self.assertIn('læ', bridge.requests[3]['input'][-1]['output'])
@@ -458,6 +474,28 @@ class ToolEvidenceBudgetTests(DatabaseCase):
         self.store.append(self.alice, 'budget-thread', 'budgeted-result', 'tool_result', archive)
         self.assertEqual(self.store.read_turn(self.alice, 'budget-thread',
             'budgeted-result')['events'][-1]['payload']['result'], result)
+
+    def test_passage_index_failure_rolls_back_the_archive_event(self):
+        self.store.begin(self.alice, 'budget-thread', 'passage-rollback', 'Synthetic passage read')
+        result = execute_read(self.store, self.alice, 'get_reference_passage',
+            {'source_id': 'source-danish', 'passage_id': 'passage-danish'}, set())
+        envelope, _ = prepare('get_reference_passage', 'call-passage', result, 1, 0, None, {})
+        self.assertEqual(envelope['results'], [{'kind': 'reference_passage',
+            'source_id': 'source-danish', 'passage_id': 'passage-danish'}])
+        with self.assertRaises(psycopg.errors.ForeignKeyViolation):
+            self.store.append(self.alice, 'budget-thread', 'passage-rollback', 'tool_result',
+                {**envelope, 'results': [{**envelope['results'][0], 'passage_id': 'missing'}]})
+        self.assertEqual([event['kind'] for event in self.store.read_turn(self.alice,
+            'budget-thread', 'passage-rollback')['events']], ['user'])
+        self.assertEqual(self.store.db.execute('''SELECT count(*) AS n FROM reference_evidence
+            WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
+        ''', ('alice', 'budget-thread', 'passage-rollback')).fetchone()['n'], 0)
+        self.assertEqual(self.store.append(self.alice, 'budget-thread', 'passage-rollback',
+            'tool_result', envelope), 1)
+        self.assertEqual(self.store.db.execute('''SELECT source_id,passage_id FROM reference_evidence
+            WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
+        ''', ('alice', 'budget-thread', 'passage-rollback')).fetchone(),
+            {'source_id': 'source-danish', 'passage_id': 'passage-danish'})
 
     def test_cancellation_after_second_durable_read_never_starts_third_request(self):
         model, bridge = model_for(

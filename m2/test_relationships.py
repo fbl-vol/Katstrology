@@ -12,6 +12,7 @@ from m2.test_agent_reads import FakeBridge, ScriptedTransport
 from m2.people import DEFAULT_NATAL_SETTINGS, People
 from m2.relationships import Relationships, circular_midpoint
 from m2.test_support import DatabaseCase
+from m2.tool_evidence import prepare
 from m2.core_calc import aspect_separation
 
 
@@ -124,8 +125,38 @@ class RelationshipArchiveTests(DatabaseCase):
             self.alice, 'relationship-discussion', 'relationship-request')['events']
             if event['kind'] == 'tool_result' and event['payload'].get('name') == 'get_uncorrected_davison')
         self.assertEqual(archived['chart_b_id'], self.second['id'])
+        event = next(event for event in self.store.read_turn(self.alice,
+            'relationship-discussion', 'relationship-request')['events']
+            if event['kind'] == 'tool_result' and event['payload'].get('name') == 'get_uncorrected_davison')
+        linked = self.store.db.execute('''SELECT chart_id FROM chart_evidence
+            WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND event_sequence=%s
+        ''', ('alice', 'relationship-discussion', 'relationship-request', event['sequence'])).fetchall()
+        self.assertEqual({row['chart_id'] for row in linked}, {self.first['id'], self.second['id']})
+        self.assertEqual(len(linked), 2)
         self.assertGreaterEqual(len(archived['result']['derived_natal']['aspects']),
                                 len(view['derived_natal']['aspects']))
+
+    def test_pair_link_failure_rolls_back_event_and_first_index_on_same_connection(self):
+        self.store.create_conversation(self.alice, 'pair-rollback')
+        self.store.begin(self.alice, 'pair-rollback', 'read', 'Synthetic pair read')
+        result = Relationships(self.store).calculate(self.alice,
+            self.first['id'], self.second['id'], 'midpoint_composite')
+        envelope, _ = prepare('get_midpoint_composite', 'call-pair', result, 1, 0, None, {})
+        self.assertEqual(envelope['chart_id'], self.first['id'])
+        self.assertEqual(envelope['chart_b_id'], self.second['id'])
+        with self.assertRaises(KeyError):
+            self.store.append(self.alice, 'pair-rollback', 'read', 'tool_result',
+                              {**envelope, 'chart_b_id': 'missing-chart'})
+        self.assertEqual([event['kind'] for event in self.store.read_turn(
+            self.alice, 'pair-rollback', 'read')['events']], ['user'])
+        self.assertEqual(self.store.db.execute('''SELECT count(*) AS n FROM chart_evidence
+            WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
+        ''', ('alice', 'pair-rollback', 'read')).fetchone()['n'], 0)
+        self.assertEqual(self.store.append(self.alice, 'pair-rollback', 'read',
+                         'tool_result', envelope), 1)
+        self.assertEqual({row['chart_id'] for row in self.store.db.execute('''
+            SELECT chart_id FROM chart_evidence WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
+        ''', ('alice', 'pair-rollback', 'read')).fetchall()}, {self.first['id'], self.second['id']})
 
     def test_mixed_house_conventions_do_not_pick_one_and_archived_source_is_historical(self):
         advanced = Advanced(self.store)

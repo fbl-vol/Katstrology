@@ -15,6 +15,58 @@ CHART_PREFIX = 'saved chart '
 EVENT_PREFIX = 'chart events '
 REFERENCE_PREFIX = 'reference evidence '
 
+# Existing model-read envelopes duplicate link identities outside `result` so the
+# archive can index them without interpreting provider-specific result bodies.
+SINGLE_CHART_READS = frozenset({
+    'get_chart', 'get_transit_view', 'get_transit_snapshot',
+    'find_transit_events', 'find_sky_events', 'get_solar_return',
+    'get_lunar_returns', 'find_natal_mc_transits',
+    'get_secondary_progression', 'find_progressed_mc_contacts',
+    'get_true_solar_arc', 'find_progressed_lunar_phases',
+    'find_actual_lunations_eclipses', 'get_planetary_returns',
+})
+PAIR_CHART_READS = frozenset({'get_midpoint_composite', 'get_uncorrected_davison'})
+
+
+def project_read_links(name, result):
+    """Preserve the historical top-level link envelope of a model-directed read."""
+    if name in SINGLE_CHART_READS and result.get('chart_id'):
+        return {'chart_id': result['chart_id']}
+    if name in PAIR_CHART_READS and result.get('chart_a_id'):
+        return {'chart_id': result['chart_a_id'], 'chart_b_id': result['chart_b_id']}
+    if name == 'search_references':
+        return {'results': result.get('results', [])}
+    if name == 'get_reference_passage' and 'passage_id' in result:
+        return {'results': [{'kind': 'reference_passage',
+                            'source_id': result['source_id'], 'passage_id': result['passage_id']}]}
+    return {}
+
+
+def archived_links(payload):
+    """Extract link identities from both original command and model-read envelopes.
+
+    Store validates IDs/ownership and writes the returned links on its own
+    connection inside the same event transaction. Do not infer links from
+    arbitrary assistant text or from unsuccessful model-read arguments.
+    """
+    if not isinstance(payload, dict):
+        return (), ()
+    charts = []
+    if 'chart_id' in payload:
+        charts.append(payload['chart_id'])
+    if payload.get('name') in PAIR_CHART_READS and 'chart_b_id' in payload:
+        charts.append(payload['chart_b_id'])
+    if (payload.get('name') == 'compare_selected_charts' and
+            isinstance(payload.get('result'), dict) and
+            'chart_a_id' in payload['result'] and 'chart_b_id' in payload['result']):
+        charts.extend((payload['result']['chart_a_id'], payload['result']['chart_b_id']))
+    passages = [(item['source_id'], item['passage_id'])
+                for item in payload.get('results', [])
+                if item.get('kind') == 'reference_passage']
+    # One index entry per chart/passage per archived event, even when both the
+    # historical nested comparison and its top-level link name the same chart.
+    return tuple(dict.fromkeys(charts)), tuple(dict.fromkeys(passages))
+
 
 def read_command_evidence(store, session, turn_id, request):
     """Yield historical command events; caller commits them before delivery."""

@@ -15,6 +15,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from m2.app_clock import reporting_zone as checked_reporting_zone, snapshot
+from m2.evidence_links import archived_links
 
 
 ID = re.compile(r'[A-Za-z0-9_-]{1,80}\Z')
@@ -424,22 +425,9 @@ class Store:
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (owner, conv_id, turn_id, next_sequence, kind,
                   psycopg.types.json.Jsonb(payload)))
-            if kind == 'tool_result' and isinstance(payload, dict) and 'chart_id' in payload:
-                chart_id = self._id(payload['chart_id'])
-                if not self.db.execute('''
-                    SELECT 1 FROM charts WHERE owner_id=%s AND id=%s
-                ''', (owner, chart_id)).fetchone():
-                    raise KeyError('Referenced chart not found')
-                self.db.execute('''
-                    INSERT INTO chart_evidence(owner_id,conversation_id,turn_id,chart_id,event_sequence)
-                    VALUES (%s,%s,%s,%s,%s)
-                ''', (owner, conv_id, turn_id, chart_id, next_sequence))
-            if (kind == 'tool_result' and isinstance(payload, dict) and
-                    payload.get('name') == 'compare_selected_charts' and
-                    isinstance(payload.get('result'), dict) and
-                    'chart_a_id' in payload['result'] and 'chart_b_id' in payload['result']):
-                for chart_id in (payload['result']['chart_a_id'],
-                                 payload['result']['chart_b_id']):
+            if kind == 'tool_result':
+                chart_ids, passages = archived_links(payload)
+                for chart_id in chart_ids:
                     chart_id = self._id(chart_id)
                     if not self.db.execute('''
                         SELECT 1 FROM charts WHERE owner_id=%s AND id=%s
@@ -449,15 +437,13 @@ class Store:
                         INSERT INTO chart_evidence(owner_id,conversation_id,turn_id,chart_id,event_sequence)
                         VALUES (%s,%s,%s,%s,%s)
                     ''', (owner, conv_id, turn_id, chart_id, next_sequence))
-            if kind == 'tool_result' and isinstance(payload, dict):
-                for item in payload.get('results', []):
-                    if item.get('kind') == 'reference_passage':
-                        self.db.execute('''
-                            INSERT INTO reference_evidence(owner_id,conversation_id,turn_id,
-                                                           event_sequence,source_id,passage_id)
-                            VALUES (%s,%s,%s,%s,%s,%s)
-                        ''', (owner, conv_id, turn_id, next_sequence,
-                              self._id(item['source_id']), self._id(item['passage_id'])))
+                for source_id, passage_id in passages:
+                    self.db.execute('''
+                        INSERT INTO reference_evidence(owner_id,conversation_id,turn_id,
+                                                       event_sequence,source_id,passage_id)
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                    ''', (owner, conv_id, turn_id, next_sequence,
+                          self._id(source_id), self._id(passage_id)))
             if kind in TERMINAL:
                 self.db.execute('''
                     UPDATE turns SET status=%s WHERE owner_id=%s AND conversation_id=%s AND id=%s
