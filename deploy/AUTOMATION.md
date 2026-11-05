@@ -32,6 +32,15 @@ separately authorized adoption and positive proof below. The initial policy is
   shell, Docker API, SCP/SFTP, port/agent forwarding or arbitrary helper command.
   `StrictHostKeyChecking yes`, one pinned host key and `IdentityAgent none` are
   mandatory. Do not reuse/migrate a personal identity or release-signing key.
+* The reusable workflow explicitly declares `KAT_CI_TRANSPORT_KEY` as required;
+  its caller must forward only that name via
+  `KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}`. Keep the value solely
+  in the `kat-production` environment secret, never a repository secret or
+  `secrets: inherit`. GitHub requires forwarding even for environment-only secrets;
+  otherwise the called workflow sees an empty string. `required: true` checks that
+  the caller passes the name, not that its value is nonempty, so the transport's
+  empty-value refusal remains necessary. Qualification and attestation receive no
+  forwarded transport secret. See [GitHub's reusable-workflow secret contract](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
 * GitHub concurrency is non-cancelling across main releases. Server locks and the
   durable active attempt remain authoritative even if a job is killed. Re-runs
   (`run_attempt != 1`), old run numbers, PR/tag/wrong-repo/wrong-source artifacts,
@@ -55,6 +64,19 @@ benevolent. Protect workflow, deployment and runtime admission code accordingly;
 CODEOWNERS alone is not enforcement. No broad access token is needed by the
 release job: normal `GITHUB_TOKEN` scopes above suffice. The server's public API
 reads are token-free and bounded; exhaustion/unavailability fails closed.
+
+### Updating the immutable secret contract
+
+A declaration change needs two source commits: first commit the reusable contract
+and its checks (A), then pin the caller's trusted-release reference to that exact A
+and add the named forwarding (B). Keep the independent qualification pin unchanged.
+The coordinator must publish the chain and re-pin the **disabled** root signer to A
+before fresh hosted acceptance; it must not be pinned to B merely because B is the
+candidate source. This does not authorize changing any other trust field or reading,
+copying or rotating the environment-held private key. A failure before SSH is not
+proof of server refusal. Use a fresh hosted refusal followed by a distinct fresh
+positive release, never replay a failed run. Local contract/lint checks do not prove
+GitHub environment-secret resolution or unattended delivery.
 
 ## Native package compatibility
 

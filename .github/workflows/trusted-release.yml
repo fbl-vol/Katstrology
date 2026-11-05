@@ -1,6 +1,10 @@
 name: Trusted Kat release
 on:
   workflow_call:
+    secrets:
+      KAT_CI_TRANSPORT_KEY:
+        description: Dedicated kat-production transport identity
+        required: true
 permissions:
   contents: read
 # Also serialize this reusable authority if another caller tries to invoke it.
