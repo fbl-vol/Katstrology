@@ -18,6 +18,7 @@ from m2.prompting import LOCAL, identity
 from m2.tone_profiles import archived_instructions
 from m2.references import References
 from m2.provider_steps import ProviderFlush, ProviderStep
+from m2.tool_answers import _chart_prompt_evidence  # Existing gateway import compatibility.
 from m2.store import MAX_EVENT_BYTES
 from m2.core_calc import solar_longitude
 
