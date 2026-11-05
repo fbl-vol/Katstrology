@@ -22,14 +22,15 @@ def workflow(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_caller_forwards_only_named_secret_to_reviewed_authority(self):
+    def test_caller_forwards_only_named_secrets_to_reviewed_authority(self):
         jobs = workflow('release.yml')['jobs']
         self.assertEqual(jobs['release'].get('secrets'), {
-            KEY: '${{ secrets.KAT_CI_TRANSPORT_KEY }}'})
+            KEY: '${{ secrets.KAT_CI_TRANSPORT_KEY }}',
+            TS_KEY: '${{ secrets.KAT_CI_TS_CLIENT_SECRET }}'})
         # Deliberate authority pins, not history lookups: hosted checkout is shallow.
         self.assertEqual(jobs['release']['uses'],
             'fbl-vol/Katstrology/.github/workflows/trusted-release.yml@'
-            '5a515719bca63a58e472d60f74e0a7478fb75117')
+            'cac5e909a03954c2037d392f44e8f47c700f7802')
         self.assertEqual(jobs['validate']['uses'],
             'fbl-vol/Katstrology/.github/workflows/qualify.yml@'
             'c4310ac296fade23959efccbe340afb0239d0bb5')
