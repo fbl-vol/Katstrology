@@ -20,7 +20,7 @@ jobs:
   release:
     name: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && vars.KAT_CI_TARGET_SCOPE != ''
-    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@cac5e909a03954c2037d392f44e8f47c700f7802
+    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@c31e7dd8fa3becd61851647a3158c95172e68eb5
     secrets:
       KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}
       KAT_CI_TS_CLIENT_SECRET: ${{ secrets.KAT_CI_TS_CLIENT_SECRET }}

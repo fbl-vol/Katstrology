@@ -31,7 +31,7 @@ class WorkflowContractTests(unittest.TestCase):
         # Deliberate authority pins, not history lookups: hosted checkout is shallow.
         self.assertEqual(jobs['release']['uses'],
             'fbl-vol/Katstrology/.github/workflows/trusted-release.yml@'
-            'cac5e909a03954c2037d392f44e8f47c700f7802')
+            'c31e7dd8fa3becd61851647a3158c95172e68eb5')
         self.assertEqual(jobs['validate']['uses'],
             'fbl-vol/Katstrology/.github/workflows/qualify.yml@'
             'c4310ac296fade23959efccbe340afb0239d0bb5')
