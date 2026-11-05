@@ -50,6 +50,17 @@ class SyntheticScenarios(DatabaseCase):
         self.assertEqual(injection[0]['payload']['name'], 'search_reference_and_history')
         self.assertIn('not instructions', injection[2]['payload']['content'])
         self.assertEqual(model.invocations, 0)  # no tool authority from source text
+        archived = self.store.read_turn(self.alice, 'discussion', 'equinox-query')['events']
+        self.assertEqual([event['kind'] for event in archived],
+                         ['user', 'tool_call', 'tool_result', 'assistant_chunk', 'complete'])
+        self.assertEqual(archived[1]['payload']['id'], 'equinox-query:reference')
+        self.assertEqual(archived[2]['payload']['name'], 'search_reference_and_history')
+        self.assertEqual(archived[2]['payload']['evidence_status'], 'keyword_matches')
+        replay = []
+        run_turn(self.store, self.alice, 'discussion', 'equinox-query',
+                 'reference evidence equinox', model, replay.append)
+        self.assertEqual(replay, archived[1:])
+        self.assertEqual(model.invocations, 0)
 
     def test_uncertain_birth_and_out_of_range_event_claim_are_not_rendered_as_facts(self):
         charts = Charts(self.store)

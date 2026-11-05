@@ -80,6 +80,7 @@ proposal to split it into microservices or evidence of production readiness.
 | Checked Swiss/time/angle primitives and owner-qualified natal source | `m2/calculation/{ephemeris,time,chart_source}.py`; technique solvers remain separate |
 | People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
 | Turn scheduling and commit-before-delivery | `m2/chat_jobs.py`, `gateway.py`, `store.py` |
+| Committed-turn selection and qualified evidence | `m2/turn_context.py` (snapshot read), `m2/evidence_links.py` (existing chart/reference command events); `gateway.py` alone sequences archive writes and provider reads |
 | Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |
 | Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `core_calc.py` (`probes/core_calc.py` is a compatibility re-export) |
 | Natal SVG wheel and accessible placement/aspect tables | `web/src/natal.tsx` |

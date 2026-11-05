@@ -4,6 +4,7 @@ from m2.charts import Charts
 from m2.conversations import Conversations
 from m2.people import People
 from m2.gateway import run_turn
+from m2.turn_context import read_committed_context
 from m2.test_gateway import TinySource
 from m2.recall import current_text
 from m2.revisions import correct, select_branch
@@ -29,6 +30,27 @@ class ConversationScopeTests(DatabaseCase):
         self.assertIn('UNVERIFIED', model.prompts[0])
         self.assertEqual(self.store.read_turn(self.alice, 'draft-thread', 'first')
                          ['selected_people'][0]['draft_revision'], 1)
+
+    def test_context_reader_uses_committed_draft_revision_not_later_edits(self):
+        people = People(self.store)
+        people.charts.add_person(self.alice, 'one', 'Synthetic One')
+        first = {'birth_date': '2001-04-05', 'birth_time': '09:12',
+                 'birthplace': 'First synthetic town', 'time_unknown': False}
+        people.add_draft(self.alice, 'one', first)
+        self.store.create_conversation(self.alice, 'draft-thread')
+        self.store.begin(self.alice, 'draft-thread', 'pending', 'Question',
+                         selected_people=[{'person_id': 'one', 'chart_id': None}])
+        people.add_draft(self.alice, 'one', {**first, 'birthplace': 'Later synthetic town'})
+        reader = read_committed_context(self.store, self.alice, 'draft-thread', 'pending')
+        with self.assertRaises(StopIteration) as completed:
+            next(reader)
+        profiles, text, _, _, versions, _ = completed.exception.value
+        self.assertEqual(text, '')
+        self.assertEqual(versions[0]['draft_revision'], 1)
+        self.assertEqual(profiles[0]['draft']['details']['birthplace'], 'First synthetic town')
+        self.assertNotIn('Later synthetic town', str(profiles))
+        with self.assertRaises((KeyError, PermissionError)):
+            next(read_committed_context(self.store, self.bob, 'draft-thread', 'pending'))
 
     def test_selected_chart_is_committed_as_attributed_tool_evidence_before_inference(self):
         people = People(self.store)

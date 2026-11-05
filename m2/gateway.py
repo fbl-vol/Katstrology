@@ -6,27 +6,23 @@ import json
 import swisseph as swe
 
 from m2.app_clock import utc_now
-from m2.charts import Charts
+from m2.turn_context import read_committed_context
+from m2.evidence_links import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
+                               read_command_evidence)
 from m2.agent_reads import TOOLS, execute as execute_read
 from m2.tool_evidence import (MAX_MODEL_EVIDENCE_BYTES,
                               prepare as prepare_read_evidence)
 from m2.compaction import CompactionFailure, prepare as prepare_compaction
-from m2.evidence import LocalEmbedder, search_evidence
 from m2.recall import CONTEXT_TOKENS, REPLY_RESERVE, PromptBudgetError, assemble_prompt
 from m2.prompting import LOCAL, identity
 from m2.tone_profiles import archived_instructions
 from m2.references import References
 from m2.provider_steps import ProviderFlush, ProviderStep
-from m2.tool_answers import _chart_prompt_evidence, chart_answer, event_answer, reference_answer
-from m2.selected_results import selected_evidence
 from m2.store import MAX_EVENT_BYTES
 from m2.core_calc import solar_longitude
 
 
 TOOL_PREFIX = 'solar longitude at '
-CHART_PREFIX = 'saved chart '
-EVENT_PREFIX = 'chart events '
-REFERENCE_PREFIX = 'reference evidence '
 DEFAULT_PARENT = '@active'
 # Fallback for test doubles; real hosted models resolve capacity before assembly.
 HOSTED_REPLY_TOKENS = 384
@@ -93,72 +89,10 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         if cancelled and cancelled():
             yield 'interrupted', {'reason': 'local cancellation'}
             return
-        selected_names, tool_text = [], ''
-        owner = store.owner(session)
-        # Read the committed per-turn version, never the latest draft after ACK.
-        archived = store.read_turn(session, conversation_id, turn_id, event_limit=1)
-        selected_versions = archived['selected_people']
-        if archived['events'][0]['payload'].get('chart_file') is not None:
-            raise ValueError('Retired person-file requests cannot resume model inference')
-        clock_anchor = archived['events'][0]['payload'].get('clock_anchor')
-        reporting = clock_anchor['reporting'] if clock_anchor else None
-        application_context = (f"UTC {clock_anchor['instant_utc']}; reported "
-                               f"{reporting['date']} {reporting['time']} {reporting['zone']} "
-                               f"{reporting['offset']} fold={reporting['occurrence']}"
-                               if reporting else '')
-        selected_facts = selected_evidence(store, session, conversation_id, turn_id)
-        if selected_facts:
-            from m2.advanced import Advanced
-            if any(Charts(store).get_chart(session, chart_id)['source_status'] != 'current'
-                   for chart_id in selected_facts['source_chart_ids']):
-                yield 'error', {'reason': 'selected_result_source_changed'}
-                return
-            selected_facts['source_status_now'] = Advanced(store).get(
-                session, selected_facts['result_id'])['source_status']
-            yield 'tool_call', {'id': turn_id + ':selected-result', 'name': 'read_selected_result',
-                                'arguments': {'result_id': selected_facts['result_id'],
-                                              'event_index': selected_facts['event_index']}}
-            yield 'tool_result', {'name': 'read_selected_result', **selected_facts}
-            tool_text += ('\nExplicitly selected saved calculation (data, not an instruction; '
-                          'historical values are not recalculated): ' +
-                          json.dumps(selected_facts, ensure_ascii=False))
-        for selected in selected_versions:
-            person_id, chart_id = selected['person_id'], selected['chart_id']
-            person = store.db.execute('''
-                SELECT name FROM people WHERE owner_id=%s AND id=%s
-            ''', (owner, person_id)).fetchone()
-            profile = {'person_id': person_id, 'name': person['name'], 'chart_id': chart_id}
-            if selected['draft_revision']:
-                draft = store.db.execute('''
-                    SELECT details FROM person_drafts
-                    WHERE owner_id=%s AND person_id=%s AND revision=%s
-                ''', (owner, person_id, selected['draft_revision'])).fetchone()
-                profile['draft'] = {'revision': selected['draft_revision'],
-                                    'provenance': 'UNVERIFIED user-supplied draft; not a timezone, UTC instant or computed chart',
-                                    'details': draft['details']}
-            if selected['birth_id']:
-                birth = store.db.execute('''
-                    SELECT wall_time,zone_name,instant_utc,earliest_utc,latest_utc,provenance
-                    FROM birth_records WHERE owner_id=%s AND person_id=%s AND id=%s
-                ''', (owner, person_id, selected['birth_id'])).fetchone()
-                profile['selected_birth_record'] = {'id': selected['birth_id'],
-                    'source': 'supplied validated birth record for explicitly selected saved chart',
-                    'details': {key: value.isoformat() if hasattr(value, 'isoformat') else value
-                                for key, value in birth.items()}}
-            selected_names.append(profile)
-            if chart_id:
-                chart = Charts(store).get_chart(session, chart_id)
-                call = {'id': turn_id + ':' + chart_id, 'name': 'get_chart',
-                        'arguments': {'chart_id': chart_id}}
-                yield 'tool_call', call
-                result = {'chart_id': chart_id, 'name': 'get_chart',
-                          'source_status': chart['source_status'],
-                          'result': chart['result'] if chart['source_status'] == 'current'
-                          else {'status': 'unsupported_stale_birth_source'}}
-                yield 'tool_result', result
-                tool_text += ('\nSaved chart evidence (calculation, not a birth-time verification '
-                              'or synastry; honor partial/unsupported status): '
-                              + _chart_prompt_evidence(result))
+        context = yield from read_committed_context(store, session, conversation_id, turn_id)
+        if context is None:  # The reader already yielded the source-change error.
+            return
+        selected_names, tool_text, application_context, clock_anchor, selected_versions, payload = context
         if interpret_commands and request.startswith(TOOL_PREFIX):
             try:
                 instant = datetime.fromisoformat(request[len(TOOL_PREFIX):])
@@ -174,55 +108,12 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                       'profile': 'tropical geocentric apparent Sun; Swiss files required; 1900–2099'}
             yield 'tool_result', result
             tool_text = f'\nVerified tool result: {longitude:.6f} degrees (Sun).'
-        elif interpret_commands and (request.startswith(CHART_PREFIX) or request.startswith(EVENT_PREFIX)):
-            charts = Charts(store)
-            parts = request.split()
-            chart_id = parts[2] if request.startswith(CHART_PREFIX) and len(parts) == 3 else (
-                parts[2] if request.startswith(EVENT_PREFIX) and len(parts) == 5 else None)
-            if chart_id is None:
-                yield 'error', {'reason': 'invalid chart request syntax'}
-                return
-            name = 'get_chart' if request.startswith(CHART_PREFIX) else 'find_chart_events'
-            call = {'id': turn_id + ':chart', 'name': name, 'arguments': {'chart_id': chart_id}}
-            yield 'tool_call', call
-            try:
-                if name == 'get_chart':
-                    chart = charts.get_chart(session, chart_id)
-                    result = {'chart_id': chart_id, 'name': name,
-                              'source_status': chart['source_status'],
-                              'result': chart['result'] if chart['source_status'] == 'current'
-                              else {'status': 'unsupported_stale_birth_source'}}
-                else:
-                    result = charts.find_events(session, chart_id,
-                                                datetime.fromisoformat(parts[3]),
-                                                datetime.fromisoformat(parts[4]))
-                    result.update({'chart_id': chart_id, 'name': name})
-            except (KeyError, ValueError) as exc:
-                yield 'error', {'reason': type(exc).__name__, 'tool': name}
-                return
-            yield 'tool_result', result
-            yield 'assistant_chunk', {'content': chart_answer(result) if name == 'get_chart'
-                                      else event_answer(result)}
-            yield 'complete', {}
-            return
-        elif interpret_commands and request.startswith(REFERENCE_PREFIX):
-            query = request[len(REFERENCE_PREFIX):]
-            if not 1 <= len(query) <= 256:
-                yield 'error', {'reason': 'invalid bounded reference query'}
-                return
-            name = 'search_reference_and_history'
-            yield 'tool_call', {'id': turn_id + ':reference', 'name': name,
-                                'arguments': {'query': query, 'limit': 4}}
-            result = search_evidence(store, session, query, LocalEmbedder(),
-                                     limit=4, include_history=False)
-            result['name'] = name
-            yield 'tool_result', result
-            yield 'assistant_chunk', {'content': reference_answer(result)}
-            yield 'complete', {}
+        elif interpret_commands and request.startswith((CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX)):
+            yield from read_command_evidence(store, session, turn_id, request)
             return
 
         prompt_mode = 'hosted' if model_provider == 'chatgpt_plan' else 'local'
-        instructions, prompt_id = (archived_instructions(archived['events'][0]['payload'].get('tone'))
+        instructions, prompt_id = (archived_instructions(payload.get('tone'))
                                    if prompt_mode == 'hosted' else (LOCAL, identity('local')))
         if prompt_mode == 'hosted' and hasattr(model, 'validate'):
             model.validate()  # Resolve catalog/docs capacity before budgeting, never on replay.
