@@ -10,9 +10,11 @@ import re
 import swisseph as swe
 
 from m2.app_clock import reporting_zone
-from m2.natal import BODY_IDS, DEFAULT_ORBS, LILITH_IDS, _aspects, _ephemeris
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import BODY_IDS, LILITH_IDS, ephemeris as _ephemeris, position_at as _position_at
+from m2.calculation.time import utc as _utc
+from m2.natal import DEFAULT_ORBS, _aspects
 from m2.synastry import pair_aspects
-from m2.transits import Transits, _position_at, _utc
 
 MAX_ASPECTS = 2048  # above the finite supported body-pair geometry
 SKY_SETTINGS = {'zodiac': 'tropical', 'aspects': list(DEFAULT_ORBS), 'orbs': DEFAULT_ORBS}
@@ -59,10 +61,10 @@ def view(store, session, day, clock, zone, occurrence, mode, chart_id=None):
     if mode == 'natal_transits' and not isinstance(chart_id, str):
         raise ValueError('Select one immutable natal chart')
     instant, reporting = reporting_instant(day, clock, zone, occurrence)
-    transits = Transits(store)
+    source = NatalChartSource(store)
     chart = natal = None
     if mode == 'natal_transits':
-        chart, natal, unsupported = transits.selected_natal(session, store._id(chart_id))
+        chart, natal, unsupported = source.selected_natal(session, store._id(chart_id))
         if unsupported:
             return {'status': unsupported, 'mode': mode, 'chart_id': chart_id,
                     'instant_utc': instant.isoformat(), 'reporting': reporting}

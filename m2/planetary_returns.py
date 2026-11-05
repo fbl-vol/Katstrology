@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 
 from m2.natal import calculate_natal
 from m2.returns import _place
-from m2.transits import Transits, _angle, _position_at, _utc
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import position_at as _position_at
+from m2.calculation.time import signed_angle as _angle, utc as _utc
 
 METHOD = 'planet-own-natal-longitude-all-passes-v1'
 MAX_DAYS = {'venus': 5 * 366, 'mars': 5 * 366,
@@ -16,7 +18,7 @@ MAX_EVENTS = 64  # finite event guard, not a three-pass/one-cycle limit
 
 class PlanetaryReturns:
     def __init__(self, store):
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_id, body, start, end, latitude, longitude):
         if body not in MAX_DAYS:
@@ -25,7 +27,7 @@ class PlanetaryReturns:
         start, end = _utc(start), _utc(end)
         if not start < end <= start + timedelta(days=MAX_DAYS[body]):
             raise ValueError(f'Choose a positive {body} return window of at most {MAX_DAYS[body]} days')
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
         birth = datetime.fromisoformat(chart['result']['natal_sun']['instant_utc'])

@@ -10,7 +10,7 @@ import sys
 
 from m2.backup import backup, deployment_pg_command, deployment_snapshot_source, restore
 from m2.deletion import Tombstones
-from m2.web_server import deployment_dsn
+from m2.http_boundary.config import deployment_dsn
 
 
 def main(argv=None):

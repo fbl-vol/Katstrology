@@ -7,7 +7,7 @@ from m2.insights import SavedInsights
 from m2.person_records import Watchlist, Journal
 from m2.places import search as search_places
 from m2.people import People
-from m2.web_server import authorized, json_body, json_response
+from m2.http_boundary.boundary import authorized, json_body, json_response
 
 
 async def people(request):

@@ -16,7 +16,7 @@ from m2.deletion import Tombstones
 from m2.local_fixture import fixture_dsn
 from m2.siwc import CredentialFiles
 from m2.store import Store
-from m2.web_server import deployment_dsn
+from m2.http_boundary.config import deployment_dsn
 
 
 def main(argv=None):

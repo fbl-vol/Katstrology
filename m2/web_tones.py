@@ -4,7 +4,7 @@ from starlette.routing import Route
 
 from m2.store import ToneConflict
 from m2.tone_profiles import catalogue
-from m2.web_server import authorized, json_body, json_response
+from m2.http_boundary.boundary import authorized, json_body, json_response
 
 
 async def read(request):

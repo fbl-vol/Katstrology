@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 from math import floor
 
 from m2.progressions import METHOD as PROGRESSION_METHOD, calendar_map
-from m2.transits import Transits, _angle, _position_at, _utc
+from m2.calculation.chart_source import NatalChartSource
+from m2.calculation.ephemeris import position_at as _position_at
+from m2.calculation.time import signed_angle as _angle, utc as _utc
 
 METHOD = 'progressed-moon-sun-four-phase-utc-v1'
 PHASES = {'new': 0, 'first_quarter': 90, 'full': 180, 'last_quarter': 270}
@@ -15,13 +17,13 @@ MAX_WINDOW = timedelta(days=40 * 366)
 
 class ProgressedPhases:
     def __init__(self, store):
-        self.transits = Transits(store)
+        self.chart_source = NatalChartSource(store)
 
     def calculate(self, session, chart_id, start, end):
         start, end = _utc(start), _utc(end)
         if not start < end <= start + MAX_WINDOW:
             raise ValueError('Choose a positive progressed phase interval of at most 40 years')
-        chart, natal, unavailable = self.transits.selected_natal(session, chart_id)
+        chart, natal, unavailable = self.chart_source.selected_natal(session, chart_id)
         if unavailable:
             return {'status': unavailable, 'chart_id': chart_id}
         source = chart['result']['natal_sun']

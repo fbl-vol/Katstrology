@@ -6,7 +6,8 @@ from math import floor
 import swisseph as swe
 
 from m2.charts import Charts
-from m2.natal import BODY_IDS, EPHE_FILES, _ephemeris, _position
+from m2.calculation.ephemeris import (BODY_IDS, EPHE_FILES,
+                                      ephemeris as _ephemeris, position as _position)
 from m2.core_calc import ASPECTS, aspect_separation
 
 MAX_ASPECTS = 2048  # above the finite selected-body pair geometry

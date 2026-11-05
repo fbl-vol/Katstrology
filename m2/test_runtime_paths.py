@@ -1,6 +1,8 @@
 """CLI-only runtime path routing with fake local configuration; never open a Store."""
 
 from pathlib import Path
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
@@ -12,6 +14,12 @@ from m2.web_server import deployment_origin, main
 
 
 class RuntimePathTests(TestCase):
+    def test_m2_discovery_path_does_not_shadow_stdlib_http(self):
+        result = subprocess.run([sys.executable, '-c',
+                                 'import http.client; assert http.client.HTTPConnection'],
+                                cwd=ROOT / 'm2', capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_fixture_dsn_reads_only_the_selected_synthetic_state(self):
         with TemporaryDirectory(prefix='kat-runtime-paths-') as directory:
             state = Path(directory)

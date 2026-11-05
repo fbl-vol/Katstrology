@@ -7,7 +7,7 @@ from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
 from m2.product_policy import MODEL
-from m2.web_server import COOKIE, Forbidden, authorized, json_body, json_response
+from m2.http_boundary.boundary import COOKIE, Forbidden, authorized, json_body, json_response
 from m2.web_auth import WebAuth
 
 

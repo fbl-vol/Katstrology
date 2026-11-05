@@ -167,7 +167,7 @@ class ProgressionArchiveTests(DatabaseCase):
                   if item['id'] == 'midheaven')
         next(item for item in natal['positions'] if item['id'] == 'sun')['longitude_degrees'] = mc
         born = datetime.fromisoformat(chart['result']['natal_sun']['instant_utc'])
-        with patch.object(progression.transits, 'selected_natal', return_value=(chart, natal, None)):
+        with patch.object(progression.chart_source, 'selected_natal', return_value=(chart, natal, None)):
             first = progression.mc_events(self.alice, chart['id'], born,
                 born + timedelta(days=1), 'mcp', 'sun', 'conjunction')
             later = progression.mc_events(self.alice, chart['id'], born + timedelta(seconds=1),
