@@ -202,6 +202,16 @@ class ValidationPerformanceTests(unittest.TestCase):
                     dist = Path(argv[argv.index('--outDir') + 1])
                     dist.mkdir(parents=True)
                     (dist / 'index.html').write_text('synthetic build')
+                env = kwargs.get('env', {})
+                if 'PLAYWRIGHT_JSON_OUTPUT_FILE' in env:
+                    Path(env['PLAYWRIGHT_JSON_OUTPUT_FILE']).write_text(json.dumps({
+                        'suites': [{'specs': [{'tests': [{'expectedStatus': 'passed',
+                            'results': [{'status': 'passed'}]}]}]}],
+                        'stats': {'expected': 1, 'unexpected': 0, 'flaky': 0, 'skipped': 0}}))
+                    Path(env['KAT_BROWSER_PROGRESS_FILE']).write_text(json.dumps({
+                        'status': 'passed', 'total': 1, 'started': 1, 'finished': 1,
+                        'global_errors': 0, 'active_omitted': 0, 'active': [],
+                        'outcomes': {'passed': 1}, 'resources': {}}))
             return ''
 
         with TemporaryDirectory() as temp, \
@@ -244,7 +254,13 @@ class ValidationPerformanceTests(unittest.TestCase):
         for argv, kwargs in test_calls:
             self.assertNotEqual(kwargs['env']['KAT_BROWSER_TEST_PORT'], '8765')
             self.assertNotIn('--pass-with-no-tests', argv)
-        self.assertTrue(all(result['status'] == 'passed' for result in report['results'].values()))
+        for result in report['results'].values():
+            self.assertEqual(result['status'], 'passed')
+            self.assertEqual(result['diagnostics']['counts'],
+                             {'expected': 1, 'unexpected': 0, 'flaky': 0, 'skipped': 0})
+            self.assertEqual(result['diagnostics']['failure_count'], 0)
+            self.assertEqual(result['progress']['status'], 'passed')
+            self.assertEqual(result['progress']['finished'], 1)
         self.assertEqual([entry['stage'] for entry in report['timings']], [
             'fixture-start', 'normal-build', 'browser-tests', 'siwc-tests',
             'clock-tests', 'fixture-cleanup'])
@@ -305,12 +321,37 @@ class ValidationPerformanceTests(unittest.TestCase):
             code, report = invoke(validation.main, ['--profiles', 'browser', 'clock', '--execute'])
         self.assertEqual((code, report['status']), (1, 'stopped'))
         self.assertEqual(report['unrun'], ['clock'])
-        self.assertEqual(report['results'], {'browser': {'status': 'stopped'}})
+        self.assertEqual(report['results'], {'browser': {
+            'status': 'stopped', 'log': str(Path(report['logs_dir']) / 'browser.log'),
+            'error_type': 'CalledProcessError', 'returncode': 1,
+            'diagnostics_status': 'unavailable', 'progress_status': 'unavailable'}})
         self.assertEqual(report['fixture_cleanup'], 'owned-container-removed')
         stopped = [entry['stage'] for entry in report['timings'] if entry['status'] == 'stopped']
         self.assertEqual(stopped, ['browser-tests'])
         self.assertEqual(report['timings'][-1]['stage'], 'fixture-cleanup')
         self.assertNotIn('private-command-must-not-leak', json.dumps(report))
+
+    def test_successful_command_without_diagnostics_stops_and_cleans_up(self):
+        with self.synthetic_runner() as (_, _, _, command):
+            original = command.side_effect
+
+            def omit_diagnostics(argv, **kwargs):
+                result = original(argv, **kwargs)
+                report_path = kwargs.get('env', {}).get('PLAYWRIGHT_JSON_OUTPUT_FILE')
+                if report_path:
+                    Path(report_path).unlink()
+                return result
+
+            command.side_effect = omit_diagnostics
+            code, report = invoke(validation.main, ['--profiles', 'browser', 'clock', '--execute'])
+        self.assertEqual((code, report['status'], report.get('error_type')),
+                         (1, 'stopped', 'RuntimeError'))
+        self.assertEqual(report['results']['browser']['status'], 'stopped')
+        self.assertEqual(report['results']['browser']['diagnostics_status'], 'unavailable')
+        self.assertEqual(report['results']['browser']['progress']['status'], 'passed')
+        self.assertEqual(report['unrun'], ['clock'])
+        self.assertEqual(report['fixture_cleanup'], 'owned-container-removed')
+        self.assertEqual(report['timings'][-1]['stage'], 'fixture-cleanup')
 
     def test_cleanup_failure_is_reported_and_never_removes_unowned_fixture(self):
         with self.synthetic_runner() as (calls, _, owned, _):

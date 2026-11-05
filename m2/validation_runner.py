@@ -123,6 +123,7 @@ def main():
     suite = (loader.loadTestsFromNames(args.selectors) if args.selectors else unittest.TestSuite([
         loader.discover('m2', pattern='test_*.py'),
         unittest.TestLoader().discover('deploy', pattern='test_*.py'),
+        unittest.TestLoader().discover('.agents/skills/tests', pattern='test_*.py'),
     ]))
     result = unittest.TextTestRunner(verbosity=0, resultclass=lambda *a, **kw:
         TimedResult(*a, report_path=args.timings, **kw)).run(suite)
