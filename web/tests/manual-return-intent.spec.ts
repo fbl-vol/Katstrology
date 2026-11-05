@@ -89,6 +89,55 @@ test('creating the missing natal resumes the chosen return and uses its new birt
   await expect(view.getByRole('heading', { name: /Solar return for Legacy chart without generated natal/ })).toBeFocused();
 });
 
+test('a late application clock does not replace a focused or manually cleared return year', async ({ page }) => {
+  let releaseClock: (() => void) | undefined;
+  const clockHeld = new Promise<void>(resolve => { releaseClock = resolve; });
+  await page.route('**/api/clock?zone=UTC', async route => {
+    await clockHeld;
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ instant_utc: '2027-06-01T09:30:00+00:00' }) });
+  });
+  try {
+    await page.goto('/');
+    await page.getByLabel('Username').fill('reader-advanced-ux');
+    await page.getByLabel('Password').fill('synthetic-browser-password');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: '＋ Create chart' }).click();
+    await page.getByRole('button', { name: /Solar return Choose a person/ }).click();
+    const year = page.getByRole('region', { name: 'Solar return chart' }).getByLabel('UTC anniversary year');
+    await year.focus();
+    const clockResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/clock');
+    releaseClock?.();
+    await clockResponse;
+    await page.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(year).toHaveValue('');
+    await year.blur();
+    await expect(year).toHaveValue('2027');
+    await year.fill('2026');
+    await expect(year).toHaveValue('2026');
+    await year.fill('');
+    await expect(year).toHaveValue('');
+  } finally { releaseClock?.(); }
+});
+
+test('failed clock leaves the return year editable without an invented default', async ({ page }) => {
+  await page.route('**/api/clock?zone=UTC', route => route.fulfill({ status: 503,
+    contentType: 'application/json', body: '{"error":"unavailable"}' }));
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced-ux');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: '＋ Create chart' }).click();
+  await page.getByRole('button', { name: /Solar return Choose a person/ }).click();
+  const view = page.getByRole('region', { name: 'Solar return chart' });
+  await expect(view.getByText('Application date is unavailable. Choose a year or dates yourself.')).toBeVisible();
+  const year = view.getByLabel('UTC anniversary year');
+  await expect(year).toHaveValue('');
+  await year.fill('2026');
+  await expect(year).toHaveValue('2026');
+});
+
 test('zero crossings retain the selected UTC cycle and focused result', async ({ page }) => {
   await page.route('**/api/clock?zone=UTC', route => route.fulfill({ status: 200,
     contentType: 'application/json', body: JSON.stringify({ instant_utc: '2028-02-29T08:00:00+00:00' }) }));

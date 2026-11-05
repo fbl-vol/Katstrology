@@ -36,12 +36,16 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
   const [loadingSource, setLoadingSource] = useState(false);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
   const [year, setYear] = useState(initialDraft?.year || '');
+  const yearInput = useRef<HTMLInputElement>(null);
+  const yearEdited = useRef(!!initialDraft?.year);
   const [start, setStart] = useState(initialDraft?.start || '');
   const [end, setEnd] = useState(initialDraft?.end || '');
   const clock = useApplicationUtcDate();
   useEffect(() => {
     if (!clock.today) return;
-    setYear(current => current || clock.today.slice(0, 4));
+    // A late clock must not mutate an input while the user is selecting/replacing it.
+    if (!yearEdited.current && document.activeElement !== yearInput.current)
+      setYear(current => current || clock.today.slice(0, 4));
     setStart(current => current || clock.today);
     setEnd(current => current || utcDays(clock.today, 30));
   }, [clock.today]);
@@ -153,8 +157,10 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
           { personId, year, start, end, reference })}>Create or review natal</button>
         {' '}<button type="button" onClick={() => personInput.current?.focus()}>Choose another person</button>
       </p>}
-      {technique === 'solar_return' ? <label>UTC anniversary year <input required type="number" min={birthYear || 1900} max="2098"
-        value={year} onChange={event => { changeSelection(); setYear(event.target.value); }} />
+      {technique === 'solar_return' ? <label>UTC anniversary year <input ref={yearInput} required type="number" min={birthYear || 1900} max="2098"
+        value={year} onBlur={() => {
+          if (!yearEdited.current && clock.today) setYear(current => current || clock.today.slice(0, 4));
+        }} onChange={event => { yearEdited.current = true; changeSelection(); setYear(event.target.value); }} />
         {yearError && <span className="error" role="alert">{yearError}</span>}</label> : <>
         <label>From (UTC, inclusive) <input required type="date" value={start} onChange={event => { changeSelection(); setStart(event.target.value); }} /></label>
         <label>Until (UTC, exclusive) <input required type="date" value={end} onChange={event => { changeSelection(); setEnd(event.target.value); }} /></label>
