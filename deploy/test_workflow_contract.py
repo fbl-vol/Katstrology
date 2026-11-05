@@ -21,6 +21,20 @@ def workflow(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_caller_forwards_only_named_secret_to_reviewed_authority(self):
+        jobs = workflow('release.yml')['jobs']
+        self.assertEqual(jobs['release'].get('secrets'), {
+            KEY: '${{ secrets.KAT_CI_TRANSPORT_KEY }}'})
+        # Deliberate authority pins, not history lookups: hosted checkout is shallow.
+        self.assertEqual(jobs['release']['uses'],
+            'fbl-vol/Katstrology/.github/workflows/trusted-release.yml@'
+            '5a515719bca63a58e472d60f74e0a7478fb75117')
+        self.assertEqual(jobs['validate']['uses'],
+            'fbl-vol/Katstrology/.github/workflows/qualify.yml@'
+            'c4310ac296fade23959efccbe340afb0239d0bb5')
+        self.assertNotIn('secrets', jobs['validate'])
+        self.assertNotIn('environment', jobs['release'])
+
     def test_only_deployment_consumes_the_explicit_required_secret(self):
         trusted = workflow('trusted-release.yml')
         secrets = (trusted['on']['workflow_call'] or {}).get('secrets', {})

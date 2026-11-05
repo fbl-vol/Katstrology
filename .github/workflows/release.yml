@@ -20,7 +20,9 @@ jobs:
   release:
     name: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && vars.KAT_CI_TARGET_SCOPE != ''
-    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@c4310ac296fade23959efccbe340afb0239d0bb5
+    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@5a515719bca63a58e472d60f74e0a7478fb75117
+    secrets:
+      KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}
     permissions:
       contents: read
       id-token: write # Maximum for the reusable attestation job only; other jobs reduce it.
