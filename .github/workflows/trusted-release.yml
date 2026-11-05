@@ -100,9 +100,12 @@ jobs:
           use-cache: 'false'
           # The pinned action uses --state=mem: and its native post logs out.
           statedir: ''
-          # Overrides the action's earlier --accept-routes; leave runner DNS alone.
-          args: --accept-dns=false --accept-routes=false --ssh=false
+          # Vendor up supplies --accept-routes; CLI rejects duplicate flags.
+          args: --accept-dns=false --ssh=false
           ping: ${{ vars.KAT_CI_SSH_HOST }}
+      # Join/ping has routes=true temporarily: requires the isolated, route-free tailnet.
+      - name: Enforce private network preferences before transport
+        run: sudo tailscale set --accept-routes=false --accept-dns=false --ssh=false
       - name: Constrained admission, drain, snapshot, promotion and public verification
         env:
           KAT_AUTOMATION_ENABLED: ${{ vars.KAT_AUTOMATION_ENABLED }}

@@ -3,6 +3,7 @@
 from contextlib import chdir
 import os
 from pathlib import Path
+import shlex
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -64,7 +65,16 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn('environment', jobs[name])
             self.assertNotIn('KAT_CI_TS_', str(jobs[name]))
 
-    def test_private_join_is_pinned_ephemeral_and_immediately_precedes_transport(self):
+    def test_vendor_up_arguments_do_not_repeat_native_flags(self):
+        steps = workflow('trusted-release.yml')['jobs']['deploy']['steps']
+        join = next(step for step in steps if step.get('uses', '').startswith('tailscale/'))
+        # Reviewed vendor064b105 prepends these options; CLI1.104.5 rejects repeats.
+        vendor = ['--advertise-tags=tag:kat-release-ci', '--hostname=synthetic-argv-only',
+                  '--accept-routes']
+        flags = [arg.split('=', 1)[0] for arg in vendor + shlex.split(join['with']['args'])]
+        self.assertEqual(len(flags), len(set(flags)), 'Native up flags must each occur once')
+
+    def test_private_join_is_pinned_ephemeral_and_fenced_before_transport(self):
         jobs = workflow('trusted-release.yml')['jobs']
         joins = [(name, step) for name, job in jobs.items()
                  for step in job.get('steps', [])
@@ -85,16 +95,21 @@ class WorkflowContractTests(unittest.TestCase):
             'sha256sum': '720cbbccbfc03d8b55df72afc19e5a72e31b0f65934700aa6fa38074d4ad7bf7',
             'use-cache': 'false',
             'statedir': '',
-            'args': '--accept-dns=false --accept-routes=false --ssh=false',
+            'args': '--accept-dns=false --ssh=false',
             'ping': '${{ vars.KAT_CI_SSH_HOST }}',
         })
         deploy = jobs['deploy']
         self.assertEqual(deploy['runs-on'], 'ubuntu-24.04')  # Linux amd64 checksum.
         steps = deploy['steps']
-        transport = steps[steps.index(join) + 1]
+        fence = steps[steps.index(join) + 1]
+        # No condition, failure swallowing or extra command between join and transport.
+        self.assertEqual(set(fence), {'name', 'run'})
+        self.assertEqual(fence['run'],
+                         'sudo tailscale set --accept-routes=false --accept-dns=false --ssh=false')
+        transport = steps[steps.index(join) + 2]
         self.assertEqual(transport['run'], 'python -m deploy.ci_transport')
         self.assertNotIn(TS_KEY, str(transport))
-        self.assertNotIn('if', transport)  # Native success gate: never send after join failure.
+        self.assertNotIn('if', transport)  # Native success gate: join AND fence must succeed.
         self.assertNotIn('continue-on-error', transport)
         checkout = steps[0]
         self.assertTrue(checkout['uses'].startswith('actions/checkout@'))

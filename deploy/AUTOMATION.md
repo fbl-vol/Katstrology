@@ -96,13 +96,42 @@ and actual ephemeral-device removal evidence during hosted acceptance. Abrupt
 runner loss can defer removal to Tailscale's ephemeral-node cleanup. Leave Actions
 debug logging disabled; never upload daemon logs, credentials or state files.
 
-`--accept-dns=false --accept-routes=false --ssh=false` leaves runner DNS unchanged,
-disables accepted subnet routes and Tailscale SSH. The explicit routes=false
-follows and overrides the action's built-in routes=true argument. No subnet/exit
-route, Serve, Funnel or general-shell capability is introduced. The action pings
-`vars.KAT_CI_SSH_HOST` before native OpenSSH transport; direct or DERP connectivity
-is acceptable. Ping success is neither TCP22 authorization nor release admission.
-Join/ping failure prevents the transport step; there is no public SSH fallback.
+The pinned action unconditionally supplies `--accept-routes` to native `up`.
+Tailscale `1.104.5` rejects repeated flags (`onceFlagValue`/`noDupFlagify`), rather
+than letting a later value override an earlier one. The first private hosted run
+42012431132 at `7f4bfefa` qualified/attested, but all five vendor attempts failed
+parsing the duplicate routes flag **before any SSH**. The previous override claim
+and the static test encoding it were wrong; retrying that argv cannot repair it.
+
+The required chronology is now:
+
+1. Native action `up` supplies routes=true once. Our additional args are only
+   `--accept-dns=false --ssh=false`; ephemeral memory state and native peer ping
+   remain unchanged. The action pings `vars.KAT_CI_SSH_HOST` (direct or DERP),
+   **before** the preference fence. Ping is not TCP22 authorization or admission.
+2. Immediately after successful join/ping, a dedicated step runs
+   `sudo tailscale set --accept-routes=false --accept-dns=false --ssh=false`.
+   Native `set` changes just these preferences; it is not another login or retry.
+3. Only after that command succeeds may native OpenSSH forced-key transport run.
+   Neither fence nor transport has a failure-bypass condition or error suppression.
+   Join, ping or fence failure prevents transport; there is no public SSH fallback.
+
+Routes are therefore transiently accepted during setup/ping, **not** during release
+transport. This path requires the separately verified isolated tailnet: only the
+CI->server TCP22 grant, no other devices/rules or advertised/approved subnet/exit
+routes, and OAuth limited to CI-tag nodes with no server-tag ownership. Under those
+preconditions the transient setting adds no reachable destination. If they change,
+keep both gates disabled and reassess; do not broaden policy or rely solely on the
+later fence to contain setup. Runner DNS and Tailscale SSH remain disabled throughout;
+Pi-hole/DNS, public80/443, host pin, secrets and provenance permissions are unchanged.
+No subnet/exit route, Serve, Funnel or general-shell capability is introduced.
+
+Focused regression checks cover unique vendor-composed flags and mandatory
+join/ping -> native set -> transport ordering. A local experiment with the actual
+SHA-pinned `1.104.5` CLI reproduces the old parse error; repaired `up` and `set`
+parse successfully and stop at an owned missing socket in an empty, network-isolated
+sandbox. No daemon, credentials or authentication are used. This proves parsing,
+not live preference application, routing, logout or hosted release acceptance.
 
 Coordinator setup under the separate approved account/network scope:
 
@@ -136,7 +165,7 @@ Coordinator setup under the separate approved account/network scope:
    **same previously pinned public SSH host key** to that host identifier in
    `KAT_CI_KNOWN_HOSTS`. Keep the existing SSH user, forced command and restrictions;
    no host-key discovery, trust-on-first-use, fallback or personal/account keys.
-5. Publish the A2/B2 source chain and re-pin the disabled signer to **A2**, not B2.
+5. Publish the A3/B3 source chain and re-pin the disabled signer to **A3**, not B3.
    For the scoped connection test, enable only the GitHub transport gate while
    root admission stays disabled. Require fresh hosted qualification/attestation
    and actual disabled-policy refusal, not a skipped deploy. Only after that proof
