@@ -73,8 +73,11 @@ proposal to split it into microservices or evidence of production readiness.
 
 | Responsibility | Current implementation |
 | --- | --- |
-| Browser shell, conversation state and provider controls | `web/src/main.tsx`, `archive.ts`, `provider.tsx`, `turns.tsx` |
-| HTTP/security boundary and serialized lifecycle | `m2/web_server.py`, `web_auth.py` |
+| Workspace view/overlay navigation, return intents and request generations | `web/src/workspace-navigation.ts` (rendering and conversation-create/list coordination remain in `web/src/main.tsx`) |
+| Committed chat transport, pending IDs, ACKs and archive paging | `web/src/archive.ts` (`web/src/main.tsx` supplies the composer and send/list orchestration) |
+| Provider connection display and turn rendering | `web/src/provider.tsx`, `turns.tsx` |
+| HTTP/security boundary and serialized lifecycle | `m2/http_boundary/{boundary,runtime,config,app}.py`, `m2/web_server.py` (compatible entry/facade), `m2/web_auth.py` |
+| Checked Swiss/time/angle primitives and owner-qualified natal source | `m2/calculation/{ephemeris,time,chart_source}.py`; technique solvers remain separate |
 | People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
 | Turn scheduling and commit-before-delivery | `m2/chat_jobs.py`, `gateway.py`, `store.py` |
 | Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |

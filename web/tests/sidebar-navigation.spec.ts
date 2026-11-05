@@ -225,3 +225,80 @@ test('normal All conversations fences a delayed ACK and reopens only the committ
     const saved = await (await page.request.get('/api/conversations')).json();
     expect(saved.conversations).toHaveLength(before.conversations.length + 1);
 });
+
+test('leaving natal recovery for a new discussion does not resurrect the old return intent', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced-ux');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: '＋ Create chart' }).click();
+  await page.getByRole('button', { name: /Solar return Choose a person/ }).click();
+  const returnView = page.getByRole('region', { name: 'Solar return chart' });
+  await returnView.getByLabel('Person with a current natal').selectOption('legacy-transit-person');
+  await returnView.getByRole('button', { name: 'Create or review natal' }).click();
+  await expect(page.getByRole('heading', { name: 'Legacy chart without generated natal' })).toBeVisible();
+
+  await page.locator('button.new-chat').click();
+  await expect(page.getByRole('region', { name: 'New conversation' })).toBeVisible();
+  await page.getByLabel('Message Kat').fill('A different discussion, not an old return');
+  await page.getByRole('navigation', { name: 'People' })
+    .getByRole('button', { name: /Synthetic transit reader/ }).click();
+  await expect(page.getByRole('heading', { name: 'Synthetic transit reader' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Return to workspace/ })).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Recent conversations' })
+    .getByRole('button', { name: 'All conversations' }).click();
+  await expect(returnView).toHaveCount(0);
+  await expect(page.getByLabel('Message Kat')).toHaveValue('A different discussion, not an old return');
+});
+
+test('Settings overlays a return without resetting its selected person or typed period', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-advanced-ux');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('button', { name: '＋ Create chart' }).click();
+  await page.getByRole('button', { name: /Lunar returns Choose a person/ }).click();
+  const returnView = page.getByRole('region', { name: 'Lunar returns chart' });
+  await returnView.getByLabel('Person with a current natal').selectOption('transit-person');
+  await returnView.getByLabel('From (UTC, inclusive)').fill('2027-03-01');
+  await returnView.getByLabel('Until (UTC, exclusive)').fill('2027-04-01');
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(returnView).toBeHidden();
+  await page.getByRole('button', { name: 'Back to workspace' }).click();
+  await expect(returnView).toBeVisible();
+  await expect(returnView.getByLabel('Person with a current natal')).toHaveValue('transit-person');
+  await expect(returnView.getByLabel('From (UTC, inclusive)')).toHaveValue('2027-03-01');
+  await expect(returnView.getByLabel('Until (UTC, exclusive)')).toHaveValue('2027-04-01');
+});
+
+test('a delayed person read cannot replace a newer conversation view', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('reader-transit-desktop');
+  await page.getByLabel('Password').fill('synthetic-browser-password');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  let release!: () => void;
+  let arrived!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const seen = new Promise<void>(resolve => { arrived = resolve; });
+  await page.route('**/api/people/transit-person', async route => {
+    const result = await route.fetch();
+    arrived(); await held;
+    await route.fulfill({ response: result });
+  });
+  const reply = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/people/transit-person');
+  await page.getByRole('navigation', { name: 'People' })
+    .getByRole('button', { name: /Synthetic transit reader/ }).click();
+  await seen;
+  await page.locator('button.new-chat').click();
+  await page.getByLabel('Message Kat').fill('Keep this new view');
+  release();
+  await reply;
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByRole('region', { name: 'New conversation' })).toBeVisible();
+  await expect(page.getByLabel('Message Kat')).toHaveValue('Keep this new view');
+  await expect(page.getByRole('heading', { name: 'Synthetic transit reader' })).toHaveCount(0);
+});

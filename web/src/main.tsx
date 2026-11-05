@@ -13,17 +13,18 @@ import { SettingsView } from './settings';
 import { SourceNotice } from './source-notice';
 import { BrandKitten, ReadingKitten } from './kitten';
 import { TransitView } from './transit-view';
-import { ChartHub, type ChartChoice } from './chart-hub';
-import { AdvancedView, type AdvancedDraft } from './advanced-view';
+import { ChartHub } from './chart-hub';
+import { AdvancedView } from './advanced-view';
 import { McTransitsView } from './mc-transits-view';
 import { ProgressionsView } from './progressions-view';
 import { RelationshipDerivedView } from './relationship-derived-view';
 import { SolarArcView } from './solar-arc-view';
 import { ProgressedPhasesView } from './progressed-phases-view';
 import { LunationsView } from './lunations-view';
-import { PlanetaryReturnsView, type PlanetaryReturnDraft } from './planetary-returns-view';
+import { PlanetaryReturnsView } from './planetary-returns-view';
 import { useGrowingComposer } from './chat-scroll';
 import { SynastryView } from './synastry-view';
+import { useWorkspaceNavigation } from './workspace-navigation';
 
 type ThreadPage = { conversations: Conversation[]; next_offset: number | null; search_pending: number };
 type Edit = { parent: string; replaces: string; kind: 'edit' | 'regenerate' };
@@ -33,30 +34,17 @@ function App() {
   const [notice, setNotice] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [drawer, setDrawer] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
-  const [person, setPerson] = useState<Person | null>(null);
-  const [skyOpen, setSkyOpen] = useState(false);
-  const [skyFromHub, setSkyFromHub] = useState(false);
-  const [chartHub, setChartHub] = useState<ChartChoice | null>(null);
-  const [profileChildFocus, setProfileChildFocus] = useState(false);
-  const [profileFromHub, setProfileFromHub] = useState(false);
-  const [profileChartFocus, setProfileChartFocus] = useState(false);
-  const [profileEditorRequest, setProfileEditorRequest] = useState(0);
-  const hubPreviousPerson = useRef<Person | null>(null);
-  const hubPreviousFilter = useRef<string | null>(null);
-  const returnToAdvanced = useRef<{ choice: 'solar_return' | 'lunar_return'; draft: AdvancedDraft } | null>(null);
-  const advancedDraft = useRef<AdvancedDraft | null>(null);
-  const returnToPlanetary = useRef<PlanetaryReturnDraft | null>(null);
-  const planetaryDraft = useRef<PlanetaryReturnDraft | null>(null);
+  const navigation = useWorkspaceNavigation({ resetArchive: () => archive.reset(),
+    invalidateSubmission });
+  const { drawer, person, skyOpen, skyFromHub, chartHub, profileChildFocus, profileFromHub,
+    profileChartFocus, profileEditorRequest, profileEditorPersonId, settingsOpen,
+    filterPersonId, conversation } = navigation;
+  const navigationVersion = navigation.version;
   const [personDialog, setPersonDialog] = useState(false);
-  const [profileEditorPersonId, setProfileEditorPersonId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [scopePicker, setScopePicker] = useState(false);
   const [selection, setSelection] = useState<Selection[]>([]);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [filterPersonId, setFilterPersonId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searched, setSearched] = useState('');
   const [nextConversationOffset, setNextConversationOffset] = useState<number | null>(null);
@@ -69,7 +57,6 @@ function App() {
   const submissionInFlight = useRef(false);
   const submissionVersion = useRef(0);
   const [preparingSend, setPreparingSend] = useState(false);
-  const navigationVersion = useRef(0);
   const listRequestVersion = useRef(0);
   const peopleRequestVersion = useRef(0);
   const messageInput = useRef<HTMLTextAreaElement>(null);
@@ -79,7 +66,7 @@ function App() {
   const settingsOpener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const historyHeading = useRef<HTMLHeadingElement>(null);
-  const focusProfile = useRef<{ id: string; navigation: number } | null>(null);
+  const focusProfile = navigation.focusProfile;
   const personDialogOpener = useRef<HTMLElement | null>(null);
   const wasDrawerOpen = useRef(false);
   const setMessageInput = useCallback((element: HTMLTextAreaElement | null) => {
@@ -101,7 +88,7 @@ function App() {
     if (person) {
       const updated = await api<Person>(`people/${person.id}`);
       if (version === peopleRequestVersion.current)
-        setPerson(current => current?.id === person.id ? updated : current);
+        navigation.updatePerson(current => current?.id === person.id ? updated : current);
     }
   }, [person?.id]);
 
@@ -130,7 +117,7 @@ function App() {
       try {
         const updated = await api<Conversation>(`conversations/${id}`);
         if (navigationVersion.current !== version) return;
-        setConversation(current => current?.id === id ? updated : current);
+        navigation.updateConversation(current => current?.id === id ? updated : current);
         if (updated.title_status === 'generated') { void loadThreads(0); return; }
         if (updated.title_status !== 'waiting' && updated.title_status !== 'pending') return;
       } catch { return; }
@@ -140,7 +127,7 @@ function App() {
   const provider = useProvider(workspace);
   const archive = useArchiveChat(workspace, (id, status) => {
     void api<Conversation>(`conversations/${id}`).then(updated =>
-      setConversation(current => current?.id === id ? updated : current)).catch(() => {});
+      navigation.updateConversation(current => current?.id === id ? updated : current)).catch(() => {});
     void loadThreads(0);
     if (status === 'complete') void refreshTitleAfterCompletion(id);
   }, { conversationId: conversation?.id || null,
@@ -190,16 +177,16 @@ function App() {
     document.getElementById('person-heading')?.focus();
   }, [person?.id, drawer, chartHub, skyOpen, settingsOpen]);
 
-  function closeDrawer() { setDrawer(false); }
+  function closeDrawer() { navigation.closeDrawer(); }
 
   function openSettings() {
     settingsOpener.current = document.activeElement as HTMLElement;
-    setSettingsOpen(true); closeDrawer();
+    navigation.openSettings();
   }
 
   function closeSettings() {
     const leavingFocus = document.activeElement;
-    setSettingsOpen(false);
+    navigation.closeSettings();
     requestAnimationFrame(() => {
       // The reader may already be typing before this deferred restoration runs.
       if (document.activeElement !== document.body && document.activeElement !== leavingFocus) return;
@@ -235,12 +222,9 @@ function App() {
     if (!workspace) return;
     try {
       await api('logout', workspace.csrf, 'POST');
-      navigationVersion.current++; listRequestVersion.current++; peopleRequestVersion.current++;
-      returnToAdvanced.current = null; advancedDraft.current = null;
-      returnToPlanetary.current = null; planetaryDraft.current = null;
-      archive.reset(); invalidateSubmission(); setSettingsOpen(false); setWorkspace(null); setPeople([]); setPerson(null); setConversation(null); setSkyOpen(false); setChartHub(null);
-      setSelection([]);
-      setMessage(''); setDiscuss(null); setEditing(null); closeDrawer();
+      listRequestVersion.current++; peopleRequestVersion.current++;
+      navigation.signOut(); setWorkspace(null); setPeople([]); setSelection([]);
+      setMessage(''); setDiscuss(null); setEditing(null);
     } catch { setNotice('Sign-out did not complete. Try again.'); }
   }
 
@@ -251,10 +235,7 @@ function App() {
   }
 
   function allConversations() {
-    navigationVersion.current++; archive.reset(); invalidateSubmission();
-    setSettingsOpen(false); setSkyOpen(false); setSkyFromHub(false); setChartHub(null);
-    setProfileFromHub(false); setProfileChartFocus(false); setProfileChildFocus(false);
-    setPerson(null); setConversation(null); setDiscuss(null); setFilterPersonId(null);
+    navigation.allConversations(); setDiscuss(null);
     pendingConversationId.current = '';
     setSearched(''); setSearchQuery('');
     if (!filterPersonId) void loadThreads(0, '');
@@ -264,45 +245,38 @@ function App() {
   }
 
   function newChat(personIds?: string | string[]) {
-    setSettingsOpen(false); setSkyOpen(false); setChartHub(null); setProfileChartFocus(false); navigationVersion.current++; archive.reset(); invalidateSubmission(); setPerson(null); setConversation(null);
+    navigation.newConversation();
     setSelection((personIds ? (Array.isArray(personIds) ? personIds : [personIds]) : []).map(person_id => ({ person_id })));
     setMessage(''); setDiscuss(null); setEditing(null); pendingConversationId.current = '';
     closeDrawer();
   }
 
   async function openConversation(id: string) {
-    setSettingsOpen(false); setSkyOpen(false); setChartHub(null);
-    const version = ++navigationVersion.current;
+    const version = navigation.beginConversation();
     try {
       setNotice('');
       const thread = await api<Conversation>(`conversations/${id}`);
-      if (version !== navigationVersion.current) return;
+      if (!navigation.isCurrent(version)) return;
       await archive.open(id);
-      if (version !== navigationVersion.current) return;
+      if (!navigation.isCurrent(version)) return;
       invalidateSubmission();
       let selected: Selection[] = thread.people.map(item => ({ person_id: item.person_id || item.id! }));
       if (thread.active_head) {
         const active = await api<Turn>(`conversations/${id}/turns/${thread.active_head}`);
         selected = active.selected_people.map(item => ({ person_id: item.person_id }));
       }
-      if (version !== navigationVersion.current) return;
-      setConversation(thread); setSelection(selected); setDiscuss(null);
+      if (!navigation.isCurrent(version)) return;
+      navigation.showConversation(thread); setSelection(selected); setDiscuss(null);
       setEditing(null);
-      setPerson(null); closeDrawer();
-    } catch { if (version === navigationVersion.current) setNotice('Conversation could not be opened. Your current draft remains here.'); }
+    } catch { if (navigation.isCurrent(version)) setNotice('Conversation could not be opened. Your current draft remains here.'); }
   }
 
   function openChartHub() {
-    returnToAdvanced.current = null; advancedDraft.current = null;
-    returnToPlanetary.current = null; planetaryDraft.current = null;
-    navigationVersion.current++;
-    hubPreviousPerson.current = person;
-    hubPreviousFilter.current = filterPersonId;
-    setSettingsOpen(false); setSkyOpen(false); setChartHub('hub'); closeDrawer();
+    navigation.openChartHub();
   }
 
   function closeChartHub() {
-    setChartHub(null);
+    navigation.closeChartHub();
     window.requestAnimationFrame(() => {
       if (window.matchMedia('(max-width:700px)').matches) menuButton.current?.focus();
       else chartNavButton.current?.focus();
@@ -310,24 +284,16 @@ function App() {
   }
 
   function openContextChart(personRecord: Person) {
-    navigationVersion.current++;
-    hubPreviousPerson.current = null; hubPreviousFilter.current = filterPersonId;
-    setProfileFromHub(true); setProfileChartFocus(true); setProfileChildFocus(false);
-    setProfileEditorPersonId(null); setPerson(personRecord); setFilterPersonId(personRecord.id);
-    setSkyOpen(false); setChartHub(null); closeDrawer();
+    navigation.openContextChart(personRecord);
   }
 
   function openHubPerson(id: string, child = false) {
-    const version = ++navigationVersion.current;
-    peopleRequestVersion.current++; setSettingsOpen(false);
+    const version = navigation.beginHubPerson();
+    peopleRequestVersion.current++;
     void api<Person>(`people/${id}`).then(selected => {
-      if (version !== navigationVersion.current) return;
-      setPerson(selected); setProfileEditorPersonId(id);
-      setProfileEditorRequest(current => current + 1);
-      setProfileChildFocus(child); setProfileFromHub(true); setProfileChartFocus(false);
-      setFilterPersonId(id); setChartHub(null); closeDrawer();
-    }).catch(() => { if (version === navigationVersion.current) {
-      returnToAdvanced.current = null; returnToPlanetary.current = null;
+      if (navigation.isCurrent(version)) navigation.showHubPerson(selected, child);
+    }).catch(() => { if (navigation.isCurrent(version)) {
+      navigation.abandonReturn();
       setNotice('That person could not be opened. Choose another person.');
     } });
   }
@@ -336,9 +302,7 @@ function App() {
     if (archive.hasPending) {
       setNotice('Finish or retry the current message before choosing another result.'); return;
     }
-    navigationVersion.current++; archive.reset(); invalidateSubmission();
-    setSettingsOpen(false); setChartHub(null); setSkyOpen(false);
-    setPerson(null); setConversation(null); setSelection([{ person_id: personId }]);
+    navigation.discussResult(); setSelection([{ person_id: personId }]);
     setDiscuss({ selected, label }); setEditing(null); pendingConversationId.current = '';
     closeDrawer();
     requestAnimationFrame(() => messageInput.current?.focus());
@@ -346,20 +310,20 @@ function App() {
 
   async function startConversation(selected: Selection[]): Promise<Conversation | null> {
     if (!workspace) return null;
-    const version = ++navigationVersion.current;
+    const version = navigation.beginConversation();
     if (!pendingConversationId.current) pendingConversationId.current = 'thread-' + crypto.randomUUID();
     try {
       const result = await api<Conversation>('conversations', workspace.csrf, 'POST', {
         id: pendingConversationId.current, title: 'New conversation',
         people: selected.map(item => item.person_id),
       });
-      if (version !== navigationVersion.current) return null;
-      setConversation(result); setPerson(null); setNotice('');
+      if (!navigation.isCurrent(version)) return null;
+      navigation.showConversation(result); setNotice('');
       pendingConversationId.current = '';
       void loadThreads(0, ''); // A sidebar failure cannot make the turn send ambiguous.
       return result;
     } catch {
-      if (version === navigationVersion.current)
+      if (navigation.isCurrent(version))
         archive.failPending('This conversation was not confirmed. Retry this message; your other draft is unchanged.');
       return null;
     }
@@ -436,20 +400,22 @@ function App() {
 
   async function changeBranch(head: string) {
     if (!workspace || !conversation || archive.busy) return;
+    const id = conversation.id, route = navigationVersion.current;
     try {
-      await api(`conversations/${conversation.id}/branch`, workspace.csrf, 'POST', { head });
-      await openConversation(conversation.id);
-    } catch { setNotice('Branch selection was not saved. The original branch is unchanged.'); }
+      await api(`conversations/${id}/branch`, workspace.csrf, 'POST', { head });
+      if (navigation.isCurrent(route)) await openConversation(id);
+    } catch { if (navigation.isCurrent(route)) setNotice('Branch selection was not saved. The original branch is unchanged.'); }
   }
 
   async function correctTurn(turn: Turn, action: 'correct' | 'withdraw', replacement: string | null) {
     if (!workspace || !conversation || archive.busy) return;
+    const id = conversation.id, route = navigationVersion.current;
     try {
-      await api(`conversations/${conversation.id}/corrections`, workspace.csrf, 'POST', {
+      await api(`conversations/${id}/corrections`, workspace.csrf, 'POST', {
         id: 'correction-' + crypto.randomUUID(), source_turn: turn.id, action, replacement
       });
-      await openConversation(conversation.id);
-    } catch { setNotice('Correction was not confirmed. Check the original turn before retrying.'); }
+      if (navigation.isCurrent(route)) await openConversation(id);
+    } catch { if (navigation.isCurrent(route)) setNotice('Correction was not confirmed. Check the original turn before retrying.'); }
   }
 
   function editTurn(turn: Turn) {
@@ -484,21 +450,26 @@ function App() {
     if (!workspace || !conversation || archive.busy) return;
     const title = window.prompt('Conversation title', conversation.title);
     if (title === null) return;
+    const id = conversation.id, route = navigationVersion.current;
     try {
-      const updated = await api<Conversation>(`conversations/${conversation.id}`, workspace.csrf,
+      const updated = await api<Conversation>(`conversations/${id}`, workspace.csrf,
         'PATCH', { title });
-      setConversation(updated); await loadThreads(0);
-    } catch { setNotice('Title was not saved. Use 1–80 characters and retry.'); }
+      if (!navigation.isCurrent(route)) return;
+      navigation.updateConversation(current => current?.id === id ? updated : current);
+      await loadThreads(0);
+    } catch { if (navigation.isCurrent(route)) setNotice('Title was not saved. Use 1–80 characters and retry.'); }
   }
 
   async function deleteConversation() {
     if (!workspace || !conversation || archive.busy) return;
     if (!window.confirm('Delete this archived conversation and its owned files? Dependent conversations must be removed first. Existing exports cannot be recalled.')) return;
+    const id = conversation.id, route = navigationVersion.current;
     try {
-      await api(`conversations/${conversation.id}`, workspace.csrf, 'DELETE');
-      archive.reset(); setConversation(null); setMessage(''); setEditing(null);
+      await api(`conversations/${id}`, workspace.csrf, 'DELETE');
+      if (!navigation.isCurrent(route)) return;
+      navigation.newConversation(); setMessage(''); setEditing(null);
       await loadThreads(0);
-    } catch { setNotice('Deletion was blocked or unavailable. Dependent conversations and original records remain.'); }
+    } catch { if (navigation.isCurrent(route)) setNotice('Deletion was blocked or unavailable. Dependent conversations and original records remain.'); }
   }
 
   async function exportConversation() {
@@ -550,23 +521,19 @@ function App() {
         <button ref={chartNavButton} className="create-chart-nav" type="button" onClick={openChartHub}>＋ &nbsp; Create chart</button></div>
       <nav aria-label="People"><div className="side-heading-row"><h2 className="side-heading">PEOPLE</h2><button aria-label="Add person" onClick={() => {
         personDialogOpener.current = document.activeElement as HTMLElement;
-        setSettingsOpen(false); closeDrawer(); setPersonDialog(true);
+        navigation.openPersonDialog(); setPersonDialog(true);
       }}>＋</button></div>
         {people.length ? <div className="person-list">{people.map(item => <button key={item.id} className={`person-link${filterPersonId === item.id ? ' selected' : ''}`} onClick={() => {
-          setSettingsOpen(false); setSkyOpen(false); setSkyFromHub(false); setChartHub(null);
-          const version = ++navigationVersion.current;
-          peopleRequestVersion.current++; setProfileEditorPersonId(null); setProfileFromHub(false);
-          setProfileChartFocus(false); setProfileChildFocus(false);
-          focusProfile.current = { id: item.id, navigation: version };
-          archive.reset(); void api<Person>(`people/${item.id}`).then(selected => {
-            if (version === navigationVersion.current) setPerson(selected);
-          }).catch(() => { if (version === navigationVersion.current) setNotice('Person could not be opened.'); });
-          setFilterPersonId(item.id); setSearched(''); setSearchQuery(''); setConversation(null);
-          closeDrawer();
+          const version = navigation.beginSidebarPerson(item.id);
+          peopleRequestVersion.current++;
+          void api<Person>(`people/${item.id}`).then(selected => {
+            if (navigation.isCurrent(version)) navigation.showSidebarPerson(selected);
+          }).catch(() => { if (navigation.isCurrent(version)) setNotice('Person could not be opened.'); });
+          setSearched(''); setSearchQuery('');
         }}><span className="initial">{item.name.charAt(0).toUpperCase()}</span><span>{item.name}</span></button>)}</div> : <p className="side-empty">No people yet.</p>}</nav>
       <nav aria-label="Recent conversations"><h2 className="side-heading" ref={historyHeading} tabIndex={-1}>RECENT CONVERSATIONS</h2>
         <button type="button" className="all-conversations-nav" onClick={allConversations}>All conversations</button>
-        {filterPersonId && <p className="side-filter">For {people.find(p => p.id === filterPersonId)?.name || 'selected person'} <button onClick={() => { setFilterPersonId(null); setSearched(''); setSearchQuery(''); }}>Show all</button></p>}
+        {filterPersonId && <p className="side-filter">For {people.find(p => p.id === filterPersonId)?.name || 'selected person'} <button onClick={() => { navigation.clearPersonFilter(); setSearched(''); setSearchQuery(''); }}>Show all</button></p>}
         <form className="search-conversations" onSubmit={e => { e.preventDefault(); setSearched(searchQuery); void loadThreads(0, searchQuery); }}><label className="sr-only" htmlFor="thread-search">Search conversations</label><input id="thread-search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search conversations" /><button type="submit">Search</button></form>
         {listStatus && <p className="side-filter" role="status">{listStatus}</p>}
         <div className="recent">{conversations.length ? <ConversationBrowseList conversations={conversations}
@@ -580,7 +547,7 @@ function App() {
         <div className="account"><span className="initial">{workspace.owner.charAt(0).toUpperCase()}</span><span>{workspace.owner}<small>{workspace.workspace === 'personal' ? 'Personal workspace' : 'Local workspace'}</small></span></div><button type="button" onClick={signOut}>Sign out</button></div>
     </aside>
     <main className={`main${settingsOpen ? ' settings-main' : !person && !skyOpen && !chartHub ? ' chat-scroll-page' : ''}`} inert={drawer}>
-      <header className="header"><div className="header-left"><button ref={menuButton} className="mobile-menu" aria-label="Open navigation" aria-expanded={drawer} onClick={() => setDrawer(true)}>☰</button><span className="header-title">{settingsOpen ? 'Settings' : chartHub ? 'Create chart' : skyOpen ? 'Sky at a date' : person ? person.name : conversation?.title || 'New conversation'}</span></div><span className="model-label">{provider.error.startsWith('Connection status could not') ? 'ChatGPT connection unavailable' :
+      <header className="header"><div className="header-left"><button ref={menuButton} className="mobile-menu" aria-label="Open navigation" aria-expanded={drawer} onClick={navigation.openDrawer}>☰</button><span className="header-title">{settingsOpen ? 'Settings' : chartHub ? 'Create chart' : skyOpen ? 'Sky at a date' : person ? person.name : conversation?.title || 'New conversation'}</span></div><span className="model-label">{provider.error.startsWith('Connection status could not') ? 'ChatGPT connection unavailable' :
           provider.status.registration === 'offline' ?
             provider.status.connected ? 'ChatGPT account saved' : 'Chat not connected' :
             provider.status.connected ? 'ChatGPT connected' : 'Connect ChatGPT plan to send'}</span></header>
@@ -588,7 +555,7 @@ function App() {
       <div className={settingsOpen ? 'settings-hidden' : 'settings-visible'} inert={settingsOpen}>
       {chartHub === 'synastry' && <SynastryView workspace={workspace} people={people}
         discussionDisabled={archive.hasPending || archive.busy}
-        onClose={() => setChartHub('hub')} onCreate={id => openHubPerson(id)}
+        onClose={navigation.backToChartChoices} onCreate={id => openHubPerson(id)}
         onDiscuss={ids => {
           if (archive.hasPending || archive.busy) return;
           if (message.trim() && !window.confirm('Start a new discussion? Your current unsent draft will be cleared.')) return;
@@ -596,67 +563,58 @@ function App() {
         }} />}
       {(chartHub === 'solar_return' || chartHub === 'lunar_return') &&
         <AdvancedView key={chartHub} workspace={workspace} people={people} technique={chartHub}
-          initialDraft={advancedDraft.current || undefined}
+          initialDraft={navigation.advancedDraft || undefined}
           onDiscuss={discussSavedResult}
-          onClose={() => { advancedDraft.current = null; setChartHub('hub'); }}
+          onClose={navigation.closeTechnique}
           onCreateNatal={(id, draft) => {
-            returnToAdvanced.current = { choice: chartHub, draft }; openHubPerson(id);
+            navigation.createNatalFromAdvanced(chartHub, draft); openHubPerson(id);
           }} />}
       {chartHub === 'mc_transit' && <McTransitsView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'secondary_progression' && <ProgressionsView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'relationship_derived' && <RelationshipDerivedView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'true_solar_arc' && <SolarArcView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'progressed_lunar_phases' && <ProgressedPhasesView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'actual_lunations_eclipses' && <LunationsView workspace={workspace} people={people}
-        onClose={() => setChartHub('hub')} />}
+        onClose={navigation.backToChartChoices} />}
       {chartHub === 'planetary_return' && <PlanetaryReturnsView workspace={workspace} people={people}
-        initialDraft={planetaryDraft.current || undefined}
-        onClose={() => { planetaryDraft.current = null; setChartHub('hub'); }}
-        onCreateNatal={(id, draft) => { returnToPlanetary.current = draft; openHubPerson(id); }} />}
+        initialDraft={navigation.planetaryDraft || undefined}
+        onClose={navigation.closeTechnique}
+        onCreateNatal={(id, draft) => { navigation.createNatalFromPlanetary(draft); openHubPerson(id); }} />}
       {chartHub && chartHub !== 'synastry' && chartHub !== 'solar_return' &&
         chartHub !== 'lunar_return' && chartHub !== 'mc_transit' &&
         chartHub !== 'secondary_progression' && chartHub !== 'relationship_derived' &&
         chartHub !== 'true_solar_arc' && chartHub !== 'progressed_lunar_phases' &&
         chartHub !== 'actual_lunations_eclipses' && chartHub !== 'planetary_return' && <ChartHub choice={chartHub} people={people}
         onSelect={choice => {
-          if (choice === 'transits') { setChartHub(null); setSkyFromHub(true); setSkyOpen(true); }
-          else setChartHub(choice);
+          navigation.selectChart(choice);
         }}
         onPerson={id => openHubPerson(id, chartHub === 'child')}
         onAddPerson={() => {
           personDialogOpener.current = document.activeElement as HTMLElement;
           setPersonDialog(true);
         }}
-        onClose={() => chartHub === 'hub' ? closeChartHub() : setChartHub('hub')} />}
+        onClose={() => chartHub === 'hub' ? closeChartHub() : navigation.backToChartChoices()} />}
       {skyOpen && <TransitView workspace={workspace} people={people}
         initialPersonId={person?.id || selection[0]?.person_id}
         returnLabel={skyFromHub ? 'Back to chart choices' : 'Return to conversation'}
-        onClose={() => { setSkyOpen(false); if (skyFromHub) setChartHub('hub'); setSkyFromHub(false); }} />}
+        onClose={navigation.closeSky} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
       {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople}
         discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'overview'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
         onReturn={profileFromHub ? () => {
-          navigationVersion.current++; setPerson(conversation ? null : hubPreviousPerson.current); setFilterPersonId(hubPreviousFilter.current);
-          setProfileFromHub(false); setProfileChildFocus(false); setProfileChartFocus(false);
-          if (returnToAdvanced.current) {
-            const next = returnToAdvanced.current; returnToAdvanced.current = null;
-            advancedDraft.current = next.draft; setChartHub(next.choice);
-          } else if (returnToPlanetary.current) {
-            planetaryDraft.current = returnToPlanetary.current; returnToPlanetary.current = null;
-            setChartHub('planetary_return');
-          }
+          navigation.returnFromPerson();
         } : undefined}
         startConversation={() => newChat(person.id)} openConversation={id => void openConversation(id)} onDeleted={() => {
-        navigationVersion.current++; peopleRequestVersion.current++;
-        archive.reset(); setPeople(old => old.filter(item => item.id !== person.id));
-        setPerson(null); setFilterPersonId(null); setSearchQuery(''); setSearched('');
+        peopleRequestVersion.current++;
+        navigation.personDeleted(person.id); setPeople(old => old.filter(item => item.id !== person.id));
+        setSearchQuery(''); setSearched('');
       }} /> : <section className={conversation ? 'conversation' : 'home'}
         data-kat-conversation-id={conversation?.id || ''}
         aria-label={conversation ? 'Conversation' : 'New conversation'}>
@@ -723,12 +681,7 @@ function App() {
         else menuButton.current?.focus();
       });
     }} onCreated={created => {
-      setSettingsOpen(false);
-      if (chartHub === 'natal' || chartHub === 'child') {
-        setProfileFromHub(true); setProfileChildFocus(chartHub === 'child'); setChartHub(null);
-      }
-      setProfileEditorPersonId(created.id); setProfileEditorRequest(current => current + 1);
-      setPerson(created); void refreshPeople();
+      navigation.createdPerson(created); void refreshPeople();
     }} />
     {scopePicker && <ScopePicker people={people} selected={selection} onClose={() => setScopePicker(false)}
       onApply={setSelection} />}
