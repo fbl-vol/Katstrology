@@ -13,6 +13,7 @@ from deploy import ci_transport
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = 'KAT_CI_TRANSPORT_KEY'
+TS_KEY = 'KAT_CI_TS_CLIENT_SECRET'
 
 
 def workflow(name):
@@ -35,13 +36,24 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('secrets', jobs['validate'])
         self.assertNotIn('environment', jobs['release'])
 
-    def test_only_deployment_consumes_the_explicit_required_secret(self):
+    def test_only_deployment_consumes_the_explicit_required_secrets(self):
         trusted = workflow('trusted-release.yml')
         secrets = (trusted['on']['workflow_call'] or {}).get('secrets', {})
-        self.assertEqual(set(secrets), {KEY})
-        self.assertEqual(secrets[KEY]['required'], 'true')
+        self.assertEqual(set(trusted['on']['workflow_call']), {'secrets'})
+        self.assertEqual(set(secrets), {KEY, TS_KEY})
+        for secret in secrets.values():
+            self.assertEqual(secret['required'], 'true')
         jobs = trusted['jobs']
         self.assertEqual(jobs['deploy']['environment'], 'kat-production')
+        self.assertEqual(jobs['deploy']['permissions'], {'contents': 'read'})
+        self.assertEqual(jobs['qualify']['permissions'], {'contents': 'read'})
+        self.assertEqual(jobs['attest']['permissions'], {
+            'contents': 'read', 'id-token': 'write', 'attestations': 'write'})
+        self.assertEqual(jobs['deploy']['needs'], 'attest')
+        self.assertEqual(jobs['deploy']['if'],
+            "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
+            "github.repository_id == '1437147047' && github.run_attempt == 1 && "
+            "vars.KAT_AUTOMATION_ENABLED == 'true'")
         transport = next(step for step in jobs['deploy']['steps']
                          if step.get('run') == 'python -m deploy.ci_transport')
         self.assertEqual(transport['env'][KEY], '${{ secrets.KAT_CI_TRANSPORT_KEY }}')
@@ -49,6 +61,43 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn('secrets', jobs[name])
             self.assertNotIn('secrets.', str(jobs[name]))
             self.assertNotIn('environment', jobs[name])
+            self.assertNotIn('KAT_CI_TS_', str(jobs[name]))
+
+    def test_private_join_is_pinned_ephemeral_and_immediately_precedes_transport(self):
+        jobs = workflow('trusted-release.yml')['jobs']
+        joins = [(name, step) for name, job in jobs.items()
+                 for step in job.get('steps', [])
+                 if step.get('uses', '').startswith('tailscale/')]
+        self.assertEqual(len(joins), 1)
+        name, join = joins[0]
+        self.assertEqual(name, 'deploy')
+        self.assertEqual(join['uses'],
+            'tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c')
+        # This immutable action owns ephemeral registration and post logout.
+        # Exact inputs forbid OIDC/authkey fallbacks, extra tags/routes or state reuse.
+        self.assertEqual(set(join), {'name', 'uses', 'with'})
+        self.assertEqual(join['with'], {
+            'oauth-client-id': '${{ vars.KAT_CI_TS_CLIENT_ID }}',
+            'oauth-secret': '${{ secrets.KAT_CI_TS_CLIENT_SECRET }}',
+            'tags': 'tag:kat-release-ci',
+            'version': '1.104.5',
+            'sha256sum': '720cbbccbfc03d8b55df72afc19e5a72e31b0f65934700aa6fa38074d4ad7bf7',
+            'use-cache': 'false',
+            'statedir': '',
+            'args': '--accept-dns=false --accept-routes=false --ssh=false',
+            'ping': '${{ vars.KAT_CI_SSH_HOST }}',
+        })
+        deploy = jobs['deploy']
+        self.assertEqual(deploy['runs-on'], 'ubuntu-24.04')  # Linux amd64 checksum.
+        steps = deploy['steps']
+        transport = steps[steps.index(join) + 1]
+        self.assertEqual(transport['run'], 'python -m deploy.ci_transport')
+        self.assertNotIn(TS_KEY, str(transport))
+        self.assertNotIn('if', transport)  # Native success gate: never send after join failure.
+        self.assertNotIn('continue-on-error', transport)
+        checkout = steps[0]
+        self.assertTrue(checkout['uses'].startswith('actions/checkout@'))
+        self.assertEqual(checkout['with'], {'persist-credentials': 'false', 'ref': '${{ github.sha }}'})
 
 
 class TransportSecretTests(unittest.TestCase):
@@ -72,8 +121,17 @@ class TransportSecretTests(unittest.TestCase):
             ci_transport.main()
         self.execute.assert_not_called()
 
+    def test_private_target_rejects_an_unrebound_host_pin_before_transport(self):
+        os.environ['KAT_CI_SSH_HOST'] = '100.64.0.42'  # Synthetic; never contacted.
+        with self.assertRaisesRegex(ValueError, 'One exact enrolled SSH host key required'):
+            ci_transport.main()
+        self.execute.assert_not_called()
+
     def test_nonempty_synthetic_value_reaches_only_the_owned_profile_and_is_removed(self):
         os.environ[KEY] = 'SYNTHETIC_NOT_A_REAL_KEY'
+        os.environ['KAT_CI_SSH_HOST'] = '100.64.0.42'
+        # Rebind the same fake public key, not a newly discovered key.
+        os.environ['KAT_CI_KNOWN_HOSTS'] = '100.64.0.42 ssh-ed25519 AAAA\n'
         roots = []
 
         def inspect_profile(_receipt, _manifest, _bundle, profile, _result):
@@ -84,6 +142,9 @@ class TransportSecretTests(unittest.TestCase):
             self.assertNotIn(KEY, os.environ)
             self.assertIn('StrictHostKeyChecking yes', profile.read_text())
             self.assertIn('IdentityAgent none', profile.read_text())
+            self.assertIn('HostName 100.64.0.42', profile.read_text())
+            self.assertEqual((profile.parent / 'known_hosts').read_text(),
+                             '100.64.0.42 ssh-ed25519 AAAA\n')
 
         self.execute.side_effect = inspect_profile
         ci_transport.main()

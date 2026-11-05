@@ -5,6 +5,9 @@ on:
       KAT_CI_TRANSPORT_KEY:
         description: Dedicated kat-production transport identity
         required: true
+      KAT_CI_TS_CLIENT_SECRET:
+        description: OAuth client restricted to the kat-release-ci tag
+        required: true
 permissions:
   contents: read
 # Also serialize this reusable authority if another caller tries to invoke it.
@@ -86,6 +89,20 @@ jobs:
           artifact-ids: ${{ needs.attest.outputs.artifact-id }}
           path: .local/ci-package
           merge-multiple: true
+      - name: Join the private release network
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.KAT_CI_TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.KAT_CI_TS_CLIENT_SECRET }}
+          tags: tag:kat-release-ci
+          version: '1.104.5'
+          sha256sum: 720cbbccbfc03d8b55df72afc19e5a72e31b0f65934700aa6fa38074d4ad7bf7
+          use-cache: 'false'
+          # The pinned action uses --state=mem: and its native post logs out.
+          statedir: ''
+          # Overrides the action's earlier --accept-routes; leave runner DNS alone.
+          args: --accept-dns=false --accept-routes=false --ssh=false
+          ping: ${{ vars.KAT_CI_SSH_HOST }}
       - name: Constrained admission, drain, snapshot, promotion and public verification
         env:
           KAT_AUTOMATION_ENABLED: ${{ vars.KAT_AUTOMATION_ENABLED }}

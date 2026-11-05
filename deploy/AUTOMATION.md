@@ -27,20 +27,20 @@ separately authorized adoption and positive proof below. The initial policy is
   hashes and the enrolled public target fingerprint. The GitHub/Sigstore native
   bundle attests the manifest as its exact subject. No `tests_passed` predicate is
   accepted as authority.
-* Only the deployment job enters `kat-production` and receives its dedicated
-  transport secret. Its SSH identity can invoke **only** `kat-release-ci-v1`, not a
+* Only the deployment job enters `kat-production`, joins the private release
+  network with its scoped OAuth secret, and receives its dedicated SSH transport
+  secret. Its SSH identity can invoke **only** `kat-release-ci-v1`, not a
   shell, Docker API, SCP/SFTP, port/agent forwarding or arbitrary helper command.
   `StrictHostKeyChecking yes`, one pinned host key and `IdentityAgent none` are
   mandatory. Do not reuse/migrate a personal identity or release-signing key.
-* The reusable workflow explicitly declares `KAT_CI_TRANSPORT_KEY` as required;
-  its caller must forward only that name via
-  `KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}`. Keep the value solely
-  in the `kat-production` environment secret, never a repository secret or
-  `secrets: inherit`. GitHub requires forwarding even for environment-only secrets;
+* The reusable workflow requires exactly `KAT_CI_TRANSPORT_KEY` and
+  `KAT_CI_TS_CLIENT_SECRET`; its caller forwards each explicitly from the matching
+  `secrets` name. Keep both values solely in the `kat-production` environment,
+  never repository secrets or `secrets: inherit`. GitHub requires forwarding even for environment-only secrets;
   otherwise the called workflow sees an empty string. `required: true` checks that
   the caller passes the name, not that its value is nonempty, so the transport's
   empty-value refusal remains necessary. Qualification and attestation receive no
-  forwarded transport secret. See [GitHub's reusable-workflow secret contract](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+  forwarded SSH/OAuth secrets or network identity. See [GitHub's reusable-workflow secret contract](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
 * GitHub concurrency is non-cancelling across main releases. Server locks and the
   durable active attempt remain authoritative even if a job is killed. Re-runs
   (`run_attempt != 1`), old run numbers, PR/tag/wrong-repo/wrong-source artifacts,
@@ -77,6 +77,72 @@ copying or rotating the environment-held private key. A failure before SSH is no
 proof of server refusal. Use a fresh hosted refusal followed by a distinct fresh
 positive release, never replay a failed run. Local contract/lint checks do not prove
 GitHub environment-secret resolution or unattended delivery.
+
+## Private release network — coordinator-owned setup
+
+Only `deploy`, after its main/push/attempt1/enabled checks and `kat-production`
+environment gate, runs [tailscale/github-action v4.4.0](https://github.com/tailscale/github-action/tree/064b10558093f38325e838ddea35486bdc6b1d5c).
+It uses OAuth, **not OIDC**: deploy retains only `contents: read`; provenance
+attestation alone receives `id-token: write`. No network identity reaches qualify
+or attest. Checkout remains `github.sha`; artifacts retain their exact IDs.
+
+The action pins Linux amd64 Tailscale `1.104.5` and the [official tarball checksum](https://pkgs.tailscale.com/stable/tailscale_1.104.5_amd64.tgz.sha256)
+`720cbbccbfc03d8b55df72afc19e5a72e31b0f65934700aa6fa38074d4ad7bf7`.
+`use-cache: false` avoids unverified action-cache binaries. Empty `statedir` selects
+in-memory state; the pinned action requests ephemeral/preauthorized registration
+and registers its native post logout/daemon cleanup. Its cleanup failures emit
+warnings, so a green job alone does not prove node removal; retain post-cleanup
+and actual ephemeral-device removal evidence during hosted acceptance. Abrupt
+runner loss can defer removal to Tailscale's ephemeral-node cleanup. Leave Actions
+debug logging disabled; never upload daemon logs, credentials or state files.
+
+`--accept-dns=false --accept-routes=false --ssh=false` leaves runner DNS unchanged,
+disables accepted subnet routes and Tailscale SSH. The explicit routes=false
+follows and overrides the action's built-in routes=true argument. No subnet/exit
+route, Serve, Funnel or general-shell capability is introduced. The action pings
+`vars.KAT_CI_SSH_HOST` before native OpenSSH transport; direct or DERP connectivity
+is acceptable. Ping success is neither TCP22 authorization nor release admission.
+Join/ping failure prevents the transport step; there is no public SSH fallback.
+
+Coordinator setup under the separate approved account/network scope:
+
+1. Keep both release gates false while enrolling the server privately, preserving
+   Pi-hole, DNS and existing services. Do not add public22 forwarding: existing
+   public80/443 exposure is unchanged. Do not enable Tailscale SSH on the server.
+2. Restrict the OAuth client to **Auth Keys → Write**, only `tag:kat-release-ci`.
+   The [official scope ID](https://tailscale.com/kb/1623/trust-credentials) is
+   `auth_keys` (the Write permission, not a literal `auth_keys:write` scope ID).
+   Grant no broader device, policy, DNS or account scopes. The CI tag must not own
+   the server tag or other tags; the credential must never mint server identities.
+   Store its secret as environment-only `KAT_CI_TS_CLIENT_SECRET` and its public
+   ID as `KAT_CI_TS_CLIENT_ID` (environment or repository variable). Leave the
+   existing environment-only CI SSH key untouched; no recovery, copying or rotation.
+3. Review the **existing** tailnet policy before integrating the narrowly scoped
+   grant below. This is a fragment, NOT a replacement policy or an API instruction.
+   Use the separately enrolled server tag (`tag:kat-release-server` here):
+
+   ```json
+   {"src": ["tag:kat-release-ci"], "dst": ["tag:kat-release-server"], "ip": ["tcp:22"]}
+   ```
+
+   [Grants](https://tailscale.com/kb/1324/grants) are additive: this fragment cannot
+   restrict an existing allow-all rule. Ensure neither legacy ACLs nor grants
+   otherwise permit this CI tag; no default allow-all, wildcard destinations or
+   broader port grants. Deny all other tailnet destinations/ports by omission,
+   including DNS TCP/UDP53, web80/443 and app8765. Validate allowed TCP22 and those
+   denials against the resulting policy while preserving unrelated existing access.
+   This does not replace the runner's ordinary DNS/control-plane connectivity.
+4. Set `KAT_CI_SSH_HOST` to the actual stable server Tailscale IPv4. Rebind the
+   **same previously pinned public SSH host key** to that host identifier in
+   `KAT_CI_KNOWN_HOSTS`. Keep the existing SSH user, forced command and restrictions;
+   no host-key discovery, trust-on-first-use, fallback or personal/account keys.
+5. Publish the A2/B2 source chain and re-pin the disabled signer to **A2**, not B2.
+   For the scoped connection test, enable only the GitHub transport gate while
+   root admission stays disabled. Require fresh hosted qualification/attestation
+   and actual disabled-policy refusal, not a skipped deploy. Only after that proof
+   enable root admission for a **distinct** fresh positive release. Preserve
+   failure and cleanup receipts. Local workflow tests/lints establish wiring only:
+   no tailnet join, policy enforcement, secret delivery or live proof is implied.
 
 ## Native package compatibility
 
@@ -211,8 +277,10 @@ Enrollment does not change tone/account defaults or backfill existing accounts.
    plan includes the exact command), no forwarding/PTY/shell/SCP/SFTP/Docker-group
    access. Install only its private half as the `kat-production` environment's
    `KAT_CI_TRANSPORT_KEY`; pin the public SSH host key in `KAT_CI_KNOWN_HOSTS`, and
-   set `KAT_CI_SSH_HOST` / `KAT_CI_SSH_USER`. Confirm restrictions with denials.
-   Activate the reviewed root CI policy and then set `KAT_AUTOMATION_ENABLED=true`.
+   set `KAT_CI_SSH_HOST` / `KAT_CI_SSH_USER`. If already enrolled, retain that key
+   unchanged. Complete the private-network setup above and confirm restrictions
+   with hosted denials while root CI remains disabled. Only then activate the
+   reviewed root CI policy for a distinct fresh eligible release.
    Do not configure arbitrary sudo/Docker access or a generic command gateway.
 8. Prove a **fresh subsequent** eligible main revision end-to-end: hosted job,
    exact artifact/bundle/plan, admitted witness, non-overlap, automatic drain,
