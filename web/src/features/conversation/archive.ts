@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Workspace } from './api';
-import type { Selection } from './conversation';
-import type { ArchiveEvent, Turn } from './turns';
+import { api, ApiError, type Workspace } from '../../api';
+import type { Selection } from '../../conversation';
+import type { ArchiveEvent, Turn } from '../../turns';
 
 type TurnPage = { turns: Turn[]; next_offset: number | null };
 export type SelectedResult = { result_id: string; event_index: number | null };

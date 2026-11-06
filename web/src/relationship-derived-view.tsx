@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Workspace } from './api';
-import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { useManualResultLifecycle } from './features/charts/manual-result-lifecycle';
 import { unavailableCalculation } from './advanced-result-status';
-import { useManualChartIntent } from './manual-chart-intent';
+import { useManualChartIntent } from './features/charts/manual-chart-intent';
 import { bodyGlyph, bodyLabel, ChartNotation } from './chart-symbols';
 import { WheelExportActions } from './chart-export';
 import { point, ReturnWheel, signs, zodiac, type Chart, type NatalResult } from './natal';

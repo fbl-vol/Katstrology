@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, type Workspace } from './api';
-import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { useManualResultLifecycle } from './features/charts/manual-result-lifecycle';
 import { unavailableCalculation } from './advanced-result-status';
-import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
+import { useApplicationUtcDate, useManualChartIntent, utcDays } from './features/charts/manual-chart-intent';
 import { ReturnWheel, zodiac, type NatalResult, type Chart } from './natal';
 import type { Person } from './people';
 import { birthReference, ReturnReferencePlace, type ReferenceChoice } from './return-reference-place';

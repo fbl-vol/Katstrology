@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Workspace } from './api';
-import { AppearanceSettings } from './appearance';
+import type { Workspace } from '../../api';
+import { AppearanceSettings } from '../../appearance';
 import { ProviderSettings, useProvider } from './provider';
-import { SourceNotice } from './source-notice';
-import { themes, readTheme } from './themes';
+import { SourceNotice } from '../../source-notice';
+import { themes, readTheme } from '../../themes';
 import { ToneSettings, useTone } from './tone-settings';
 
 type Panel = 'appearance' | 'tone' | 'connection' | 'about';

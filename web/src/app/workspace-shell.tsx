@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, type Workspace } from '../api';
-import { useConversationWorkflow } from '../conversation-workflow';
+import { useConversationWorkflow } from '../features/conversation/conversation-workflow';
 import { LocalPendingMessage } from '../local-pending';
 import { ConversationBrowseList, ScopeChips, ScopePicker } from '../conversation';
 import { ContextChart } from '../context-chart';
 import { ConversationMenu } from '../conversation-menu';
 import { TurnCard } from '../turns';
 import { CreatePersonDialog, PersonDetail, type Person } from '../people';
-import { useProvider } from '../provider';
-import { SettingsView } from '../settings';
+import { useProvider } from '../features/settings/provider';
+import { SettingsView } from '../features/settings/settings';
 import { BrandKitten, ReadingKitten } from '../kitten';
 import { TransitView } from '../transit-view';
 import { ChartHub } from '../chart-hub';
@@ -22,8 +22,8 @@ import { LunationsView } from '../lunations-view';
 import { PlanetaryReturnsView } from '../planetary-returns-view';
 import { useGrowingComposer } from '../chat-scroll';
 import { SynastryView } from '../synastry-view';
-import { useWorkspaceNavigation } from '../workspace-navigation';
-import { useConversationDiscovery } from '../conversation-discovery';
+import { useWorkspaceNavigation } from './workspace-navigation';
+import { useConversationDiscovery } from '../features/conversation/conversation-discovery';
 
 export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspace; onSignedOut: () => void }) {
   const [notice, setNotice] = useState('');

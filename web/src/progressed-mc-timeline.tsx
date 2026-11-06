@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiError, type Workspace } from './api';
-import { useApplicationUtcDate, useManualChartIntent, utcDays } from './manual-chart-intent';
+import { useApplicationUtcDate, useManualChartIntent, utcDays } from './features/charts/manual-chart-intent';
 import { bodyLabel, ChartNotation } from './chart-symbols';
 import { zodiac } from './natal';
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type Workspace } from './api';
-import type { Conversation } from './conversation';
-import type { useWorkspaceNavigation } from './workspace-navigation';
+import { api, type Workspace } from '../../api';
+import type { Conversation } from '../../conversation';
+import type { useWorkspaceNavigation } from '../../app/workspace-navigation';
 
 type ThreadPage = { conversations: Conversation[]; next_offset: number | null; search_pending: number };
 type Navigation = ReturnType<typeof useWorkspaceNavigation>;

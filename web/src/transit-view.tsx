@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { api, ApiError, type Workspace } from './api';
-import { useManualChartIntent } from './manual-chart-intent';
+import { useManualChartIntent } from './features/charts/manual-chart-intent';
 import { TransitResult, type TransitResultData } from './transit-result';
 import type { Person } from './people';
 

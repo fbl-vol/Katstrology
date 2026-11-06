@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Workspace } from './api';
-import { useManualResultLifecycle } from './manual-result-lifecycle';
-import { useApplicationUtcDate, useManualChartIntent } from './manual-chart-intent';
+import { useManualResultLifecycle } from './features/charts/manual-result-lifecycle';
+import { useApplicationUtcDate, useManualChartIntent } from './features/charts/manual-chart-intent';
 import { bodyLabel } from './chart-symbols';
 import { zodiac } from './natal';
 import { SymbolicComparisonWheel } from './symbolic-comparison-wheel';

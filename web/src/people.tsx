@@ -3,10 +3,10 @@ import { api, type Workspace } from './api';
 import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from './natal';
 import { InsightNotebook } from './insights';
-import { PersonTiming } from './person-timing';
-import { PersonRecords } from './person-records';
+import { PersonTiming } from './features/people/person-timing';
+import { PersonRecords } from './features/people/person-records';
 import { AstrologyHelp } from './astrology-help';
-import type { SelectedResult } from './archive';
+import type { SelectedResult } from './features/conversation/archive';
 
 export type Draft = { birth_date: string; birth_time: string; birthplace: string; time_unknown: boolean };
 export type EditorLocation = { kind: 'catalogue' | 'manual' | 'review';

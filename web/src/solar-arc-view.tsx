@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Workspace } from './api';
-import { useApplicationUtcDate, useManualChartIntent } from './manual-chart-intent';
+import { useApplicationUtcDate, useManualChartIntent } from './features/charts/manual-chart-intent';
 import { bodyLabel } from './chart-symbols';
 import { zodiac } from './natal';
 import { SymbolicComparisonWheel } from './symbolic-comparison-wheel';
 import { unavailableCalculation } from './advanced-result-status';
-import { useManualResultLifecycle } from './manual-result-lifecycle';
+import { useManualResultLifecycle } from './features/charts/manual-result-lifecycle';
 import type { Person } from './people';
 
 type Direction = { id: string; longitude_degrees: number; source_longitude_degrees: number;

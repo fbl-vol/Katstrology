@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Workspace } from './api';
+import { api, ApiError, type Workspace } from '../../api';
 
 type Result = { status: string; id?: string; source_status?: string };
 type History = { id: string };

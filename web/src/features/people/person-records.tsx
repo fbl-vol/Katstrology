@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, type Workspace } from './api';
-import { useApplicationUtcDate } from './manual-chart-intent';
-import type { SelectedResult } from './archive';
+import { api, type Workspace } from '../../api';
+import { useApplicationUtcDate } from '../charts/manual-chart-intent';
+import type { SelectedResult } from '../conversation/archive';
 
 type Reminder = { wall_time: string; zone: string; fold: number | null; instant_utc: string };
 type Watch = { id: string; result_id: string; event_index: number | null; note: string;
