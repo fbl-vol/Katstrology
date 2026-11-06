@@ -1,6 +1,6 @@
 # Reference library
 
-[Documentation index](README.md) · [Source coverage](../m2/STARTER-SOURCES.md)
+[Documentation index](README.md) · [Source coverage](reference-sources.md)
 
 Import, editorial selection, rights and claim support are separate decisions.
 An imported edition is not automatically selected or endorsed. Reference text is

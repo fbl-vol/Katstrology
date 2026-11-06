@@ -38,7 +38,7 @@ not silently duplicate or hide cases.
 For provider continuation use the repository
 [regression selector](../.agents/skills/kat-provider-continuation-regression/SKILL.md).
 For UI changes inspect actual desktop/mobile/short-height renders as described in
-[frontend development](../web/README.md); assertions alone are insufficient.
+[frontend development](frontend-development.md); assertions alone are insufficient.
 Private reference comparison is opt-in and unavailable in a public-only checkout.
 
 Release/workflow/security-contract tests are under `tests/deploy/`; runtime,

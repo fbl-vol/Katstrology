@@ -1,4 +1,6 @@
-# Unattended releases (source contract, not installed automation)
+# Unattended releases
+
+[Documentation index](../README.md) · [Manual release](releases.md)
 
 The manual protocol4 gateway remains available. CI uses a separate keyless
 admission adapter and **the same** lock, active-attempt fence, native snapshot,
@@ -58,8 +60,7 @@ success would be circular. Run attempt, timestamp and successful mandatory job
 are checked instead. Network authorization stops after the root-owned admission
 witness is frozen; later phases do not re-fetch mutable policy decisions.
 
-A root administrator or an authorized protected-main change remains a trust
-principal. Source-controlled tests cannot prove an authorized source change is
+Your root access and approved protected-main changes remain trust principals. Source-controlled tests cannot prove an authorized source change is
 benevolent. Protect workflow, deployment and runtime admission code accordingly;
 CODEOWNERS alone is not enforcement. No broad access token is needed by the
 release job: normal `GITHUB_TOKEN` scopes above suffice. The server's public API
@@ -70,7 +71,7 @@ reads are token-free and bounded; exhaustion/unavailability fails closed.
 A declaration change needs two source commits: first commit the reusable contract
 and its checks (A), then pin the caller's trusted-release reference to that exact A
 and add the named forwarding (B). Keep the independent qualification pin unchanged.
-The coordinator must publish the chain and re-pin the **disabled** root signer to A
+The separately approved publication/adoption must pin the **disabled** root signer to A
 before fresh hosted acceptance; it must not be pinned to B merely because B is the
 candidate source. This does not authorize changing any other trust field or reading,
 copying or rotating the environment-held private key. A failure before SSH is not
@@ -78,7 +79,7 @@ proof of server refusal. Use a fresh hosted refusal followed by a distinct fresh
 positive release, never replay a failed run. Local contract/lint checks do not prove
 GitHub environment-secret resolution or unattended delivery.
 
-## Private release network — coordinator-owned setup
+## Private release network
 
 Only `deploy`, after its main/push/attempt1/enabled checks and `kat-production`
 environment gate, runs [tailscale/github-action v4.4.0](https://github.com/tailscale/github-action/tree/064b10558093f38325e838ddea35486bdc6b1d5c).
@@ -98,12 +99,8 @@ debug logging disabled; never upload daemon logs, credentials or state files.
 
 The pinned action unconditionally supplies `--accept-routes` to native `up`.
 Tailscale `1.104.5` rejects repeated flags (`onceFlagValue`/`noDupFlagify`), rather
-than letting a later value override an earlier one. The first private hosted run
-42012431132 at `7f4bfefa` qualified/attested, but all five vendor attempts failed
-parsing the duplicate routes flag **before any SSH**. The previous override claim
-and the static test encoding it were wrong; retrying that argv cannot repair it.
-
-The required chronology is now:
+than letting a later value override an earlier one. Do not add a second routes
+flag to `up`. The required chronology is:
 
 1. Native action `up` supplies routes=true once. Our additional args are only
    `--accept-dns=false --ssh=false`; ephemeral memory state and native peer ping
@@ -127,13 +124,10 @@ Pi-hole/DNS, public80/443, host pin, secrets and provenance permissions are unch
 No subnet/exit route, Serve, Funnel or general-shell capability is introduced.
 
 Focused regression checks cover unique vendor-composed flags and mandatory
-join/ping -> native set -> transport ordering. A local experiment with the actual
-SHA-pinned `1.104.5` CLI reproduces the old parse error; repaired `up` and `set`
-parse successfully and stop at an owned missing socket in an empty, network-isolated
-sandbox. No daemon, credentials or authentication are used. This proves parsing,
-not live preference application, routing, logout or hosted release acceptance.
+join/ping → native set → transport ordering. Static wiring or isolated CLI parsing
+does not establish live preferences, routing, logout or hosted acceptance.
 
-Coordinator setup under the separate approved account/network scope:
+Setup requires the separate approved account/network scope:
 
 1. Keep both release gates false while enrolling the server privately, preserving
    Pi-hole, DNS and existing services. Do not add public22 forwarding: existing
@@ -165,7 +159,8 @@ Coordinator setup under the separate approved account/network scope:
    **same previously pinned public SSH host key** to that host identifier in
    `KAT_CI_KNOWN_HOSTS`. Keep the existing SSH user, forced command and restrictions;
    no host-key discovery, trust-on-first-use, fallback or personal/account keys.
-5. Publish the A3/B3 source chain and re-pin the disabled signer to **A3**, not B3.
+5. Publish the reviewed contract/caller chain and pin the disabled signer to the
+   immutable reusable-workflow commit, not merely the newest caller commit.
    For the scoped connection test, enable only the GitHub transport gate while
    root admission stays disabled. Require fresh hosted qualification/attestation
    and actual disabled-policy refusal, not a skipped deploy. Only after that proof
@@ -268,9 +263,9 @@ Enrollment does not change tone/account defaults or backfill existing accounts.
    controller and template bytes must match the retained installed package;
    preparation refuses an implicit update. Preserve the complete manual policy,
    signer, target and allowlist. This preparation requires the actual finalized
-   manual24 baseline with no pending transition. Completed155 policy finalization
-   retired its consumed23→24 lane under separate completion guards; do not restore
-   the old policy. Preparation itself never advances a baseline or retires a lane.
+   schema24 manual baseline with no pending transition. A consumed 23→24 lane must
+   already be finalized under its separate completion guards; do not restore an
+   old policy. Preparation never advances a baseline or retires a lane.
    The existing gateway derives its baseline directly from that manual policy;
    no schema-override field or changed gateway contract is needed. An empty CI
    transition list admits same-schema24, not23, a new migration or manual-lane replay.
@@ -290,7 +285,7 @@ Enrollment does not change tone/account defaults or backfill existing accounts.
    still reject. No production preservation claim follows from this hosted build.
 6. Match the actual running image/source/schema to that retained package, verify
    the existing maintenance socket/open admission and absence of an active release
-   attempt. An already drain-capable schema24 app (including155) needs no bridge.
+   attempt. An already drain-capable schema24 app needs no bridge.
    Use the ordinary CI lifecycle: native quiesce, old-image snapshot, preservation,
    promotion and public verification before reopening. Do not create a bootstrap
    permit, stop via historical idle consent, downgrade or restore the old schema23
@@ -319,16 +314,15 @@ Enrollment does not change tone/account defaults or backfill existing accounts.
    or private-fixture probe is implied. A failed/ambiguous/historical run is not
    replayed/relabelled; diagnosis/recovery and another fresh revision are distinct.
 
-These are you/your agent's separately authorized adoption steps, not a handoff to
-an invented operator. Missing host access, public verifier/root bytes, repository
-settings, new transport enrollment or current runtime preflight are concrete remaining
-prerequisites. The routine path after adoption has no human release gate.
+Host access, public verifier/root bytes, repository settings, transport enrollment
+and current runtime preflight are concrete prerequisites. Local source inspection
+cannot establish them. The routine path after adoption has no human release gate.
 
 ## Local qualification
 
 Use the owning isolated-validation skill and its native execution lock. Focused
-checks include `deploy.test_release_ci`, `deploy.test_release_access`,
-`deploy.test_release_promotion`, runtime drain/HTTP/provider/browser tests and real
+checks include `tests.deploy.test_release_ci`, `tests.deploy.test_release_access`,
+`tests.deploy.test_release_promotion`, runtime drain/HTTP/provider/browser tests and real
 owned PostgreSQL migration/backup tests. Run workflow actionlint and security
 checks, then full `--profile all`; the qualification command also runs the exact
 archive through native smoke. Inspect cleanup and final source tip/tree. A native

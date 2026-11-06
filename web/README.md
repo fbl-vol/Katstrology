@@ -1,94 +1,10 @@
-# Frontend development
+# Reading Room frontend
 
-[Documentation index](../docs/README.md) · [Using Kat](../docs/using-kat.md)
+- [Development, feature ownership, isolated checks and assets](../docs/frontend-development.md)
+- [Using Kat](../docs/using-kat.md)
+- [Synthetic validation](../docs/testing.md)
+- [Documentation index](../docs/README.md)
 
-Reading Room is the supported conversation UI. It talks to the same-origin Python
-server; it does not own the archive or provider credentials.
-
-## Find the code
-
-| Directory | Responsibility |
-| --- | --- |
-| `src/app/` | Session application, navigation and workspace composition |
-| `src/features/conversation/` | Discovery, drafts, archive/event rendering, composer and scroll behavior |
-| `src/features/people/` | Birth editor, people, saved passages, timing and private records |
-| `src/features/charts/` | Manual chart catalogue, technique forms, results, wheels and exports |
-| `src/features/settings/` | Appearance, provider and tone controls |
-| `src/shared/` | API client, theme tokens/styles, brand assets and source notice |
-| `tests/` | Matching capability suites; `support/` holds common fixtures/assertions |
-
-`src/main.tsx` is the Vite mount entry; `vite-env.d.ts` supplies build types.
-Do not add root compatibility re-exports for internal moves. Update callers.
-`conversation/archive.ts` remains the sole turn sender/ACK/SSE owner. Workflow
-coordinates drafts and navigation without duplicating transport or archived IDs.
-Discovery captures refresh intent before asynchronous work: background completion
-must not reset a newer search, pending older-page read or loaded history. Explicit
-All conversations navigation is a separate action.
-
-Global styles and assets live in `src/shared/`; chart and thinking styles stay
-with their feature. Theme changes must preserve the synchronous CSP-hashed
-prepaint bootstrap in `index.html`, all eighteen palettes and chart-export colors.
-
-## Validate without touching a running app
-
-From the repository root, with existing Python/Node/Chromium dependencies and
-public inputs prepared as described in the backend guide:
-
-```sh
-# Plan first: prints the owned fixture and command sequence.
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile browser
-# Execute only within the approved synthetic-validation scope.
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile browser --execute
-# Focus by test title; capability directory moves do not change titles.
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile browser --execute --browser-grep 'pinned synthetic reading layout'
-```
-
-Use the runner rather than direct `npm run test:browser`: the raw Playwright
-configuration defaults to port 8765. The runner owns a disposable database, free
-loopback port, ignored build output and cleanup. It never substitutes the current
-archive, live provider or served `web/dist`. `KAT_BROWSER_BIN` selects an already
-available Chromium; hosted qualification uses its pinned installed browser.
-Normal, fake-SIWC and fixed-clock suites have separate selectors. Test discovery
-is recursive; keep the existing basename selectors in `playwright.config.ts` in
-sync when adding tests. Screenshots and manifests remain under ignored `.local/`.
-
-The public layout suite covers 1440×1024, 1920×1080, 2560×1080, 3440×1440,
-390×844 and 390×560: general/selected-chart/long-turn scenes, geometry, navigation,
-scroll and draft continuity. Inspect rendered output as well as assertions.
-Public checks require no private mockup or historical Git object. The explicit
-`--private-layout-reference` option is only for separately authorized access to
-the pinned private reference; absent/changed inputs fail rather than silently
-substituting a new baseline. Synthetic Chromium is not physical-phone,
-virtual-keyboard, screen-reader, real-provider or human visual acceptance.
-
-## Build or serve a separate instance
-
-`npm ci --prefix web` installs locked dependencies; `npm --prefix web run build`
-writes **served `web/dist`**. Those are preparation commands for your own new
-instance, not isolated validation and not permission to overwrite an active
-build. Follow the [backend guide](../m2/README.md) for enrollment and serving, or
-[deployment guide](../deploy/README.md) for immutable packaged operation.
-
-`m2.web_server serve` supports explicit `--state-directory`, `--served-dist` and
-`--port`. Defaults are checkout `.local`, `web/dist` and 8765. Do not copy private
-state into a source tree. Store startup applies migrations; an existing archive
-requires the authorized backup/preflight before activation, not an experimental
-startup to see whether it works.
-
-## Install assets and appearance
-
-`public/manifest.webmanifest` defines stable same-origin `/` identity/start/scope.
-There is no service worker or offline archive cache. Generate checked-in icons
-from `src/shared/assets/kat-face.svg` with
-`node web/scripts/generate-install-icons.mjs` (local Chromium, no network), then
-inspect all three PNGs. Maskable artwork preserves central safe-circle padding;
-regressions check dimensions, bytes and MIME types.
-
-The static manifest uses Reading Room paper; page `theme-color` follows the
-selected palette. Browser/OS chrome, gesture areas, native splash, WebAPK install
-and real session persistence require physical-device verification. Theme choice
-uses localStorage with a safe default; it changes no chart, consent, message or
-archive record. Screen wheels follow the palette, original SVG retains a light
-fallback, PNG follows the screen and print SVG is explicitly light. Bundled WOFF
-fonts load same-origin; detached exports embed their own subset fonts. Preserve
-[font notices](../THIRD-PARTY-NOTICES.md) when moving assets.
+Implementation lives in `src/app`, `src/features` and `src/shared`; browser suites
+mirror those responsibilities under `tests/`. `web/dist` is generated served output,
+not an isolated test destination or a substitute for preferred source.

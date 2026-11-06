@@ -1,4 +1,6 @@
-# Western tropical natal chart · local synthetic boundary
+# Western tropical natal charts
+
+[Documentation index](README.md) · [Advanced methods](advanced-calculations.md)
 
 This feature is opt-in per immutable chart version. A person can remain name-only
 or hold unverified draft details without a chart. `solar-default` and existing
@@ -20,7 +22,7 @@ selected place supplies **city-centre reference coordinates**, country/region an
 IANA identifier; it never verifies the person's precise birthplace, birth time
 or timezone border. Its provenance and the user's provisional confidence are
 stored separately. Historical offsets use Python IANA zoneinfo for the supplied
-date, not GeoNames' current UTC offset. See [`data/README.md`](data/README.md)
+date, not GeoNames' current UTC offset. See [place-data contract](../m2/data/README.md)
 for the source, license and coverage limits. The older API can still store
 explicit records without coordinates; it never geocodes a free-text label.
 Without coordinates, planetary degrees and major aspects
@@ -55,10 +57,11 @@ is original static geometry with no remote
 assets or arbitrary markup. Wheel geometry is a visualization, not a source
 of new facts. Missing ephemeris files or non-Swiss returned flags fail closed;
 no Moshier fallback. Declared conservative date span: 1900–2099 UTC, within
-the locally available 1800–2399 `.se1` files. Later services add bounded
-transit views and two-chart ecliptic-longitude comparison on saved generated
-natals; they do not add rectification, house overlays, composite charts,
-compatibility scores, an interpretation engine or uploaded-image permission.
+the locally available 1800–2399 `.se1` files. Separate services provide bounded transit views, synastry/house overlays and
+derived relationship charts on saved generated natals; their distinct contracts
+are in [advanced methods](advanced-calculations.md). No rectification,
+compatibility score, validated interpretation engine or uploaded-image permission
+is implied.
 
 Black Moon Lilith is **off by default**, not a rewrite of saved profiles or charts.
 An explicit per-chart `include_lilith: "mean" | "osculating"` selects Swiss
@@ -75,7 +78,7 @@ Unknown birth time still produces no full natal apogee placement. Solar return
 charts inherit the saved convention; other techniques do not silently add it.
 The independent rounded example in [Lilith in Capricorn](https://horoscopetools.com/guides/lilith-in-capricorn/)
 records 2017-11-09 03:58:17 UTC at mean 270.0000775° and osculating
-242.4181950°. `m2.test_lilith` verifies both with the installed Swiss
+242.4181950°. `tests.calculation.test_lilith` verifies both with the installed Swiss
 2.10.03 engine and pinned lunar/planetary files, without using that site's
 interpretation as authority.
 
@@ -116,7 +119,12 @@ only computational anchors, not approval of a person's historical birth time):
   reproduce the **published input**, not a verified biography. Public chart
   art and interpretations are neither copied nor used as product assets.
 
-Run `OPENBLAS_NUM_THREADS=2 .venv-swiss/bin/python -m unittest m2.test_natal -v`
-with a disposable test PostgreSQL instance; the numerical reference tests run
-without PostgreSQL. Browser checks live in `web/tests/natal.spec.ts` against a
-separate synthetic browser fixture, not your own app or data.
+Run through the [isolated validation runner](testing.md):
+
+```sh
+python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile backend --tests tests.calculation.test_natal --execute
+```
+
+The suite includes database-backed version/source contracts and independent
+numerical anchors. Browser checks live in `web/tests/charts/natal.spec.ts` and
+`web/tests/charts/natal-wheel.spec.ts`, using a separate synthetic fixture.

@@ -1,8 +1,9 @@
-# Starter references and coverage boundary
+# Reference sources and coverage
 
-**Operator-selected for a narrow engineering fixture, not Kat-selected or trusted
-interpretive authority:** one short OpenStax *Astronomy* section 4.2 paragraph is
-tracked at `data/openstax-seasons-excerpt.txt` with its exact located manifest.
+[Documentation index](README.md) · [Import and selection](reference-library.md)
+
+**Included for a narrow engineering fixture, not selected interpretive authority:** one short OpenStax *Astronomy* section 4.2 paragraph is
+tracked at `m2/data/openstax-seasons-excerpt.txt` with its exact located manifest.
 The [edition preface](https://openstax.org/books/astronomy/pages/preface) states
 CC BY 4.0 and permits redistribution with attribution to OpenStax and contributors;
 [section 4.2](https://openstax.org/books/astronomy/pages/4-2-the-seasons) provides
@@ -26,7 +27,7 @@ editions must be verified separately before inclusion.
 | [OpenStax *Astronomy* 4.2, The Seasons](https://openstax.org/books/astronomy/pages/4-2-the-seasons) | One text-only paragraph imported as an optional redistributable fixture, not an interpretive collection. | [This edition's preface](https://openstax.org/books/astronomy/pages/preface) says CC BY 4.0 with OpenStax/contributor attribution. Figures and full page are not retained; do not conflate with *Astronomy 2e*. |
 | [Astrodienst Swiss Ephemeris manuals](https://www.astro.com/swisseph/swisseph.htm) | Technical method/configuration links only. | The [author's software licensing page](https://www.astro.com/swisseph/sweph_g.htm?lang=t) says AGPL or Professional License before distribution/public service; that does **not** license reproduction of manual text. Link, do not ingest it without separately established content terms. |
 
-## Interpretive candidates researched (2026-10-29; no ingestion or endorsement)
+## Historical interpretive candidates (not bundled or endorsed)
 
 | Exact candidate | Source and rights evidence | Editorial / ingestion boundary |
 | --- | --- | --- |
@@ -36,7 +37,8 @@ editions must be verified separately before inclusion.
 
 These source-specific notices support researching a small historical corpus, not
 unrestricted ingestion of arbitrary internet books or a selected author/tradition.
-No historical author above is ingested or selected. Actual text from any of those
+The public repository includes no text from these historical authors; selection
+in an individual private archive is a separate decision. Actual text from any of those
 works needs verified edition, applicable rights, section/page and explicit local
 inclusion. Fixture source selection never means Kat endorsement or empirical support. Differences
 between astronomical facts, historical interpretation, user reports and synthesis

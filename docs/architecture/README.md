@@ -61,7 +61,7 @@ not move transport/ACK/SSE ownership out of the archive module.
 | `tests/` | Capability-grouped backend/release contracts; common database/template support |
 | `probes/` | Separate feasibility/numerical checks and legacy probe import contract |
 
-The [backend guide](../../m2/README.md) records the evidence-backed root CLI and
+The [backend guide](../backend-development.md) records the evidence-backed root CLI and
 installed compatibility exceptions. Resource paths `m2/migrations`, `m2/data`,
 requirements and model license stay stable. Docker explicitly copies production
 packages; tests are not runtime dependencies. The source offer includes preferred

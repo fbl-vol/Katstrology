@@ -57,7 +57,7 @@ The Quiet Overview leads to conversations, Charts and Saved. Exact-time natal
 charts provide qualified planets/nodes, houses/angles, aspects, accessible tables
 and downloadable wheels. Unsupported houses remain visibly partial. Child's
 natal uses the same method with a family-focused explanation, not a distinct
-record, diagnosis or personality classification. See [natal conventions](../m2/NATAL-CHART.md).
+record, diagnosis or personality classification. See [natal conventions](natal-charts.md).
 
 ## Manual charts and timing
 
@@ -66,7 +66,7 @@ two distinct people's current exact-time generated natals, labelled rings and
 actual inter-chart aspects; it does not manufacture a relationship score. House
 overlays require supported recipient houses. Returns, progressions, true solar
 arc, MC contacts, progressed phases, lunations/eclipses and derived relationship
-charts retain their distinct [method contracts](../m2/ADVANCED-TECHNIQUES.md).
+charts retain their distinct [method contracts](advanced-calculations.md).
 Solar returns expose UTC anniversary bounds and zero/one/multiple crossings.
 Return places default to saved birthplace and may be explicitly changed.
 Historical results keep original sources rather than silently recalculating.
@@ -131,7 +131,7 @@ Export before removing material you need. Explicit conversation/person deletion
 uses the deletion journal and dependency rules; a person with related
 conversations cannot be deleted first. Independent exports are not revoked by
 managed deletion. Do not discard the independent deletion authority when restoring
-an older backup. See [backend recovery](../m2/README.md) for local archives and
+an older backup. See [archive recovery](archive-and-recovery.md) for local archives and
 [deployment recovery](../deploy/README.md) for packaged operation.
 
 Synthetic checks do not establish live-provider eligibility, response quality,
