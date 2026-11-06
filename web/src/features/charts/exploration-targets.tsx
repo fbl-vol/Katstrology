@@ -72,7 +72,7 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
       points={p.vertices.map(v => `${v.x},${v.y}`).join(' ')} fill="transparent" /></g>)}
     {aspects.map(a => <g key={a.entry.id} {...control(a.entry)}>
       {a.kind === 'conjunction' && <path d={a.path} fill="none" stroke="var(--wheel-aspect-gold, #a87931)" strokeWidth="1" />}
-      <path d={a.path} fill="none" stroke="transparent" strokeWidth="8" />
+      <path d={a.path} fill="none" stroke="transparent" strokeWidth="8" strokeLinecap="round" />
       {a.kind === 'conjunction' && <circle cx={a.a.x} cy={a.a.y} r="5" fill="transparent" stroke="transparent" strokeWidth="8" vectorEffect="non-scaling-stroke" />}
     </g>)}
     {houses.map(h => <g key={h.entry.id} {...control(h.entry)}><circle cx={h.center.x} cy={h.center.y} r="12"

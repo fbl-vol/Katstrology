@@ -3,9 +3,9 @@ import type { Exploration, Pattern } from '../../src/features/charts/exploration
 
 // Presentation-only fixture: explicit graphs, not a second pattern detector.
 // The API/detector tests independently verify real saved-graph derivation.
-export function patternFixture(chart: Chart): Exploration {
+export function patternFixture(chart: Chart, multiple = false): Exploration {
   const degrees: Record<string, number> = { sun: 142, moon: 262, mercury: 143, venus: 164,
-    mars: 73, jupiter: 22, saturn: 345.5, uranus: 302, neptune: 254, pluto: 246,
+    mars: 73, jupiter: 22, saturn: 345.5, uranus: 302, neptune: 254, pluto: multiple ? 255 : 246,
     north_node: 70, south_node: 250 };
   const natal = chart.result.natal!;
   natal.positions = natal.positions.map(p => {
@@ -39,6 +39,19 @@ export function patternFixture(chart: Chart): Exploration {
     { id: `${chart.id}|t-saturn`, kind: 't_square', members: ['mars', 'saturn', 'neptune'], apex: 'saturn',
       edges: [edge('mars', 'saturn', 'square'), edge('mars', 'neptune', 'opposition'), edge('saturn', 'neptune', 'square')], contained_by: [cross.id] },
   ];
-  return { chart_id: chart.id, rule_version: 'natal-patterns-v1', source_status: 'current', status: 'supported', reason: null,
-    patterns: [trine, cross, ...children] };
+  const patterns = [trine, cross, ...children];
+  if (multiple) {
+    // A second fourth corner shares the Venus/Mars/Saturn T-square.
+    const extra: [string, string, string, number][] = [
+      ['venus', 'pluto', 'square', 1], ['mars', 'pluto', 'opposition', 2], ['saturn', 'pluto', 'square', .5],
+    ];
+    natal.aspects.push(...extra.map(([first, second, kind, orb_degrees]) => ({ first, second, kind, orb_degrees, exact_degrees: exact[kind] })));
+    const otherId = `${chart.id}|cross-pluto`;
+    const replace = (id: string) => id.replace('neptune', 'pluto');
+    patterns.push({ ...cross, id: otherId, members: cross.members.map(replace), edges: cross.edges.map(replace) });
+    children[0].contained_by.push(otherId);
+    patterns.push(...children.slice(1).map(p => ({ ...p, id: `${p.id}-pluto`, members: p.members.map(replace),
+      edges: p.edges.map(replace), apex: replace(p.apex!), contained_by: [otherId] })));
+  }
+  return { chart_id: chart.id, rule_version: 'natal-patterns-v1', source_status: 'current', status: 'supported', reason: null, patterns };
 }

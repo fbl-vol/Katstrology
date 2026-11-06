@@ -165,7 +165,10 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   await form.getByRole('button', { name: 'Generate chart' }).click();
   const partial = page.locator('.profile-active-chart');
   await expect(partial.getByText(/No substitute system or ascendant was invented/)).toBeVisible();
-  await expect(partial.getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
+  await expect(partial.locator('svg.natal-wheel')).toHaveCount(0);
+  await partial.getByRole('tab', { name: /^Patterns/ }).click();
+  await expect(partial.getByRole('tab', { name: /^Patterns \d+$/ })).toBeVisible();
+  await expect(partial.getByText(/Patterns need established/)).toHaveCount(0);
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByLabel('House system').selectOption('whole_sign');
   await form.getByLabel('North node').selectOption('mean');
@@ -173,6 +176,15 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   const whole = page.locator('.profile-active-chart');
   await expect(whole.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
   await expect(whole.getByText(/whole_sign houses · mean north node/)).toBeVisible();
+  const personId = await personIdFor(page, 'Synthetic polar chart');
+  const record = await (await page.request.get(`/api/people/${personId}`)).json();
+  const facts = record.charts.find((c: { id: string }) => c.id === record.active_chart_id).result.natal;
+  const mc = facts.houses.angles.find((p: { id: string }) => p.id === 'midheaven').longitude_degrees;
+  expect(mc).not.toBe(facts.houses.cusps[9].longitude_degrees);
+  await whole.getByRole('tab', { name: /^Houses/ }).click();
+  await whole.locator('[data-entry="midheaven"]').click();
+  await expect(whole.getByRole('region', { name: 'Chart browser and selected detail' })).toContainText(`${mc.toFixed(4)}°`);
+  await expect(whole.locator('[data-highlight-body="midheaven"]')).toHaveCount(1);
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByRole('spinbutton', { name: 'square' }).fill('0.1');
   await form.getByRole('button', { name: 'Generate chart' }).click();
