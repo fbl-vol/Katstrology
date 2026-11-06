@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type Workspace } from '../../api';
+import { api, type Workspace } from '../../shared/api';
 import { useApplicationUtcDate, utcDays } from '../charts/manual-chart-intent';
-import type { Person } from '../../people';
+import type { Person } from './people';
 import type { SelectedResult } from '../conversation/archive';
-import { SavedResultDetail, type SavedCalculation } from '../../saved-result-detail';
+import { SavedResultDetail, type SavedCalculation } from '../charts/saved-result-detail';
 
 type Point = { index: number | null; kind: string; instant_utc: string; phase?: string;
   family?: string; eclipse_type?: string; pass_direction?: string; body?: string;

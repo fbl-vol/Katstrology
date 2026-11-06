@@ -1,8 +1,8 @@
 import { useRef, useState, type RefObject } from 'react';
-import { api, type Workspace } from '../../api';
+import { api, type Workspace } from '../../shared/api';
 import { useArchiveChat, type SelectedResult } from './archive';
-import type { Conversation, Selection } from '../../conversation';
-import type { Turn, TurnActions } from '../../turns';
+import type { Conversation, Selection } from './conversation';
+import type { Turn, TurnActions } from './turns';
 import type { useWorkspaceNavigation } from '../../app/workspace-navigation';
 import type { useConversationDiscovery } from './conversation-discovery';
 

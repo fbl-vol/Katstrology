@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import type { Conversation } from '../conversation';
-import type { Person } from '../people';
-import type { ChartChoice } from '../chart-hub';
-import type { AdvancedDraft } from '../advanced-view';
-import type { PlanetaryReturnDraft } from '../planetary-returns-view';
+import type { Conversation } from '../features/conversation/conversation';
+import type { Person } from '../features/people/people';
+import type { ChartChoice } from '../features/charts/chart-hub';
+import type { AdvancedDraft } from '../features/charts/advanced-view';
+import type { PlanetaryReturnDraft } from '../features/charts/planetary-returns-view';
 
 type ReturnIntent =
   | { kind: 'advanced'; choice: 'solar_return' | 'lunar_return'; draft: AdvancedDraft }

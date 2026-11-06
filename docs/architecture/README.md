@@ -73,9 +73,11 @@ proposal to split it into microservices or evidence of production readiness.
 
 | Responsibility | Current implementation |
 | --- | --- |
-| Workspace view/overlay navigation, return intents and request generations | `web/src/workspace-navigation.ts` (rendering and conversation-create/list coordination remain in `web/src/main.tsx`) |
-| Committed chat transport, pending IDs, ACKs and archive paging | `web/src/archive.ts` (`web/src/main.tsx` supplies the composer and send/list orchestration) |
-| Provider connection display and turn rendering | `web/src/provider.tsx`, `turns.tsx` |
+| Mount, session lifetime, workspace navigation and shell | `web/src/main.tsx`, `web/src/app/` |
+| Discovery, draft workflow, committed transport/ACK/SSE and turn rendering | `web/src/features/conversation/`; `archive.ts` is the sole sender |
+| People, chart workflows and settings | `web/src/features/{people,charts,settings}/` |
+| Shared API, theme/style and brand assets | `web/src/shared/` |
+| Browser regressions and common assertions | `web/tests/{app,charts,conversation,people,settings,provider,layout,support}/` |
 | HTTP/security boundary and serialized lifecycle | `m2/http_boundary/{boundary,runtime,config,app}.py`, `m2/web_server.py` (compatible entry/facade), `m2/web_auth.py` |
 | Checked Swiss/time/angle primitives and owner-qualified natal source | `m2/calculation/{ephemeris,time,chart_source}.py`; technique solvers remain separate |
 | People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
@@ -83,7 +85,7 @@ proposal to split it into microservices or evidence of production readiness.
 | Committed-turn selection and qualified evidence | `m2/turn_context.py` (snapshot read), `m2/evidence_links.py` (existing chart/reference command events); `gateway.py` alone sequences archive writes and provider reads |
 | Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |
 | Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `core_calc.py` (`probes/core_calc.py` is a compatibility re-export) |
-| Natal SVG wheel and accessible placement/aspect tables | `web/src/natal.tsx` |
+| Natal SVG wheel and accessible placement/aspect tables | `web/src/features/charts/natal.tsx` |
 | Optional provider authentication/inference | `m2/siwc.py`, `provider_model.py` |
 | Private files, deletion and restore | `m2/attachments.py`, `deletion.py`, `backup.py` |
 | Alternative local tools | `m2/cli.py`, `fixture_cli.py`, `mcp_server.py` |

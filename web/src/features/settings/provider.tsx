@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type Workspace } from '../../api';
+import { api, type Workspace } from '../../shared/api';
 
 type Account = { client_id: string; email: string | null; plan_enabled: boolean; selected: boolean };
 type Status = { available: boolean; connected: boolean; selected: string | null; accounts: Account[];

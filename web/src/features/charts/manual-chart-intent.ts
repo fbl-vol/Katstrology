@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api } from '../../api';
+import { api } from '../../shared/api';
 
 /** The app-observed UTC date, not the browser's unverified local clock or location. */
 export function useApplicationUtcDate() {

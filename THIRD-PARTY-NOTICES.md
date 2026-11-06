@@ -20,7 +20,7 @@ interpretive endorsement.
 
 ## Bundled font subsets
 
-`web/src/assets/kat-astro-forms.woff` and `kat-astro-sun.woff` are subsets of Noto Sans Symbols and Noto Sans Symbols 2 respectively. Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols). The font software remains under the [SIL Open Font License 1.1](web/src/assets/OFL-Noto.txt); the original font project and its preferred sources are at [notofonts/symbols](https://github.com/notofonts/symbols). Subsetting/WOFF conversion changes the font files, not their license.
+`web/src/shared/assets/kat-astro-forms.woff` and `kat-astro-sun.woff` are subsets of Noto Sans Symbols and Noto Sans Symbols 2 respectively. Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols). The font software remains under the [SIL Open Font License 1.1](web/src/shared/assets/OFL-Noto.txt); the original font project and its preferred sources are at [notofonts/symbols](https://github.com/notofonts/symbols). Subsetting/WOFF conversion changes the font files, not their license.
 
 ## Packaged public CPU embedding model
 

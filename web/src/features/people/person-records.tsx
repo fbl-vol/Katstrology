@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, type Workspace } from '../../api';
+import { api, type Workspace } from '../../shared/api';
 import { useApplicationUtcDate } from '../charts/manual-chart-intent';
 import type { SelectedResult } from '../conversation/archive';
 

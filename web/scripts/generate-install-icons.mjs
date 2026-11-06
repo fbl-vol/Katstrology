@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 
 const web = resolve(import.meta.dirname, '..');
-const face = readFileSync(resolve(web, 'src/assets/kat-face.svg'), 'utf8');
+const face = readFileSync(resolve(web, 'src/shared/assets/kat-face.svg'), 'utf8');
 const output = resolve(web, 'public/icons');
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.KAT_BROWSER_BIN || '/usr/bin/chromium-browser' });

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, ApiError, type Workspace } from '../api';
-import { SourceNotice } from '../source-notice';
+import { api, ApiError, type Workspace } from '../shared/api';
+import { SourceNotice } from '../shared/source-notice';
 import { WorkspaceShell } from './workspace-shell';
 
 /** Session lifetime is the boundary for all mounted workspace state. */

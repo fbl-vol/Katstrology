@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type Workspace } from '../../api';
+import { api, type Workspace } from '../../shared/api';
 
 type Profile = { id: string; version: number; name: string; voice_label: string;
   description: string; example: string };
