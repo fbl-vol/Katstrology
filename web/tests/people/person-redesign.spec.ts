@@ -30,18 +30,18 @@ for (const viewport of [
 
     await page.getByRole('tab', { name: 'Charts' }).click();
     const chart = page.locator('.profile-active-chart');
-    await expect(chart.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
-    await expect(chart.getByRole('table', { name: /Planet and lunar node positions/ })).toBeVisible();
+    await expect(chart.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
+    await expect(chart.getByRole('tab', { name: /^Positions/ })).toBeVisible();
     await expect(chart.getByRole('button', { name: 'Download safe SVG wheel' })).toBeVisible();
     const wheel = await chart.locator('.natal-wheel-frame').boundingBox();
-    const data = await chart.locator('.person-chart-data').boundingBox();
+    const data = await chart.locator('.explorer-panel').boundingBox();
     expect(wheel).not.toBeNull(); expect(data).not.toBeNull();
     if (viewport.width > 1120) {
       expect(data!.x).toBeGreaterThan(wheel!.x + wheel!.width - 2);
       expect(data!.y).toBeLessThan(wheel!.y + wheel!.height);
     } else expect(data!.y).toBeGreaterThan(wheel!.y + wheel!.height - 2);
-    await chart.getByRole('tab', { name: 'Aspects' }).click();
-    await expect(chart.getByRole('table', { name: /Major aspects/ })).toBeVisible();
+    await chart.getByRole('tab', { name: /^Aspects/ }).click();
+    await expect(chart.getByLabel('Find in aspects')).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: resolve(renders, `person-charts-${viewport.name}.png`), fullPage: true });
 

@@ -69,7 +69,7 @@ for (const viewport of viewports) {
       await page.screenshot({ path: resolve(renders, `${viewport.name}-${label}-overview.png`) });
       await page.getByRole('tab', { name: 'Charts' }).click();
       await expect(page.locator('.profile-chart-heading')).toContainText('saved birth time 04:00');
-      await expect(page.locator('.profile-active-chart').getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
+      await expect(page.locator('.profile-active-chart').getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
       await page.screenshot({ path: resolve(renders, `${viewport.name}-${label}-charts.png`) });
     }
     if (viewport.name === 'desktop') {

@@ -31,7 +31,7 @@ for (const viewport of [
     await overview.focus(); await overview.press('ArrowRight');
     await expect(charts).toBeFocused();
     await expect(charts).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
+    await expect(page.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
     await page.screenshot({ path: resolve(renders, `saved-chart-${viewport.name}.png`) });
     if (viewport.name === 'desktop') {
       await page.evaluate(() => localStorage.setItem('kat.appearance.theme', 'blue-hour'));

@@ -60,8 +60,9 @@ for (const viewport of [
     await expect(page.locator('.profile-active-chart')).not.toContainText('not independently verified');
     await page.locator('.profile-active-chart').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.local/one-step/chart-handoff-${viewport.name}.png` });
+    await page.locator('.profile-active-chart').getByText('All chart tables', { exact: true }).click();
     await expect(page.locator('.profile-active-chart').getByRole('table', { name: 'Planet and lunar node positions' })).toBeVisible();
-    await expect(page.locator('.profile-active-chart').getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
+    await expect(page.locator('.profile-active-chart').getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
     await page.locator('.profile-active-chart').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.local/one-step/generated-${viewport.name}.png` });
     await page.getByRole('button', { name: 'Start conversation' }).click();

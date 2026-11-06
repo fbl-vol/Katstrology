@@ -42,7 +42,7 @@ test('eight added palettes keep natal geometry, screen PNG colors and light prin
     await page.locator('.chart-history > summary').click();
     const chart = page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"]`);
     await chart.locator(':scope > summary').click();
-    const wheel = chart.getByRole('img', { name: /Tropical natal wheel/ });
+    const wheel = chart.getByRole('group', { name: /Tropical natal wheel/ });
     await expect(wheel).toBeVisible();
     const points = await wheel.locator('line, circle, text').evaluateAll(nodes => nodes.map(node =>
       ['x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'x', 'y'].map(key => node.getAttribute(key))));
@@ -108,7 +108,7 @@ for (const viewport of [
       await page.locator('.chart-history > summary').click();
       const chart = page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"]`);
       await chart.locator(':scope > summary').click();
-      const wheel = chart.getByRole('img', { name: /Tropical natal wheel/ });
+      const wheel = chart.getByRole('group', { name: /Tropical natal wheel/ });
       await expect(wheel).toBeVisible();
       await expect(wheel.locator('line.wheel-aspect')).toHaveCount(fixture.aspectLines);
       await expect(wheel.locator('line.wheel-angle')).toHaveCount(2); // ASC/MC
@@ -116,6 +116,7 @@ for (const viewport of [
       await expect(wheel.locator('line.wheel-angle').first()).toHaveAttribute('stroke-width', '2');
       await expect(wheel.locator('line.wheel-aspect').first()).toHaveAttribute('stroke-width', '.75');
       await expect(wheel.locator('line.wheel-aspect').first()).toHaveAttribute('opacity', '.45');
+      await chart.getByText('All chart tables', { exact: true }).click();
       await expect(chart.getByRole('table', { name: /Planet and lunar node positions/ })).toBeVisible();
       await wheel.scrollIntoViewIfNeeded();
       await page.screenshot({ path: resolve(evidence, `${stage}-${fixture.name}-${viewport.name}.png`) });

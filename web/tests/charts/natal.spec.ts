@@ -107,11 +107,12 @@ for (const viewport of [
     expect(response.status()).toBe(201);
     const chartId = (await response.json()).chart.id as string;
     const chart = page.locator('.profile-active-chart');
-    await expect(chart.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
+    await expect(chart.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
+    await chart.getByText('All chart tables', { exact: true }).click();
     await expect(chart.getByRole('table', { name: /Planet and lunar node positions/ }).getByRole('row', { name: /Sun 22°25′ Scorpio/ })).toBeVisible();
-    await chart.getByRole('tab', { name: 'Houses' }).click();
+    await chart.getByRole('tab', { name: /^Houses/ }).click();
     await expect(chart.getByRole('table', { name: /Angles and placidus house cusps/ }).getByRole('row', { name: /Ascendant 5°23′ Leo/ })).toBeVisible();
-    await chart.getByRole('tab', { name: 'Aspects' }).click();
+    await chart.getByRole('tab', { name: /^Aspects/ }).click();
     await expect(chart.getByRole('table', { name: /Major aspects/ }).getByRole('row', { name: /Jupiter opposition Uranus/ })).toBeVisible();
     await expect(chart.getByText(/ecliptic-projected longitude/)).toBeHidden();
     await chart.getByText('How this chart was calculated').click();
@@ -147,6 +148,7 @@ for (const viewport of [
     await page.locator('.chart-history > summary').click();
     const history = page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"]`);
     await history.locator(':scope > summary').click();
+    await history.getByText('All chart tables', { exact: true }).click();
     await expect(history.getByRole('table', { name: /Planet and lunar node positions/ })).toBeVisible();
   });
 }
@@ -169,12 +171,13 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   await form.getByLabel('North node').selectOption('mean');
   await form.getByRole('button', { name: 'Generate chart' }).click();
   const whole = page.locator('.profile-active-chart');
-  await expect(whole.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
+  await expect(whole.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
   await expect(whole.getByText(/whole_sign houses · mean north node/)).toBeVisible();
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByRole('spinbutton', { name: 'square' }).fill('0.1');
   await form.getByRole('button', { name: 'Generate chart' }).click();
-  await page.locator('.profile-active-chart').getByRole('tab', { name: 'Aspects' }).click();
+  await page.locator('.profile-active-chart').getByRole('tab', { name: /^Aspects/ }).click();
+  await page.locator('.profile-active-chart').getByText('All chart tables', { exact: true }).click();
   await expect(page.locator('.profile-active-chart').getByRole('table', { name: /Major aspects/ })).toBeVisible();
   await page.locator('.chart-history > summary').click();
   await expect(page.locator('.chart-history > details')).toHaveCount(3);
@@ -192,6 +195,7 @@ test('legacy partial chart and new unknown-time chart never invent a wheel', asy
   await legacy.locator(':scope > summary').click();
   await expect(legacy.getByText(/Houses and angles unavailable \(unsupported missing coordinates\)/)).toBeVisible();
   await expect(legacy.getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
+  await legacy.getByText('All chart tables', { exact: true }).click();
   await expect(legacy.getByRole('table', { name: /Planet and lunar node positions/ })).toBeVisible();
   await page.getByRole('button', { name: 'Create first chart' }).first().click();
   const birth = page.getByRole('region', { name: 'Generate a chart' });
