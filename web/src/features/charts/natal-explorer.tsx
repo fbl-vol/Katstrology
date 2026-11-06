@@ -3,14 +3,20 @@ import { api } from '../../shared/api';
 import type { Chart, NatalResult } from './natal';
 import { catalogue, categories, patternExplanation, type Category, type Entry, type Exploration } from './exploration-data';
 import { Highlight, type WheelOverlay } from './exploration-geometry';
+import { ExplorationTargets, type WheelChoice } from './exploration-targets';
 import './natal-explorer.css';
 
-export function NatalExplorer({ chart, natal, wheel }: { chart: Chart; natal: NatalResult;
+export function NatalExplorer({ chart, natal, wheel, enabled }: { chart: Chart; natal: NatalResult; enabled: boolean;
   wheel: (overlay: WheelOverlay, selected: boolean) => ReactNode }) {
+  const [opened, setOpened] = useState(enabled);
+  useEffect(() => { if (enabled) setOpened(true); }, [enabled]);
   const [category, setCategory] = useState<Category>('positions');
   const [queries, setQueries] = useState<Record<Category, string>>({ positions: '', houses: '', aspects: '', patterns: '' });
   const [selected, setSelected] = useState<Entry | null>(null);
   const [detail, setDetail] = useState(false);
+  const [choices, setChoices] = useState<WheelChoice | null>(null);
+  const choiceHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (choices) choiceHeading.current?.focus(); }, [choices]);
   const [projection, setProjection] = useState<Exploration | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -19,13 +25,14 @@ export function NatalExplorer({ chart, natal, wheel }: { chart: Chart; natal: Na
   const listFocus = useRef<string | null>(null);
   const [focusList, setFocusList] = useState(0);
   useEffect(() => {
+    if (!opened) return;
     let current = true;
     setProjection(null); setFailed(false);
     api<Exploration>(`charts/${encodeURIComponent(chart.id)}/exploration`).then(value => {
       if (current && value.chart_id === chart.id) setProjection(value);
     }).catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
-  }, [chart.id, chart.source_status, attempt]);
+  }, [chart.id, chart.source_status, attempt, opened]);
   useEffect(() => {
     if (detail) heading.current?.focus({ preventScroll: true });
   }, [detail, selected]);
@@ -41,10 +48,10 @@ export function NatalExplorer({ chart, natal, wheel }: { chart: Chart; natal: Na
   const visible = entries[category].filter(e => `${e.title} ${e.subtitle} ${e.facts.flat().join(' ')}`.toLowerCase().includes(query));
   const index = selected ? entries[selected.category].findIndex(e => e.id === selected.id) : -1;
   function choose(entry: Entry) {
-    setCategory(entry.category); setSelected(entry); setDetail(true); listFocus.current = entry.id;
+    setChoices(null); setCategory(entry.category); setSelected(entry); setDetail(true); listFocus.current = entry.id;
     if (window.matchMedia('(max-width: 1050px)').matches) panel.current?.scrollIntoView({ block: 'start' });
   }
-  function browse() { setDetail(false); setFocusList(n => n + 1); }
+  function browse() { setChoices(null); setDetail(false); setFocusList(n => n + 1); }
   function entryButton(entry: Entry) {
     return <button type="button" className="explorer-entry" key={entry.id} data-entry={entry.id} onClick={() => choose(entry)}>
       <span><strong>{entry.title}</strong><small>{entry.subtitle}</small></span><span aria-hidden="true">›</span>
@@ -57,7 +64,9 @@ export function NatalExplorer({ chart, natal, wheel }: { chart: Chart; natal: Na
       open={!!query || children.some(e => e.id === listFocus.current) || undefined}>
       <summary>{children.length} contained T-squares</summary>
       <p>These reuse connections within Grand Crosses, not separate events. Each detail lists every containing formation.</p>
-      {children.map(entryButton)}
+      {children.map(child => <div key={child.id}>{entryButton(child)}
+        <p className="explorer-note">Within {entries.patterns.filter(parent => child.pattern!.contained_by.includes(parent.id))
+          .map(parent => `${parent.title} (${parent.subtitle})`).join('; ')}</p></div>)}
     </details>}</>;
   }
   const unavailable = projection?.reason === 'legacy_chart' ? 'Patterns are unavailable for this older Sun-only chart.' :
@@ -66,12 +75,27 @@ export function NatalExplorer({ chart, natal, wheel }: { chart: Chart; natal: Na
 
   return <div className="natal-explorer">
     <div className="explorer-chart">
-      {wheel(geometry => <Highlight natal={natal} geometry={geometry} entry={selected} />, !!selected)}
-      <div className="explorer-selection"><span>{selected?.title ?? 'Nothing selected'}<small>{selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
+      {wheel(geometry => <>
+        <Highlight natal={natal} geometry={geometry} entry={choices ? null : selected} />
+        <ExplorationTargets natal={natal} geometry={geometry} entries={entries} choose={choose} overlap={setChoices} />
+        {choices && <circle className="exploration-marker" cx={choices.location.x} cy={choices.location.y} r="5"
+          fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-angle, #304f3b)" strokeWidth="2" pointerEvents="none" />}
+      </>, !!selected && !choices)}
+      <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. The directory offers the same details without precise pointing.</p>
+      <div className="explorer-selection"><span>{choices ? 'Choose at this point' : selected?.title ?? 'Nothing selected'}<small>{choices ? 'Several details share this location.' : selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
         <button type="button" onClick={browse}>Browse all</button></div>
     </div>
     <section ref={panel} className="explorer-panel" aria-label="Chart browser and selected detail">
-      {detail && selected ? <>
+      {choices ? <>
+        <h3 ref={choiceHeading} tabIndex={-1}>{choices.entries[0].category === 'patterns' ? 'Patterns' : 'Details'} at this point</h3>
+        <p>These overlap. Choose which one to explore.</p>
+        <p className="explorer-note">{choices.entries.length} matching {choices.entries[0].category}</p>
+        {choices.entries[0].category === 'patterns' ? patternList(choices.entries) : choices.entries.map(entryButton)}
+        <button type="button" className="explorer-cancel" onClick={() => {
+          const origin = choices.origin; setChoices(null);
+          requestAnimationFrame(() => origin.focus());
+        }}>Back without choosing</button>
+      </> : detail && selected ? <>
         <div className="explorer-back"><button type="button" onClick={browse}>← All {category}</button>
           <small>{index + 1} / {entries[category].length} {category}</small></div>
         <h3 tabIndex={-1} ref={heading}>{selected.title}</h3><p>{selected.subtitle}</p>
