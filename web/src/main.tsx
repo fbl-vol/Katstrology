@@ -26,7 +26,7 @@ import { useGrowingComposer } from './chat-scroll';
 import { SynastryView } from './synastry-view';
 import { useWorkspaceNavigation } from './workspace-navigation';
 
-type ThreadPage = { conversations: Conversation[]; next_offset: number | null; search_pending: number };
+import { useConversationDiscovery } from './conversation-discovery';
 type Edit = { parent: string; replaces: string; kind: 'edit' | 'regenerate' };
 function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -44,11 +44,9 @@ function App() {
   const [personDialog, setPersonDialog] = useState(false);
   const [scopePicker, setScopePicker] = useState(false);
   const [selection, setSelection] = useState<Selection[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searched, setSearched] = useState('');
-  const [nextConversationOffset, setNextConversationOffset] = useState<number | null>(null);
-  const [listStatus, setListStatus] = useState('');
+  const discovery = useConversationDiscovery(workspace, navigation);
+  const { conversations, searchQuery, setSearchQuery, searched, nextConversationOffset,
+    listStatus, loadThreads } = discovery;
   const [message, setMessage] = useState('');
   const [discuss, setDiscuss] = useState<{ selected: SelectedResult; label: string } | null>(null);
   const chatComposer = useGrowingComposer(message);
@@ -57,7 +55,6 @@ function App() {
   const submissionInFlight = useRef(false);
   const submissionVersion = useRef(0);
   const [preparingSend, setPreparingSend] = useState(false);
-  const listRequestVersion = useRef(0);
   const peopleRequestVersion = useRef(0);
   const messageInput = useRef<HTMLTextAreaElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -92,45 +89,8 @@ function App() {
     }
   }, [person?.id]);
 
-  const loadThreads = useCallback(async (offset = 0, text = searched) => {
-    if (!workspace) return;
-    const version = ++listRequestVersion.current;
-    setListStatus('Loading conversations…');
-    try {
-      const result = text ? await api<ThreadPage>('conversations/search', workspace.csrf, 'POST',
-        { query: text, person: filterPersonId, offset }) :
-        await api<ThreadPage>(`conversations${filterPersonId ? `?person=${encodeURIComponent(filterPersonId)}&offset=${offset}` : `?offset=${offset}`}`);
-      if (version !== listRequestVersion.current) return;
-      setConversations(old => offset ? [...old, ...result.conversations] : result.conversations);
-      setNextConversationOffset(result.next_offset);
-      setListStatus(result.search_pending ? 'Search indexing is pending; results may be incomplete.' : '');
-    } catch {
-      if (version === listRequestVersion.current) setListStatus('Conversations unavailable. Retry the search.');
-    }
-  }, [workspace?.owner, filterPersonId, searched]);
-
-  async function refreshTitleAfterCompletion(id: string) {
-    const version = navigationVersion.current;
-    for (let attempt = 0; attempt < 8; attempt++) {
-      await new Promise(resolve => window.setTimeout(resolve, 1500));
-      if (navigationVersion.current !== version) return;
-      try {
-        const updated = await api<Conversation>(`conversations/${id}`);
-        if (navigationVersion.current !== version) return;
-        navigation.updateConversation(current => current?.id === id ? updated : current);
-        if (updated.title_status === 'generated') { void loadThreads(0); return; }
-        if (updated.title_status !== 'waiting' && updated.title_status !== 'pending') return;
-      } catch { return; }
-    }
-  }
-
   const provider = useProvider(workspace);
-  const archive = useArchiveChat(workspace, (id, status) => {
-    void api<Conversation>(`conversations/${id}`).then(updated =>
-      navigation.updateConversation(current => current?.id === id ? updated : current)).catch(() => {});
-    void loadThreads(0);
-    if (status === 'complete') void refreshTitleAfterCompletion(id);
-  }, { conversationId: conversation?.id || null,
+  const archive = useArchiveChat(workspace, discovery.onTerminal, { conversationId: conversation?.id || null,
     visible: !person && !skyOpen && !chartHub && !settingsOpen,
     navigation: navigationVersion });
 
@@ -159,7 +119,6 @@ function App() {
   useEffect(() => {
     if (workspace) {
       void refreshPeople().catch(() => setNotice('People could not be loaded. Retry after checking your workspace.'));
-      void loadThreads(0, '').catch(() => setListStatus('Conversations unavailable.'));
     }
   }, [workspace?.owner, filterPersonId]);
 
@@ -222,7 +181,7 @@ function App() {
     if (!workspace) return;
     try {
       await api('logout', workspace.csrf, 'POST');
-      listRequestVersion.current++; peopleRequestVersion.current++;
+      discovery.reset(); peopleRequestVersion.current++;
       navigation.signOut(); setWorkspace(null); setPeople([]); setSelection([]);
       setMessage(''); setDiscuss(null); setEditing(null);
     } catch { setNotice('Sign-out did not complete. Try again.'); }
@@ -237,7 +196,7 @@ function App() {
   function allConversations() {
     navigation.allConversations(); setDiscuss(null);
     pendingConversationId.current = '';
-    setSearched(''); setSearchQuery('');
+    discovery.clearSearch();
     if (!filterPersonId) void loadThreads(0, '');
     // The requested history is in this drawer on mobile: do not close it out of reach.
     if (!window.matchMedia('(max-width:700px)').matches) closeDrawer();
@@ -529,12 +488,12 @@ function App() {
           void api<Person>(`people/${item.id}`).then(selected => {
             if (navigation.isCurrent(version)) navigation.showSidebarPerson(selected);
           }).catch(() => { if (navigation.isCurrent(version)) setNotice('Person could not be opened.'); });
-          setSearched(''); setSearchQuery('');
+          discovery.clearSearch();
         }}><span className="initial">{item.name.charAt(0).toUpperCase()}</span><span>{item.name}</span></button>)}</div> : <p className="side-empty">No people yet.</p>}</nav>
       <nav aria-label="Recent conversations"><h2 className="side-heading" ref={historyHeading} tabIndex={-1}>RECENT CONVERSATIONS</h2>
         <button type="button" className="all-conversations-nav" onClick={allConversations}>All conversations</button>
-        {filterPersonId && <p className="side-filter">For {people.find(p => p.id === filterPersonId)?.name || 'selected person'} <button onClick={() => { navigation.clearPersonFilter(); setSearched(''); setSearchQuery(''); }}>Show all</button></p>}
-        <form className="search-conversations" onSubmit={e => { e.preventDefault(); setSearched(searchQuery); void loadThreads(0, searchQuery); }}><label className="sr-only" htmlFor="thread-search">Search conversations</label><input id="thread-search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search conversations" /><button type="submit">Search</button></form>
+        {filterPersonId && <p className="side-filter">For {people.find(p => p.id === filterPersonId)?.name || 'selected person'} <button onClick={() => { navigation.clearPersonFilter(); discovery.clearSearch(); }}>Show all</button></p>}
+        <form className="search-conversations" onSubmit={e => { e.preventDefault(); discovery.search(); }}><label className="sr-only" htmlFor="thread-search">Search conversations</label><input id="thread-search" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search conversations" /><button type="submit">Search</button></form>
         {listStatus && <p className="side-filter" role="status">{listStatus}</p>}
         <div className="recent">{conversations.length ? <ConversationBrowseList conversations={conversations}
           selectedId={conversation?.id} zone={workspace.product.reporting_zone} onOpen={id => void openConversation(id)} /> :
@@ -614,7 +573,7 @@ function App() {
         startConversation={() => newChat(person.id)} openConversation={id => void openConversation(id)} onDeleted={() => {
         peopleRequestVersion.current++;
         navigation.personDeleted(person.id); setPeople(old => old.filter(item => item.id !== person.id));
-        setSearchQuery(''); setSearched('');
+        discovery.clearSearch();
       }} /> : <section className={conversation ? 'conversation' : 'home'}
         data-kat-conversation-id={conversation?.id || ''}
         aria-label={conversation ? 'Conversation' : 'New conversation'}>
