@@ -14,7 +14,7 @@ function focusHeading(heading: HTMLHeadingElement | null) {
     heading.scrollIntoView({ block: 'start' });
 }
 
-export function NatalExplorer({ chart, natal, wheel, enabled }: { chart: Chart; natal: NatalResult; enabled: boolean;
+export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { chart: Chart; natal: NatalResult; enabled: boolean; hasWheel: boolean;
   wheel: (overlay: WheelOverlay, selected: boolean) => ReactNode }) {
   const [opened, setOpened] = useState(enabled);
   useEffect(() => { if (enabled) setOpened(true); }, [enabled]);
@@ -88,7 +88,7 @@ export function NatalExplorer({ chart, natal, wheel, enabled }: { chart: Chart; 
         {choices && <circle className="exploration-marker" cx={choices.location.x} cy={choices.location.y} r="5"
           fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-angle, #304f3b)" strokeWidth="2" pointerEvents="none" />}
       </>, !!selected && !choices)}
-      <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. The directory offers the same details without precise pointing.</p>
+      {hasWheel && <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. The directory offers the same details without precise pointing.</p>}
       <div className="explorer-selection"><span>{choices ? 'Choose at this point' : selected?.title ?? 'Nothing selected'}<small>{choices ? 'Several details share this location.' : selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
         <button type="button" onClick={browse}>Browse all</button></div>
     </div>

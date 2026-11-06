@@ -168,6 +168,7 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   const partial = page.locator('.profile-active-chart');
   await expect(partial.getByText(/No substitute system or ascendant was invented/)).toBeVisible();
   await expect(partial.locator('svg.natal-wheel')).toHaveCount(0);
+  await expect(partial.getByText(/Choose a symbol, house number/)).toHaveCount(0);
   await partial.getByRole('tab', { name: /^Patterns/ }).click();
   await expect(partial.getByRole('tab', { name: /^Patterns \d+$/ })).toBeVisible();
   await expect(partial.getByText(/Patterns need established/)).toHaveCount(0);

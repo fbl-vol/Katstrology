@@ -164,7 +164,7 @@ export function NatalChart({ chart, allowMotion = false, explorationEnabled = tr
     {chart.source_status !== 'current' ? <p className="error">Historical source: do not use these calculated degrees as current chart evidence.</p> :
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
-        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled}
+        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled} hasWheel={hasWheel}
           wheel={(overlay, selected) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} /> :
             <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects remain available.</p>} />
         {chartData}
