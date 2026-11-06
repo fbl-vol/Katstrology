@@ -69,3 +69,35 @@ test('conversation discovery discards an old session search after sign-out and s
   await expect(page.getByText('Old session result', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Search conversations')).toHaveValue('');
 });
+
+test('a delayed generated title cannot replace a newer sidebar search', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let started!: () => void;
+  const requested = new Promise<void>(resolve => { started = resolve; });
+  let titleReads = 0;
+  await page.route(/\/api\/conversations\/[^/?]+$/, async route => {
+    if (route.request().method() !== 'GET') { await route.continue(); return; }
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (++titleReads === 1) {
+      await route.fulfill({ json: { ...thread, title_status: 'pending' } });
+    } else {
+      started(); await held;
+      await route.fulfill({ json: { ...thread, title: 'Generated after search', title_status: 'generated' } });
+    }
+  });
+  await page.route('**/api/conversations/search', route => route.fulfill({ json: {
+    conversations: [result('Current search result')], next_offset: null, search_pending: 0,
+  } }));
+  await page.goto('/'); await signIn(page);
+  await page.getByLabel('Message Kat').fill('Synthetic title refresh question');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await requested;
+  await page.getByLabel('Search conversations').fill('current');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.locator('.recent-title')).toHaveText(['Current search result']);
+  release();
+  await expect(page.locator('.header-title')).toHaveText('Generated after search');
+  await expect(page.locator('.recent-title')).toHaveText(['Current search result']);
+});

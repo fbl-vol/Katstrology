@@ -58,6 +58,7 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
 
   async function refreshTitleAfterCompletion(id: string) {
     const version = navigation.version.current;
+    const listVersion = requestVersion.current;
     const current = () => navigation.isCurrent(version) && context.current.identity === identity;
     for (let attempt = 0; attempt < 8; attempt++) {
       await new Promise(resolve => window.setTimeout(resolve, 1500));
@@ -66,7 +67,11 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
         const updated = await api<Conversation>(`conversations/${id}`);
         if (!current()) return;
         navigation.updateConversation(thread => thread?.id === id ? updated : thread);
-        if (updated.title_status === 'generated') { void loadThreads(0); return; }
+        if (updated.title_status === 'generated') {
+          // A title job must not replace a search or page selected while it waited.
+          if (requestVersion.current === listVersion) void loadThreads(0);
+          return;
+        }
         if (updated.title_status !== 'waiting' && updated.title_status !== 'pending') return;
       } catch { return; }
     }
