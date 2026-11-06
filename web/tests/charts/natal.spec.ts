@@ -154,6 +154,8 @@ for (const viewport of [
 }
 
 test('polar Placidus remains unsupported and explicit whole-sign/mean-node revisions persist', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  mkdirSync('../.local/explorable-charts/renders', { recursive: true });
   const form = await openPerson(page, 'Synthetic polar chart', 'reader-natal-polar');
   await form.getByLabel('Birth date').fill('2024-03-20');
   await form.getByLabel('Birth time').fill('03:06');
@@ -169,6 +171,8 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   await partial.getByRole('tab', { name: /^Patterns/ }).click();
   await expect(partial.getByRole('tab', { name: /^Patterns \d+$/ })).toBeVisible();
   await expect(partial.getByText(/Patterns need established/)).toHaveCount(0);
+  await partial.locator('.explorer-panel').evaluate(element => element.scrollIntoView({ block: 'start' }));
+  await page.screenshot({ path: '../.local/explorable-charts/renders/partial-houses.png' });
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByLabel('House system').selectOption('whole_sign');
   await form.getByLabel('North node').selectOption('mean');
@@ -185,6 +189,7 @@ test('polar Placidus remains unsupported and explicit whole-sign/mean-node revis
   await whole.locator('[data-entry="midheaven"]').click();
   await expect(whole.getByRole('region', { name: 'Chart browser and selected detail' })).toContainText(`${mc.toFixed(4)}°`);
   await expect(whole.locator('[data-highlight-body="midheaven"]')).toHaveCount(1);
+  await page.screenshot({ path: '../.local/explorable-charts/renders/whole-sign-angle.png' });
   await form.getByRole('button', { name: 'Update the current natal' }).click();
   await form.getByRole('spinbutton', { name: 'square' }).fill('0.1');
   await form.getByRole('button', { name: 'Generate chart' }).click();
@@ -218,6 +223,8 @@ test('legacy partial chart and new unknown-time chart never invent a wheel', asy
   const unknown = page.locator('.profile-active-chart');
   await expect(unknown.getByText(/no full natal positions, houses, angles or aspects were calculated/)).toBeVisible();
   await expect(unknown.getByRole('table')).toHaveCount(0);
+  mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+  await unknown.screenshot({ path: '../.local/explorable-charts/renders/unknown-time.png' });
   await expect(unknown.getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Start conversation' }).click();
   const contextChart = page.getByRole('complementary', { name: 'Current natal context' });

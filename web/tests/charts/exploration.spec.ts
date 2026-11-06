@@ -5,6 +5,8 @@ import { personIdFor, seedLegacy } from '../support/legacy-fixture';
 import { patternFixture } from '../support/exploration-fixture';
 import type { Chart } from '../../src/features/charts/natal';
 
+test.beforeEach(async ({ page }) => page.setViewportSize({ width: 1440, height: 1024 }));
+
 async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' = false) {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-natal');
@@ -86,6 +88,9 @@ test('pattern read failure and retry leave individual exploration available', as
   await panel.getByRole('button', { name: '← All positions' }).click();
   await panel.getByRole('tab', { name: /^Patterns/ }).click();
   await expect(panel).toContainText('Patterns could not be loaded');
+  mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+  await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
+  await page.screenshot({ path: '../.local/explorable-charts/renders/failed-read.png' });
   await page.unroute('**/api/charts/*/exploration');
   await panel.getByRole('button', { name: 'Retry patterns' }).click();
   await expect(panel.getByRole('button', { name: 'Retry patterns' })).toHaveCount(0);
@@ -133,6 +138,9 @@ test('a late exploration read cannot follow navigation to a different person', a
   const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
   await panel.getByRole('tab', { name: /^Patterns/ }).click();
   await expect(panel).toContainText('Loading patterns');
+  mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+  await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
+  await page.screenshot({ path: '../.local/explorable-charts/renders/loading-read.png' });
   await panel.getByRole('tab', { name: /^Positions/ }).click();
   await panel.getByRole('button', { name: /^Sun / }).click();
   expect(reads).toBe(1);
@@ -238,6 +246,10 @@ test.describe('direct natal exploration', () => {
       await expect(panel.getByRole('heading', { name: 'Grand Cross', exact: true })).toBeFocused();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(6);
       await expect(wheel.locator('[data-highlight-edge] path[stroke-dasharray]')).toHaveCount(2);
+      await panel.getByRole('button', { name: 'Next → pattern' }).click();
+      await expect(panel.getByRole('heading', { name: 'T-square · Mars apex', exact: true })).toBeFocused();
+      await panel.getByRole('button', { name: '← Previous pattern' }).click();
+      await expect(panel.getByRole('heading', { name: 'Grand Cross', exact: true })).toBeFocused();
       if (size.width === 1440) {
         const pending = page.waitForEvent('download');
         await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
@@ -251,6 +263,17 @@ test.describe('direct natal exploration', () => {
       await page.screenshot({ path: `../.local/explorable-charts/renders/cross-wheel-${size.width}-${size.height}.png` });
       await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
       await page.screenshot({ path: `../.local/explorable-charts/renders/cross-detail-${size.width}-${size.height}.png` });
+      if (size.width === 1440) {
+        await page.getByRole('button', { name: 'Settings', exact: true }).click();
+        await page.getByRole('button', { name: /Appearance/ }).click();
+        await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
+        await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+        await page.getByRole('button', { name: 'Close settings panel' }).click();
+        await page.getByRole('button', { name: 'Back to workspace' }).click();
+        await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(6);
+        await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
+        await page.screenshot({ path: '../.local/explorable-charts/renders/cross-blue-hour.png' });
+      }
       // Named wheel keyboard controls select directly, even when shapes overlap.
       const sun = wheel.getByRole('button', { name: /^Explore Sun:/ });
       await sun.focus(); await sun.press('Space');
