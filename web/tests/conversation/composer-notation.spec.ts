@@ -47,8 +47,8 @@ test('downloadable chart and comparison wheel expose a full text legend', async 
   await page.locator('.chart-history > summary').click();
   const chart = page.locator('.chart-history > details').filter({ hasText: 'Current natal' });
   await chart.locator(':scope > summary').click();
-  await expect(chart.getByRole('img', { name: /Tropical natal wheel/ })).toBeVisible();
-  await expect(chart.getByRole('img', { name: /Tropical natal wheel/ }).locator('desc'))
+  await expect(chart.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
+  await expect(chart.getByRole('group', { name: /Tropical natal wheel/ }).locator('desc'))
     .toContainText('☊ North Node');
   const key = chart.locator('.chart-notation');
   await expect(key).not.toHaveAttribute('open');

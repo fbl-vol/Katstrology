@@ -80,6 +80,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
   const [tab, setTab] = useState<'overview' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab);
   const [savedSection, setSavedSection] = useState<'insights' | 'later' | 'journal'>('insights');
   const [savedOpenRequest, setSavedOpenRequest] = useState(0);
+  const [openedCharts, setOpenedCharts] = useState<Set<string>>(() => new Set());
   const [timingOpen, setTimingOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(initialEditorOpen);
   const [watchVersion, setWatchVersion] = useState(0);
@@ -186,7 +187,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         <p>{activeChart ? <>Calculated from saved birth details{savedDate && ` · ${savedDate}`} · {savedTime === 'unknown' ? 'birth time unknown' : savedTime === 'not recorded' ? 'birth time not recorded' : `saved birth time ${savedTime}`}. Earlier versions stay below.</> :
           'No active generated natal. Nothing is guessed from a draft or an earlier chart.'}</p></div>
       </div>
-      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion personLayout /> :
+      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion explorationEnabled={tab === 'charts'} /> :
         <p>This generated chart has only supported partial/solar information. Birth time or houses were not inferred.</p>}</div> :
         <div className="profile-chart-empty"><p>{editorOpen ? 'Supply the birth details below to generate the first chart.' :
           'Choose Create first chart to supply birth details and generate a natal chart.'}</p>
@@ -203,8 +204,10 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         {person.birth_records.length > 0 && <ul>{person.birth_records.map(item => <li key={item.id}>Recorded birth · {item.wall_time?.replace('T', ' ') || (item.earliest_utc && item.latest_utc ? `${item.earliest_utc} to ${item.latest_utc}` : 'Time unavailable')} · {item.zone_name}</li>)}</ul>}
         {person.charts.map((chart, index) => {
           const birth = person.birth_records.find(record => record.id === chart.birth_id);
-          return <details key={chart.id} data-kat-chart-id={chart.id}><summary>{chart.id === person.active_chart_id ? 'Current natal' : 'Historical chart'} · {birth?.wall_time?.slice(0, 10) || birth?.earliest_utc?.slice(0, 10) || 'Birth date unavailable'} · Chart {index + 1}</summary>
-            {chart.result.natal ? <NatalChart chart={chart} /> : <p>{chart.source_status !== 'current' ? `Source: ${chart.source_status}. ` : ''}A full natal wheel is unavailable for this saved chart. Its birth details are listed above.</p>}
+          return <details key={chart.id} data-kat-chart-id={chart.id} onToggle={event => {
+            if (event.currentTarget.open) setOpenedCharts(previous => new Set(previous).add(chart.id));
+          }}><summary>{chart.id === person.active_chart_id ? 'Current natal' : 'Historical chart'} · {birth?.wall_time?.slice(0, 10) || birth?.earliest_utc?.slice(0, 10) || 'Birth date unavailable'} · Chart {index + 1}</summary>
+            {chart.result.natal ? openedCharts.has(chart.id) && <NatalChart chart={chart} /> : <p>{chart.source_status !== 'current' ? `Source: ${chart.source_status}. ` : ''}A full natal wheel is unavailable for this saved chart. Its birth details are listed above.</p>}
           </details>;
         })}
       </details>

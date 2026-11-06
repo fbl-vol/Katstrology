@@ -37,6 +37,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   const combined = await (await page.request.get(`/api/transit-view?${query}&mode=natal_transits&person_id=${selected.id}`)).json();
   expect(combined.lilith_convention).toBe('mean');
   expect(combined.positions.some((item: { id: string }) => item.id === 'lilith_mean')).toBe(true);
+  await charts.getByText('All chart tables', { exact: true }).first().click();
   await expect(charts.getByRole('row', { name: /Black Moon Lilith \(mean lunar apogee\)/ }).first()).toBeVisible();
   await expect(charts.getByText('Swiss mean lunar apogee').first()).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
@@ -56,6 +57,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await page.reload();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic apogee reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('tabpanel', { name: 'Charts' }).getByText('All chart tables', { exact: true }).first().click();
   await expect(page.getByRole('tabpanel', { name: 'Charts' }).getByRole('row', { name: /Black Moon Lilith \(mean lunar apogee\)/ }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Edit birth details' }).click();
   await form.getByText('Advanced · chart settings and location').click();

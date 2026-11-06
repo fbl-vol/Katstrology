@@ -63,6 +63,49 @@ are in [advanced methods](advanced-calculations.md). No rectification,
 compatibility score, validated interpretation engine or uploaded-image permission
 is implied.
 
+## Explore a saved natal
+
+The full natal view has searchable Positions, Houses (including actual angles),
+Aspects and Patterns directories. Selecting a row or a named wheel control shows
+its facts and highlights the complete geometry. Back retains the category and
+search; Previous/Next traverses the whole named category, not only search matches.
+All original tables remain under **All chart tables**. Compact conversation and
+return/derived wheels do not acquire these controls.
+
+Symbols and house numbers take precedence over connections; connections take
+precedence over pattern interiors. Shared locations offer only matching choices,
+with contained T-squares identified explicitly. Cancel restores the prior view
+and wheel focus. The directory is an alternative to precision pointing, especially
+for dense lines on small screens. Conjunctions use an arc and endpoint rings;
+oppositions are dashed when selected. House shading uses saved cusp sectors,
+not equal-house assumptions; the midheaven is its actual angle, not an inferred
+whole-sign tenth cusp. Exports retain the full original chart, without transient
+selection, hit targets or overlap markers.
+
+`GET /api/charts/{chart_id}/exploration` is an authenticated, owner-scoped,
+read-only projection on the existing serialized runtime. Its `natal-patterns-v1`
+rule is separate from the natal method and canonical chart result. It enumerates
+only Sun through Pluto: Grand Trine requires three trines; T-square requires one
+opposition and two squares (with the square junction named as apex); Grand Cross
+requires two disjoint oppositions and all four cross-pair squares. Every required
+edge must already exist in the saved qualified graph and satisfy that chart's
+saved enabled kinds and exact orb limits. No missing edge, current default,
+rounded display value, sign element or modality is substituted. Identities include
+the chart, rule and canonical typed edges. Each T-square retains **every** Grand
+Cross containing its members and edges; an isolated cross contains four T-squares.
+Nodes, Chiron, Lilith and angles remain individually available but cannot become
+pattern members. Patterns are geometric relationships, not strength or predictions.
+
+A complete graph with no matches is distinct from unavailable/failed/loading
+pattern reads. A house failure still permits patterns from established positions
+and aspects, without fabricating a wheel. Historical sources, unknown-time natal
+facts and Sun-only legacy records do not become successful zero-pattern results.
+The browser fetches on opening, fences late responses and keeps individual facts
+usable during failure/retry. The projection never calls ephemeris or a provider,
+rewrites a saved result, migrates a schema or expands archived chat evidence.
+Exact selected-pattern discussion is deferred; no new Discuss action silently
+substitutes the active natal for the inspected chart.
+
 Black Moon Lilith is **off by default**, not a rewrite of saved profiles or charts.
 An explicit per-chart `include_lilith: "mean" | "osculating"` selects Swiss
 `MEAN_APOG` or `OSCU_APOG` (traditionally called *true*). These are two lunar
@@ -127,4 +170,9 @@ python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile bac
 
 The suite includes database-backed version/source contracts and independent
 numerical anchors. Browser checks live in `web/tests/charts/natal.spec.ts` and
-`web/tests/charts/natal-wheel.spec.ts`, using a separate synthetic fixture.
+`web/tests/charts/natal-wheel.spec.ts` and `web/tests/charts/exploration.spec.ts`,
+using a separate synthetic fixture. `tests.calculation.test_exploration` contains
+worked graph/orb/containment cases; the actual ASGI projection and unchanged stored
+result bytes are checked in `tests.http_boundary.test_web_transits`. Browser pattern
+interaction fixtures are explicitly synthetic presentation data, not another
+detector or a claim of ephemeris-calculated formations.

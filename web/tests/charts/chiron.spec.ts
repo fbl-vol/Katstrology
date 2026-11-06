@@ -27,6 +27,7 @@ test('explicit Chiron profile renders, exports and survives reload without chang
   await form.getByRole('button', { name: 'Generate chart' }).click();
   await expect(form.locator('.birth-status')).toContainText('Current natal saved');
   const charts = page.getByRole('tabpanel', { name: 'Charts' });
+  await charts.getByText('All chart tables', { exact: true }).first().click();
   await expect(charts.getByRole('row', { name: /Chiron/ }).first()).toBeVisible();
   const wheel = charts.locator('.natal-wheel').first();
   await expect(wheel).toContainText('Ch');
@@ -50,6 +51,7 @@ test('explicit Chiron profile renders, exports and survives reload without chang
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic Chiron reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic Chiron reader' })).toBeVisible();
+  await page.getByRole('tabpanel', { name: 'Charts' }).getByText('All chart tables', { exact: true }).first().click();
   await expect(page.getByRole('tabpanel', { name: 'Charts' }).getByRole('row', { name: /Chiron/ }).first()).toBeVisible();
 });
 

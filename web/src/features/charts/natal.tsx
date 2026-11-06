@@ -28,7 +28,7 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
   additionalProvenance?: Record<string, unknown>; overlay?: WheelOverlay; selected?: boolean;
 }) {
   const svg = useRef<SVGSVGElement>(null);
-  const ascendant = natal.houses.angles[0].longitude_degrees;
+  const ascendant = natal.houses.angles.find(angle => angle.id === 'ascendant')!.longitude_degrees;
   const bodies = [...natal.positions].sort((a, b) => a.longitude_degrees - b.longitude_degrees);
   const tracks = new Map<string, number>();
   let previous = bodies[bodies.length - 1].longitude_degrees - 360;
@@ -127,14 +127,15 @@ export function CompactNatalWheel({ chart }: { chart: Chart }) {
     natal.houses.angles.length > 0 ? <Wheel chart={chart} natal={natal} compact /> : null;
 }
 
-export function NatalChart({ chart, allowMotion = false }: {
-  chart: Chart; allowMotion?: boolean; personLayout?: boolean;
+export function NatalChart({ chart, allowMotion = false, explorationEnabled = true }: {
+  chart: Chart; allowMotion?: boolean; explorationEnabled?: boolean;
 }) {
   const natal = chart.result.natal;
   if (!natal) return null;
   const settings = chart.result.profile.settings;
   const birth = chart.result.birth;
-  const hasWheel = natal.houses.status === 'supported';
+  const hasWheel = natal.houses.status === 'supported' && natal.houses.cusps.length === 12 &&
+    natal.houses.angles.some(angle => angle.id === 'ascendant');
 
   const positions = <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
     <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
@@ -163,7 +164,7 @@ export function NatalChart({ chart, allowMotion = false }: {
     {chart.source_status !== 'current' ? <p className="error">Historical source: do not use these calculated degrees as current chart evidence.</p> :
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
-        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal}
+        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled}
           wheel={(overlay, selected) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} /> :
             <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects remain available.</p>} />
         {chartData}
