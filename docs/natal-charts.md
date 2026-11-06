@@ -76,8 +76,13 @@ Symbols and house numbers take precedence over connections; connections take
 precedence over pattern interiors. Shared locations offer only matching choices,
 with contained T-squares identified explicitly. Cancel restores the prior view
 and wheel focus. The directory is an alternative to precision pointing, especially
-for dense lines on small screens. Conjunctions use an arc and endpoint rings;
-oppositions are dashed when selected. House shading uses saved cusp sectors,
+for dense lines on small screens. Connections have a 16-CSS-pixel-wide hit stroke
+at every wheel size. Conjunctions include both endpoint discs and the actual arc;
+all intersected hit shapes contribute candidates, not just the topmost SVG target.
+The bounded width preserves exposed shared pattern interiors, although narrow
+pattern-only slivers can become connection targets on mobile. This is a local
+screen-space policy, not physical-device or accessibility certification.
+Oppositions are dashed when selected. House shading uses saved cusp sectors,
 not equal-house assumptions; the midheaven is its actual angle, not an inferred
 whole-sign tenth cusp. Exports retain the full original chart, without transient
 selection, hit targets or overlap markers.

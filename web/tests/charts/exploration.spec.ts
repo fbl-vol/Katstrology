@@ -7,7 +7,7 @@ import type { Chart } from '../../src/features/charts/natal';
 
 test.beforeEach(async ({ page }) => page.setViewportSize({ width: 1440, height: 1024 }));
 
-async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' = false) {
+async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' | 'exact' | 'trine' = false) {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-natal');
   await page.getByLabel('Password').fill('synthetic-browser-password');
@@ -22,8 +22,16 @@ async function openChart(page: Page, name: string, syntheticPatterns: boolean | 
     zone: 'Europe/London', latitude: 51.5, longitude: -1 / 6, kind: 'natal' });
   const saved = await (await page.request.get(`/api/people/${personId}`)).json();
   if (syntheticPatterns) {
-    const record = saved.charts.find((c: Chart) => c.id === chartId);
+    const record: Chart = saved.charts.find((c: Chart) => c.id === chartId);
     const projection = patternFixture(record, syntheticPatterns === 'multi');
+    if (syntheticPatterns === 'exact') {
+      record.result.natal!.positions.find(p => p.id === 'mercury')!.longitude_degrees = 142;
+      record.result.natal!.aspects.find(a => a.kind === 'conjunction')!.orb_degrees = 0;
+    }
+    if (syntheticPatterns === 'trine') {
+      projection.patterns = projection.patterns.filter(p => p.kind === 'grand_trine');
+      record.result.natal!.aspects = record.result.natal!.aspects.filter(a => a.kind === 'trine' || a.kind === 'conjunction');
+    }
     saved.active_chart_id = chartId;
     await page.route(`**/api/people/${personId}`, route => route.fulfill({ json: saved }));
     await page.route(`**/api/charts/${chartId}/exploration`, route => route.fulfill({ json: projection }));
@@ -173,9 +181,9 @@ test('contained pattern details retain every matching Grand Cross', async ({ pag
 });
 
 // Find an actual exposed SVG area, then use browser mouse/touch input, not dispatchEvent.
-async function patternPoint(wheel: import('@playwright/test').Locator, overlap: boolean) {
+async function patternPoint(wheel: import('@playwright/test').Locator, overlap: boolean, requireTrine = false) {
   await wheel.scrollIntoViewIfNeeded();
-  return wheel.evaluate((element, wantOverlap) => {
+  return wheel.evaluate((element, { wantOverlap, requireTrine }) => {
     const svg = element as SVGSVGElement;
     const polygons = [...svg.querySelectorAll<SVGPolygonElement>('.exploration-target polygon')];
     let best: { x: number; y: number; ids: (string | null)[]; margin: number } | null = null;
@@ -183,6 +191,7 @@ async function patternPoint(wheel: import('@playwright/test').Locator, overlap: 
       const point = new DOMPoint(x, y);
       const matches = polygons.filter(p => p.isPointInFill(point));
       if (wantOverlap ? matches.length < 3 : matches.length !== 1) continue;
+      if (requireTrine && !matches.some(p => p.parentElement!.getAttribute('data-wheel-entry')!.endsWith('|trine'))) continue;
       const screen = point.matrixTransform(svg.getScreenCTM()!);
       const top = document.elementFromPoint(screen.x, screen.y);
       if (top?.tagName !== 'polygon') continue;
@@ -197,11 +206,107 @@ async function patternPoint(wheel: import('@playwright/test').Locator, overlap: 
     }
     if (best) return best;
     throw new Error('No exposed pattern area at this viewport');
-  }, overlap);
+  }, { wantOverlap: overlap, requireTrine });
 }
 
 test.describe('direct natal exploration', () => {
   test.use({ hasTouch: true });
+  for (const exact of [false, true]) for (const input of ['mouse', 'touch'] as const) {
+    test(`conjunction hit geometry ${exact ? 'exact' : 'near'} ${input}`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize(input === 'touch' ? { width: 390, height: 844 } : { width: 1440, height: 1024 });
+      const { chart } = await openChart(page, `Conjunction ${exact} ${input}`, exact ? 'exact' : true);
+      const wheel = chart.locator('svg.natal-wheel');
+      const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
+      const conjunction = wheel.locator('[data-wheel-entry="conjunction:mercury:sun"]');
+      const press = (p: { x: number; y: number }) => input === 'touch' ? page.touchscreen.tap(p.x, p.y) : page.mouse.click(p.x, p.y);
+      // The centre is genuinely shared by three aspects; neither DOM paint order nor
+      // an endpoint special case may silently choose the conjunction for the reader.
+      await conjunction.focus();
+      await conjunction.press('Tab');
+      await conjunction.focus();
+      expect(await conjunction.evaluate(element => element.matches(':focus-visible'))).toBe(true);
+      await expect(conjunction.locator('[data-aspect-hit]').first()).toHaveCSS('stroke-width', '16px');
+      mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+      await wheel.screenshot({ path: `../.local/explorable-charts/renders/conjunction-focus-${exact}-${input}.png` });
+      const offsets = ['center', 'old-edge', 'outer-edge', 'arc', ...(input === 'touch' ? ['house-overlap'] : [])];
+      for (const endpointIndex of [0, 1]) for (const offset of offsets) {
+        // Only the Sun-side radial edge overlaps House 1; Mercury's is outside it.
+        if (offset === 'house-overlap' && endpointIndex === 1) continue;
+        await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+        await conjunction.focus();
+        const p = await conjunction.evaluate((element, { offset, endpointIndex }) => {
+          const path = element.querySelector('path')!;
+          const matrix = path.getScreenCTM()!;
+          const scale = Math.hypot(matrix.a, matrix.b);
+          const local = path.getPointAtLength(path.getTotalLength() * (offset === 'arc' ? .5 : endpointIndex));
+          const center = new DOMPoint(240, 240).matrixTransform(matrix);
+          const endpoint = local.matrixTransform(matrix);
+          const radial = Math.hypot(endpoint.x - center.x, endpoint.y - center.y);
+          const distance = offset === 'center' ? 0 : offset === 'arc' ? 6 : 5 * scale + (offset === 'old-edge' ? 3 : 7);
+          const dx = (endpoint.x - center.x) / radial, dy = (endpoint.y - center.y) / radial;
+          // The mobile radial outer edge is shared with House 1. Use the exposed
+          // tangential edge here; house precedence is exercised separately.
+          return { x: endpoint.x + distance * (offset === 'outer-edge' ? dy : dx),
+            y: endpoint.y + distance * (offset === 'outer-edge' ? -dx : dy) };
+        }, { offset, endpointIndex });
+        await press(p);
+        if (offset === 'center') {
+          await expect(panel.getByRole('heading', { name: 'Details at this point' })).toBeFocused();
+          expect((await panel.locator('[data-entry]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-entry')))).sort())
+            .toEqual(['conjunction:mercury:sun', 'trine:jupiter:sun', 'trine:moon:sun']);
+        }
+        // Soft failure preserves evidence for all physical presses on old behavior.
+        const choices = panel.getByRole('heading', { name: 'Details at this point' });
+        if (await choices.isVisible()) {
+          await expect.soft(panel.getByRole('button', { name: /^Sun conjunction Mercury/ }), offset).toBeVisible();
+          await panel.getByRole('button', { name: /^Sun conjunction Mercury/ }).click();
+        }
+        const expected = offset === 'house-overlap' ? 'House 1' : 'Sun conjunction Mercury';
+        await expect.soft(panel.getByRole('heading', { name: expected, exact: true }), offset).toBeFocused();
+        mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+        await page.screenshot({ path: `../.local/explorable-charts/renders/conjunction-${exact}-${input}-${endpointIndex}-${offset}.png` });
+        // Reset so a previous successful selection cannot conceal a missed press.
+        await chart.getByRole('button', { name: 'Browse all', exact: true }).click();
+      }
+    });
+  }
+  for (const width of [1440, 390]) test(`unique pattern interior remains usable ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const { chart } = await openChart(page, `Exposed trine ${width}`, 'trine');
+    const wheel = chart.locator('svg.natal-wheel');
+    const p = await patternPoint(wheel, false);
+    expect(p.margin).toBe(10);
+    if (width === 390) await page.touchscreen.tap(p.x, p.y);
+    else await page.mouse.click(p.x, p.y);
+    await expect(chart.getByRole('heading', { name: 'Grand Trine', exact: true })).toBeFocused();
+  });
+  test('mobile aspect six CSS pixel offset retains direct line selection', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { chart } = await openChart(page, 'Offset aspect touch', true);
+    const wheel = chart.locator('svg.natal-wheel');
+    const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
+    await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await wheel.evaluate(element => element.addEventListener('click', event => {
+      const e = event as MouseEvent;
+      element.setAttribute('data-test-press', JSON.stringify({ x: e.clientX, y: e.clientY }));
+    }, { once: true, capture: true }));
+    const location = await wheel.locator('[data-wheel-entry="square:mars:venus"] path').first().evaluate(element => {
+      const path = element as SVGPathElement, matrix = path.getScreenCTM()!;
+      const a = path.getPointAtLength(0).matrixTransform(matrix);
+      const b = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      return { x: (a.x + b.x) / 2 + 6 * (b.y - a.y) / length,
+        y: (a.y + b.y) / 2 - 6 * (b.x - a.x) / length };
+    });
+    await page.touchscreen.tap(location.x, location.y);
+    const actual = JSON.parse((await wheel.getAttribute('data-test-press'))!);
+    expect(Math.hypot(actual.x - location.x, actual.y - location.y)).toBeLessThan(1.5);
+    await test.info().attach('six-css-pixel-press', { body: JSON.stringify({ requested: location, delivered: actual }), contentType: 'application/json' });
+    await expect(panel.getByRole('heading', { name: 'Venus square Mars', exact: true })).toBeFocused();
+    mkdirSync('../.local/explorable-charts/renders', { recursive: true });
+    await page.screenshot({ path: '../.local/explorable-charts/renders/mobile-six-pixel-offset.png' });
+  });
   for (const size of [{ width: 1440, height: 1024 }, { width: 1920, height: 1080 },
     { width: 2560, height: 1080 }, { width: 3440, height: 1440 },
     { width: 390, height: 844 }, { width: 390, height: 560 }]) {
@@ -217,8 +322,13 @@ test.describe('direct natal exploration', () => {
       await panel.getByRole('button', { name: 'Back without choosing' }).click();
       await expect(panel.getByRole('heading', { name: 'Browse this chart' })).toBeVisible();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(0);
-      // Unique interior and complete highlighted edges.
-      await press(await patternPoint(wheel, false));
+      // Wider mobile line targets cover the tiny trine-only sliver in this dense
+      // graph. Its exposed shared interior must still offer the trine honestly.
+      const trinePoint = await patternPoint(wheel, true, true);
+      expect(trinePoint.margin).toBeGreaterThanOrEqual(3);
+      await test.info().attach('exposed-shared-interior', { body: JSON.stringify(trinePoint), contentType: 'application/json' });
+      await press(trinePoint);
+      await panel.getByRole('button', { name: /^Grand Trine / }).click();
       await expect(panel.getByRole('heading', { name: 'Grand Trine', exact: true })).toBeFocused();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(3);
       await expect(wheel.locator('[data-highlight-body]')).toHaveCount(3);
@@ -283,7 +393,7 @@ test.describe('direct natal exploration', () => {
       await expect(wheel.locator('[data-highlight-edge] circle')).toHaveCount(2);
       // Actual pointer on an aspect line, not a synthetic dispatched event.
       await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
-      const line = wheel.locator('[data-wheel-entry="square:mars:venus"] path');
+      const line = wheel.locator('[data-wheel-entry="square:mars:venus"] path').first();
       const center = await line.evaluate(element => {
         const path = element as SVGPathElement;
         const p = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM()!);

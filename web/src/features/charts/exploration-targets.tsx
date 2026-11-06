@@ -15,10 +15,18 @@ function inside(p: Location, vertices: Location[]) {
   }
   return found;
 }
-function lineDistance(p: Location, a: Location, b: Location) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const t = dx || dy ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
-  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+// Eight CSS pixels either side tolerate near-line presses while leaving exposed
+// shared interiors on dense mobile charts. Discs cover the conjunction rings.
+const aspectHitStroke = { stroke: 'transparent', strokeWidth: 16, vectorEffect: 'non-scaling-stroke' } as const;
+
+function aspectCandidates(svg: SVGSVGElement, cursor: DOMPoint, entries: Entry[]) {
+  // Ask every actual hit shape, not just the topmost event target. Native SVG
+  // geometry keeps arcs, round caps, discs and non-scaling strokes in agreement
+  // with rendering, including an exact conjunction's zero-length arc.
+  const hits = new Set([...svg.querySelectorAll<SVGGeometryElement>('[data-aspect-hit]')]
+    .filter(shape => shape.isPointInStroke(cursor) || (shape instanceof SVGCircleElement && shape.isPointInFill(cursor)))
+    .map(shape => shape.getAttribute('data-aspect-hit')));
+  return entries.filter(entry => hits.has(entry.id));
 }
 
 export function ExplorationTargets({ natal, geometry, entries, choose, overlap }: {
@@ -37,7 +45,7 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
     const first = locations.get(a.first), second = locations.get(a.second);
     if (first === undefined || second === undefined) return [];
     return [{ entry: entries.aspects.find(e => e.id === edgeId(a))!, kind: a.kind,
-      a: point(first, ascendant, 77), b: point(second, ascendant, 77),
+      endpoints: [point(first, ascendant, 77), point(second, ascendant, 77)],
       path: aspectPath(first, second, a.kind, ascendant) }];
   });
   const patterns = entries.patterns.map(entry => ({ entry, vertices: entry.members
@@ -54,7 +62,7 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
     // The same precedence governs visible targets and ambiguous shared locations.
     let candidates = bodies.filter(b => near(b.center, 16 + 4 / scale)).map(b => b.entry);
     if (!candidates.length) candidates = houses.filter(h => near(h.center, 12 + 4 / scale)).map(h => h.entry);
-    if (!candidates.length) candidates = aspects.filter(a => lineDistance(cursor, a.a, a.b) <= 4).map(a => a.entry);
+    if (!candidates.length) candidates = aspectCandidates(svg, cursor, entries.aspects);
     if (!candidates.length) candidates = patterns.filter(p => inside(cursor, p.vertices)).map(p => p.entry);
     if (candidates.length === 1) choose(candidates[0]);
     else if (candidates.length > 1) overlap({ entries: candidates, location: cursor, origin: event.currentTarget });
@@ -72,8 +80,14 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
       points={p.vertices.map(v => `${v.x},${v.y}`).join(' ')} fill="transparent" /></g>)}
     {aspects.map(a => <g key={a.entry.id} {...control(a.entry)}>
       {a.kind === 'conjunction' && <path d={a.path} fill="none" stroke="var(--wheel-aspect-gold, #a87931)" strokeWidth="1" />}
-      <path d={a.path} fill="none" stroke="transparent" strokeWidth="8" strokeLinecap="round" />
-      {a.kind === 'conjunction' && <circle cx={a.a.x} cy={a.a.y} r="5" fill="transparent" stroke="transparent" strokeWidth="8" vectorEffect="non-scaling-stroke" />}
+      <path data-aspect-hit={a.entry.id} d={a.path} fill="none" {...aspectHitStroke} strokeLinecap="round" />
+      {a.kind === 'conjunction' && a.endpoints.map((p, i) => <circle key={i} data-aspect-hit={a.entry.id}
+        cx={p.x} cy={p.y} r="5" fill="transparent" {...aspectHitStroke} />)}
+      {/* Focus decoration must not shrink or recolour the hit geometry. */}
+      <g fill="none" stroke="transparent" pointerEvents="none">
+        <path d={a.path} />
+        {a.kind === 'conjunction' && a.endpoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="5" />)}
+      </g>
     </g>)}
     {houses.map(h => <g key={h.entry.id} {...control(h.entry)}><circle cx={h.center.x} cy={h.center.y} r="12"
       fill="transparent" stroke="transparent" strokeWidth="8" vectorEffect="non-scaling-stroke" /></g>)}
