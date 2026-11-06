@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from m2.calculation.charts import Charts
+from m2.calculation.exploration import explore_chart
 from m2.chat.gateway import run_turn
 from m2.chat.tool_answers import _chart_prompt_evidence
 from m2.calculation.natal import DEFAULT_ORBS, _aspects, calculate_natal, checked_natal_settings
@@ -256,6 +257,7 @@ class NatalArchiveTests(DatabaseCase):
             'mode': 'interval', 'zone': 'UTC', 'earliest_utc': '2024-03-20T00:00:00+00:00',
             'latest_utc': '2024-03-20T12:00:00+00:00', 'latitude': 55, 'longitude': 12})
         chart = people.create_chart(self.alice, 'reader', birth, 'natal-default', 1)
+        self.assertEqual(explore_chart(chart)['reason'], 'unsupported_uncertain_birth_time')
         self.assertEqual(chart['result']['natal']['status'], 'unsupported_uncertain_birth_time')
         self.assertEqual(chart['result']['natal']['positions'], [])
         self.assertEqual(chart['result']['natal']['houses']['angles'], [])
@@ -271,6 +273,8 @@ class NatalArchiveTests(DatabaseCase):
         from m2.archive.revisions import correct
         correct(self.store, self.alice, 'source', 'correction', 'turn', 'correct', 'Wrong time')
         self.assertEqual(charts.get_chart(self.alice, 'sourced-chart')['source_status'], 'superseded')
+        self.assertEqual(explore_chart(charts.get_chart(self.alice, 'sourced-chart'))['reason'],
+                         'historical_source')
         from mcp.shared.memory import create_connected_server_and_client_session
         from m2.mcp_server import chart_tools
 
