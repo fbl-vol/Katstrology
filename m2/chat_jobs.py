@@ -8,8 +8,8 @@ from threading import Event
 from m2.local_model import DEFAULT_MODEL, model_at
 from m2.gateway import CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX, turn_steps
 from m2.recall import PromptBudgetError, rebuild_one
-from m2.provider_model import ResponsesModel
-from m2.provider_steps import ProviderFlush, ProviderStep, next_provider
+from m2.provider.responses import ResponsesModel
+from m2.provider.steps import ProviderFlush, ProviderStep, next_provider
 from m2.siwc import ProviderFailure
 from m2.title_work import TitleWork, generate_title
 

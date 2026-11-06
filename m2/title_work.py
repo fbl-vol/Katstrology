@@ -8,7 +8,7 @@ import hashlib
 import re
 
 from m2.product_policy import MODEL
-from m2.provider_model import ResponsesModel
+from m2.provider.responses import ResponsesModel
 
 TITLE_INSTRUCTIONS = ("Give this conversation a short descriptive topic title, 2–7 words. "
                       "Do not copy the beginning of the message, greet the user, or use a generic "

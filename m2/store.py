@@ -15,7 +15,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from m2.app_clock import reporting_zone as checked_reporting_zone, snapshot
-from m2.evidence_links import archived_links
+from m2.chat.evidence_links import archived_links
 
 
 ID = re.compile(r'[A-Za-z0-9_-]{1,80}\Z')

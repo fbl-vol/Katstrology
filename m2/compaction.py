@@ -12,7 +12,7 @@ import psycopg
 from m2.prompting import SUMMARY, identity, summary_identity
 from m2.recall import PromptBudgetError, dialogue_projection
 from m2.siwc import ProviderFailure
-from m2.provider_steps import ProviderStep
+from m2.provider.steps import ProviderStep
 
 
 SUMMARY_CHARS = 4096

@@ -6,8 +6,8 @@ import json
 import swisseph as swe
 
 from m2.app_clock import utc_now
-from m2.turn_context import read_committed_context
-from m2.evidence_links import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
+from m2.chat.context import read_committed_context
+from m2.chat.evidence_links import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
                                read_command_evidence)
 from m2.agent_reads import TOOLS, execute as execute_read
 from m2.tool_evidence import (MAX_MODEL_EVIDENCE_BYTES,
@@ -17,7 +17,7 @@ from m2.recall import CONTEXT_TOKENS, REPLY_RESERVE, PromptBudgetError, assemble
 from m2.prompting import LOCAL, identity
 from m2.tone_profiles import archived_instructions
 from m2.references import References
-from m2.provider_steps import ProviderFlush, ProviderStep
+from m2.provider.steps import ProviderFlush, ProviderStep
 from m2.tool_answers import _chart_prompt_evidence  # Existing gateway import compatibility.
 from m2.store import MAX_EVENT_BYTES
 from m2.core_calc import solar_longitude

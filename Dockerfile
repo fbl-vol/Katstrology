@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY m2/*.py ./m2/
 COPY m2/http_boundary/*.py ./m2/http_boundary/
 COPY m2/calculation/*.py ./m2/calculation/
+COPY m2/chat/*.py ./m2/chat/
+COPY m2/provider/*.py ./m2/provider/
 COPY m2/migrations ./m2/migrations
 COPY m2/data ./m2/data
 # build_local stages and verifies only the five pinned public CPU model files.

@@ -10,7 +10,7 @@ import json
 from hashlib import sha256
 
 from m2.agent_reads import project_transit_view
-from m2.evidence_links import project_read_links
+from m2.chat.evidence_links import project_read_links
 from m2.store import MAX_TOOL_RESULT_BYTES
 
 MAX_MODEL_RESULT_BYTES = 256 * 1024
