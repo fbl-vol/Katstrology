@@ -52,7 +52,13 @@ npm ci --prefix web
 .venv-swiss/bin/python -m deploy.prepare_public_model
 ```
 
-For narrower suites, prepare only their prerequisites. The optional Qwen fixture
+For narrower suites, prepare only their prerequisites: browser profiles need
+Python/server dependencies, npm dependencies, Playwright Chromium, public Swiss
+files and the public BGE snapshot, but not Qwen. The probe guide lists Swiss file
+hashes for independent preparation; `prepare_ci_inputs` above is the convenience
+path for the full suite and also installs/downloads Qwen. Browser-config-only
+checks (`npm --prefix web run test:browser:config`) need Node22 and npm dependencies,
+not a browser, Python, model or database. The optional Qwen fixture
 needs its local model/native binding;
 hosted-only startup does not import or require that binding. Missing Qwen is
 never a browser fallback. Public embedding inputs are separately hash-pinned;

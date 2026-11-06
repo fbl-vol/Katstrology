@@ -55,6 +55,55 @@ class WorkflowTests(unittest.TestCase):
         clock = validation.browser_env(env, 'clock', Path('/tmp/synthetic'))
         self.assertEqual((clock['KAT_BROWSER_SIWC'], clock['KAT_BROWSER_FAKE_PLAN']), ('1', '1'))
 
+    def test_browser_override_is_the_only_ambient_kat_input_retained(self):
+        with TemporaryDirectory() as temp:
+            browser = Path(temp) / 'synthetic-browser'
+            browser.write_text('#!/bin/sh\nexit 0\n')
+            browser.chmod(0o700)
+            ambient = {'KAT_BROWSER_BIN': str(browser), 'KAT_BROWSER_TEST_PORT': '8765',
+                       'KAT_BROWSER_DIST': '/unowned/dist', 'KAT_BROWSER_SIWC': '1',
+                       'KAT_ISOLATED_TEST_DSN': 'unowned', 'PGPASSWORD': 'unowned',
+                       'OPENAI_API_KEY': 'synthetic', 'SIWC_TOKEN': 'synthetic',
+                       'https_proxy': 'http://unowned', 'DOCKER_HOST': 'tcp://unowned'}
+            with patch.dict(validation.os.environ, ambient, clear=True):
+                clean = validation.clean_environment(include_browser=True)
+                self.assertNotIn('KAT_BROWSER_BIN', validation.clean_environment())
+                with patch.object(validation, 'free_port', return_value=23456):
+                    env = validation.browser_env(clean, 'browser', Path(temp) / 'owned-dist')
+            self.assertEqual(clean['KAT_BROWSER_BIN'], str(browser))
+            for key in ambient.keys() - {'KAT_BROWSER_BIN', 'DOCKER_HOST'}:
+                self.assertNotIn(key, clean)
+            self.assertEqual(clean['DOCKER_HOST'], 'unix:///var/run/docker.sock')
+            self.assertEqual(env['KAT_BROWSER_BIN'], str(browser))
+            self.assertEqual(env['KAT_BROWSER_TEST_PORT'], '23456')
+            self.assertEqual(env['KAT_BROWSER_DIST'], str(Path(temp) / 'owned-dist'))
+            self.assertEqual(env['KAT_BROWSER_SIWC'], '0')
+
+    def test_browser_override_refuses_invalid_paths_without_fallback(self):
+        with TemporaryDirectory() as temp:
+            nonexecutable = Path(temp) / 'not-executable'
+            nonexecutable.touch(mode=0o600)
+            for value in ('', 'relative-browser', temp, str(nonexecutable), temp + '/missing'):
+                with self.subTest(value=value), patch.dict(validation.os.environ,
+                        {'KAT_BROWSER_BIN': value}, clear=True):
+                    with self.assertRaisesRegex(ValueError, 'absolute executable file'):
+                        validation.clean_environment(include_browser=True)
+                    # Docker ownership/cleanup must not depend on browser availability.
+                    self.assertNotIn('KAT_BROWSER_BIN', validation.clean_environment())
+        with patch.dict(validation.os.environ, {}, clear=True):
+            self.assertNotIn('KAT_BROWSER_BIN', validation.clean_environment())
+
+    def test_invalid_browser_override_refuses_before_fixture_start(self):
+        with TemporaryDirectory() as temp, \
+             patch.object(validation, 'ROOT', Path(temp)), \
+             patch.object(validation, 'git_state', return_value={'sha': SHA, 'dirty': False}), \
+             patch.dict(validation.os.environ, {'KAT_BROWSER_BIN': temp + '/missing'}, clear=True), \
+             patch.object(validation, 'start_fixture', side_effect=AssertionError('fixture touched')):
+            code, report = invoke(validation.main, ['--profile', 'browser', '--execute'])
+        self.assertEqual((code, report['status'], report['error_type']), (1, 'stopped', 'ValueError'))
+        self.assertEqual(report['unrun'], ['browser'])
+        self.assertNotIn('fixture', report)
+
     def test_validation_never_removes_unowned_fixture(self):
         with patch.object(validation, 'command', side_effect=['id', '0.0.0.0:5432']), \
              patch.object(validation, 'owned_container', return_value=False):

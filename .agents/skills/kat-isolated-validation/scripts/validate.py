@@ -76,13 +76,21 @@ def git_state():
             'dirty': bool(command(['git', 'status', '--porcelain']))}
 
 
-def clean_environment():
+def clean_environment(*, include_browser=False):
     # The fixtures otherwise fall back to the user's database/8765 when unset.
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(('KAT_', 'PG', 'VITE_KAT_', 'OPENAI_', 'ANTHROPIC_',
                                   'AZURE_', 'AWS_', 'GOOGLE_', 'SIWC_')) and
            key.upper() not in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY') and
            not key.startswith('DOCKER_')}
+    # The only ambient KAT browser input admitted: an intentional executable,
+    # never fixture paths, ports, provider flags or database configuration.
+    browser = os.environ.get('KAT_BROWSER_BIN') if include_browser else None
+    if browser is not None:
+        path = Path(browser)
+        if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
+            raise ValueError('KAT_BROWSER_BIN must name an existing absolute executable file')
+        env['KAT_BROWSER_BIN'] = browser
     docker_host = 'unix:///var/run/docker.sock'
     hosted_socket = os.environ.get('KAT_HOSTED_DOCKER_SOCKET')
     if hosted_socket is not None:
@@ -361,7 +369,7 @@ def main():
             out = ROOT / '.local' / 'kat-validation' / secrets.token_hex(8)
             out.mkdir(parents=True, mode=0o700)
             report['logs_dir'] = str(out.relative_to(ROOT))
-            env = clean_environment()
+            env = clean_environment(include_browser=any(profile in PROFILES[2:] for profile in selected))
             if any(profile != 'probes' for profile in selected):
                 with timed_stage(report['timings'], 'fixture-start'):
                     fixture = start_fixture(env)

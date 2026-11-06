@@ -41,7 +41,14 @@ python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic r
 
 Grouped profiles execute **sequentially**. Backend tests additionally clone an invocation-local migrated synthetic template except for explicit migration/recovery/auth paths, retaining independent databases, files and deletion journals. They share one newly owned PostgreSQL container; each browser-server launch still creates its own disposable database/files. Normal assets build once when needed, solely within that invocation's new ignored `.local/kat-validation/` directory. There is no cross-run cache and no reuse of served `web/dist`. Keep source fixed while a validation invocation runs; source edits require another run of the affected checks, not automatically every profile. Dirty-source results are advisory, not exact committed-tip acceptance.
 
-The runner clears ambient `KAT_*`/PG/provider fixture variables, uses `tests/support/database.py` and `web/browser_fixture.py`, and selects explicit compatible browser flags. SIWC must **not** combine with the prelinked fake-plan flag; the fixed-clock profile explicitly enables synthetic callback and prelinked scenarios. Normal browser tests use the fake plan; all browser profiles deny external hosts. Never substitute port 8765, the user's fixture, actual provider calls or an unowned container when setup fails.
+Local and hosted browser profiles use Playwright's installed Chromium by default
+(native `PLAYWRIGHT_BROWSERS_PATH` may select an existing cache). No system-browser
+fallback is used. An intentional `KAT_BROWSER_BIN` override must be an existing
+absolute executable file; invalid overrides refuse rather than falling back.
+Do not install a missing browser under source-only scope; report its required path.
+
+The runner clears ambient `KAT_*`/PG/provider fixture variables except that validated
+browser executable override, uses `tests/support/database.py` and `web/browser_fixture.py`, and selects explicit compatible browser flags. SIWC must **not** combine with the prelinked fake-plan flag; the fixed-clock profile explicitly enables synthetic callback and prelinked scenarios. Normal browser tests use the fake plan; all browser profiles deny external hosts. Never substitute port 8765, the user's fixture, actual provider calls or an unowned container when setup fails.
 
 ## Read the report
 

@@ -48,8 +48,16 @@ python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile bro
 Use the runner rather than direct `npm run test:browser`: the raw Playwright
 configuration defaults to port 8765. The runner owns a disposable database, free
 loopback port, ignored build output and cleanup. It never substitutes the current
-archive, live provider or served `web/dist`. `KAT_BROWSER_BIN` selects an already
-available Chromium; hosted qualification uses its pinned installed browser.
+archive, live provider or served `web/dist`. Local and hosted runs both default to
+Playwright's installed Chromium from the locked dependency version; no system
+`/usr/bin/chromium-browser` is required. Native `PLAYWRIGHT_BROWSERS_PATH` can select
+an existing Playwright cache. A missing browser fails rather than falling back.
+To deliberately use another compatible installed Chromium, set `KAT_BROWSER_BIN`
+to its absolute executable path on the runner command. The runner preserves only
+that validated browser override from ambient `KAT_*`; missing, relative or
+non-executable paths are refused, and fixture/provider settings remain isolated.
+`npm --prefix web run test:browser:config` checks selection without starting a
+browser, database or server.
 Normal, fake-SIWC and fixed-clock suites have separate selectors. Test discovery
 is recursive; keep the existing basename selectors in `playwright.config.ts` in
 sync when adding tests. Screenshots and manifests remain under ignored `.local/`.

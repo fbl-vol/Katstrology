@@ -5,7 +5,6 @@ const root = resolve(import.meta.dirname, '..');
 const port = Number(process.env.KAT_BROWSER_TEST_PORT || '8765');
 const syntheticSiwc = process.env.KAT_BROWSER_SIWC === '1';
 const fakePlan = process.env.KAT_BROWSER_FAKE_PLAN === '1';
-const hostedRunner = process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted';
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid isolated test port');
 export default defineConfig({
   testDir: './tests',
@@ -18,8 +17,8 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${port}`,
     ...devices['Desktop Chrome'],
     launchOptions: {
-      // Hosted preparation installs Playwright's locked browser, not a system snap.
-      executablePath: process.env.KAT_BROWSER_BIN || (hostedRunner ? undefined : '/usr/bin/chromium-browser'),
+      // Use Playwright's installed browser on both local and hosted runners.
+      executablePath: process.env.KAT_BROWSER_BIN || undefined,
       args: syntheticSiwc || fakePlan ? ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE 127.0.0.2'] : [],
     },
   },
