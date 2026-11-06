@@ -14,6 +14,11 @@ const svgNamespace = 'http://www.w3.org/2000/svg';
 function wheelMarkup(svg: SVGSVGElement, mode: 'existing' | 'screen' | 'print', provenance: object) {
   const copy = svg.cloneNode(true) as SVGSVGElement;
   copy.setAttribute('xmlns', svgNamespace);
+  // Exploration is transient UI, not saved chart evidence or export geometry.
+  copy.querySelectorAll('[data-exploration-overlay]').forEach(node => node.remove());
+  copy.classList.remove('exploring');
+  copy.querySelector('[data-wheel-caption]')?.setAttribute('opacity', '1');
+  copy.setAttribute('role', 'img');
   const fontStyles = document.createElementNS(svgNamespace, 'style');
   fontStyles.textContent = embeddedGlyphFontsStyle;
   copy.insertBefore(fontStyles, copy.firstChild);

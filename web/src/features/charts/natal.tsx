@@ -1,4 +1,6 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useRef } from 'react';
+import { NatalExplorer } from './natal-explorer';
+import { aspectColors, type WheelOverlay } from './exploration-geometry';
 import { bodyGlyph, bodyLabel, ChartNotation, chartNotation } from './chart-symbols';
 import './chart-wheel.css';
 import { WheelExportActions } from './chart-export';
@@ -21,13 +23,9 @@ export type Chart = { id: string; person_id: string; birth_id: string; profile_i
     natal?: NatalResult; houses: string; engine: { method: string; version: string };
     profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean; include_lilith?: 'mean' | 'osculating' } }; } };
 
-const aspectColors: Record<string, string> = { conjunction: 'var(--wheel-aspect-gold, #a87931)',
-  opposition: 'var(--wheel-aspect-warm, #ad684c)', square: 'var(--wheel-aspect-warm, #ad684c)',
-  trine: 'var(--wheel-aspect-cool, #487b72)', sextile: 'var(--wheel-aspect-cool, #487b72)' };
-
-function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProvenance = {} }: {
+function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProvenance = {}, overlay, selected = false }: {
   chart: Chart; natal: NatalResult; compact?: boolean; label?: string;
-  additionalProvenance?: Record<string, unknown>;
+  additionalProvenance?: Record<string, unknown>; overlay?: WheelOverlay; selected?: boolean;
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const ascendant = natal.houses.angles[0].longitude_degrees;
@@ -44,8 +42,8 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
     .map(item => [item.id, item.longitude_degrees] as const));
 
   return <div className={`natal-wheel-frame${compact ? ' compact-natal-wheel' : ''}`}>
-    <div className="natal-wheel-scroll"><svg ref={svg} className="natal-wheel" xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 480 480" role="img" aria-labelledby={`wheel-title-${chart.id} wheel-desc-${chart.id}`}>
+    <div className="natal-wheel-scroll"><svg ref={svg} className={`natal-wheel${selected ? ' exploring' : ''}`} xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 480 480" role={overlay ? 'group' : 'img'} aria-labelledby={`wheel-title-${chart.id} wheel-desc-${chart.id}`}>
       <title id={`wheel-title-${chart.id}`}>Tropical {label.toLowerCase()} wheel{compact ? ' for the next message' : ''}</title>
       <desc id={`wheel-desc-${chart.id}`}>Calculated {natal.houses.system} cusps, planets, nodes, ascendant, midheaven and displayed aspects. {natal.positions.some(body => body.id === 'chiron') ? 'Opted-in Chiron included. ' : ''}{natal.lilith_method ? `${natal.lilith_method}. ` : ''}Wheel labels: {chartNotation}. Sign labels use their first three letters. Numbered rays are house cusps. The following tables list degrees, cusps and aspect names/orbs.</desc>
       <rect x="1" y="1" width="478" height="478" rx="18" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-frame, #d8dfce)" />
@@ -80,7 +78,8 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
           <circle cx={label.x} cy={label.y} r="12" fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-angle, #728b70)" />
           <text x={label.x} y={label.y} textAnchor="middle" dominantBaseline="middle" fontSize="17" fontFamily={body.id === 'sun' ? 'KatAstroSun' : 'KatAstro'} fill="var(--wheel-glyph, #224432)">{bodyGlyph(body.id) || body.id.slice(0, 2)}</text></g>;
       })}
-      <text x="240" y="228" textAnchor="middle" fill="var(--wheel-ink, #2b503b)" fontSize="14" fontFamily="Georgia, serif">{label} · tropical</text>
+      <text data-wheel-caption="true" opacity={overlay ? 0 : 1} x="240" y="228" textAnchor="middle" fill="var(--wheel-ink, #2b503b)" fontSize="14" fontFamily="Georgia, serif">{label} · tropical</text>
+      {overlay && <g data-exploration-overlay="true">{overlay({ ascendant, tracks, locations })}</g>}
 
     </svg></div>
     {!compact && <><p className="wheel-scroll-hint">Scroll sideways for the full wheel. Open Symbols for the glyph key; tables give full names and degrees.</p>
@@ -128,25 +127,14 @@ export function CompactNatalWheel({ chart }: { chart: Chart }) {
     natal.houses.angles.length > 0 ? <Wheel chart={chart} natal={natal} compact /> : null;
 }
 
-export function NatalChart({ chart, allowMotion = false, personLayout = false }: {
+export function NatalChart({ chart, allowMotion = false }: {
   chart: Chart; allowMotion?: boolean; personLayout?: boolean;
 }) {
-  const [selectedData, setSelectedData] = useState<'positions' | 'houses' | 'aspects'>('positions');
   const natal = chart.result.natal;
   if (!natal) return null;
   const settings = chart.result.profile.settings;
   const birth = chart.result.birth;
   const hasWheel = natal.houses.status === 'supported';
-  const dataTabs = ['positions', 'houses', 'aspects'] as const;
-  function moveDataTab(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 :
-      event.key === 'ArrowRight' ? (index + 1) % 3 :
-      event.key === 'ArrowLeft' ? (index + 2) % 3 : null;
-    if (next === null) return;
-    event.preventDefault();
-    setSelectedData(dataTabs[next]);
-    (event.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
-  }
 
   const positions = <div className="natal-tables"><table><caption>Planet and lunar node positions{natal.lilith_method ? ' + selected Black Moon Lilith' : ''} · tropical longitude</caption>
     <thead><tr><th scope="col">Body</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th><th scope="col">House</th><th scope="col">Motion</th></tr></thead>
@@ -163,17 +151,8 @@ export function NatalChart({ chart, allowMotion = false, personLayout = false }:
       <td>{item.kind}</td><td>{bodyLabel(item.second)}</td><td>{item.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
     {!natal.aspects.length && <p>No aspects fall within this profile’s selected orbs.</p>}</div>;
 
-  const chartData = personLayout && hasWheel ? <div className="person-chart-data">
-    <div className="person-data-tabs" role="tablist" aria-label="Chart data sections">
-      {dataTabs.map((item, index) => <button key={item} type="button" role="tab" id={`person-${chart.id}-${item}`}
-        aria-controls={`person-${chart.id}-data`} aria-selected={selectedData === item} tabIndex={selectedData === item ? 0 : -1}
-        onClick={() => setSelectedData(item)} onKeyDown={event => moveDataTab(event, index)}>
-        {item[0].toUpperCase() + item.slice(1)}</button>)}
-    </div>
-    <div id={`person-${chart.id}-data`} role="tabpanel" aria-labelledby={`person-${chart.id}-${selectedData}`}>
-      {selectedData === 'positions' ? positions : selectedData === 'houses' ? houses : aspects}
-    </div>
-  </div> : <>{positions}{houses}{aspects}</>;
+  const chartData = <details className="chart-supporting-data"><summary>All chart tables</summary>
+    {positions}{houses}{aspects}</details>;
 
   return <div className="natal-detail">
     <p>{natal.status === 'complete' ? 'Calculated natal chart' : 'Limited natal chart'} · {settings.house_system} houses · {settings.node_type} north node{natal.lilith_method ? ` · ${natal.lilith_method}` : ''}.</p>
@@ -184,13 +163,10 @@ export function NatalChart({ chart, allowMotion = false, personLayout = false }:
     {chart.source_status !== 'current' ? <p className="error">Historical source: do not use these calculated degrees as current chart evidence.</p> :
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
-        {personLayout && hasWheel ? <div className="person-natal-layout">
-          <Wheel chart={chart} natal={natal} />{chartData}
-        </div> : <>
-          {hasWheel ? <Wheel chart={chart} natal={natal} /> :
-            <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects below remain available.</p>}
-          {chartData}
-        </>}
+        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal}
+          wheel={(overlay, selected) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} /> :
+            <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects remain available.</p>} />
+        {chartData}
         {allowMotion && <TransitMotion chart={chart} />}
         <details className="chart-supporting-data"><summary>How this chart was calculated</summary>
           <p>House membership uses ecliptic-projected longitude. The south node is the north node’s antipode; it is not a second node calculation or an aspect participant. Aspects use ecliptic longitude, not applying/separating motion. {natal.lilith_method ? `${natal.lilith_method}. “True” does not mean more accurate; not asteroid 1181 or Waldemath. ` : ''}No interpretation, synastry, rectification or future prediction is calculated.</p>
