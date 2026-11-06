@@ -181,6 +181,7 @@ for (const heldStage of ['create', 'ACK', 'retry'] as const) {
           await page.setViewportSize(view);
           if (view.width === 390) await page.getByRole('button', { name: 'Open navigation' }).click();
           await page.getByLabel('Search conversations').scrollIntoViewIfNeeded();
+          if (view.height === 560) await page.locator('.recent-title').last().scrollIntoViewIfNeeded();
           await page.screenshot({ path: resolve(renders, `preserved-page-${view.width}x${view.height}.png`) });
           if (view.width === 390) await page.keyboard.press('Escape');
           await expect(page.getByLabel('Message Kat')).toHaveValue('New draft stays separate');
