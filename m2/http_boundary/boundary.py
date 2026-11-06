@@ -6,9 +6,9 @@ from urllib.parse import urlsplit
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from m2.product_policy import public_defaults
-from m2.store import MAX_MESSAGE
-from m2.web_auth import SESSION_HOURS, WebAuth
+from m2.operations.product_policy import public_defaults
+from m2.archive.store import MAX_MESSAGE
+from m2.http_boundary.web_auth import SESSION_HOURS, WebAuth
 
 MAX_JSON = 16 * 1024
 # JSON can represent one accepted UTF-8 text byte as six ASCII bytes (\\u0001).

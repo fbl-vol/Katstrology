@@ -6,10 +6,10 @@ selection. The gateway commits each yielded evidence event before inference.
 
 import json
 
-from m2.advanced import Advanced
-from m2.charts import Charts
-from m2.selected_results import selected_evidence
-from m2.tool_answers import _chart_prompt_evidence
+from m2.calculation.advanced import Advanced
+from m2.calculation.charts import Charts
+from m2.chat.selected_results import selected_evidence
+from m2.chat.tool_answers import _chart_prompt_evidence
 
 
 def read_committed_context(store, session, conversation_id, turn_id):

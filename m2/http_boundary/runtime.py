@@ -5,10 +5,10 @@ from hashlib import sha256
 from pathlib import Path
 from time import time
 
-from m2.deletion import Tombstones
+from m2.archive.deletion import Tombstones
 from m2.release_drain import Admission, serve_control, SOCKET
-from m2.store import Store
-from m2.web_auth import WebAuth
+from m2.archive.store import Store
+from m2.http_boundary.web_auth import WebAuth
 
 
 class BrowserRuntime:
@@ -16,7 +16,7 @@ class BrowserRuntime:
 
     def __init__(self, dsn, files, ledger, siwc_factory=None, siwc_root=None, clock=None,
                  maintenance=False):
-        from m2.app_clock import utc_now
+        from m2.operations.app_clock import utc_now
         self.dsn, self.files, self.ledger = dsn, files, ledger
         self.clock = clock or utc_now
         self.siwc_factory, self.siwc_root = siwc_factory, siwc_root
@@ -41,7 +41,7 @@ class BrowserRuntime:
                 raise
         try:
             await self.execute(connect)
-            from m2.chat_jobs import ChatJobs
+            from m2.chat.chat_jobs import ChatJobs
             self.chat = ChatJobs(self)
             if self.siwc_factory:
                 self.siwc = await self.execute(lambda: self.siwc_factory(self.siwc_root))

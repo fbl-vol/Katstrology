@@ -167,9 +167,11 @@ with Store(dsn,root/'files',Tombstones(root/'deletions/deletions.jsonl')) as sto
                       'app', *args, env=env, **kwargs)
 
     def app_python(self, image, script):
-        prelude = """from pathlib import Path
+        # The immutable schema23 image predates the current capability layout.
+        store_module = 'm2.store' if image == self.old_image else 'm2.archive.store'
+        prelude = f"""from pathlib import Path
 from m2.web_server import deployment_dsn
-from m2.store import Store
+from {store_module} import Store
 from m2.deletion import Tombstones
 root=Path('/var/lib/kat/browser-runtime')
 dsn=deployment_dsn('/run/secrets/db_password','db','kat','kat')

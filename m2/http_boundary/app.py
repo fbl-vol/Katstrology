@@ -6,7 +6,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from m2.deletion import ReferencedPersonAttachment
+from m2.archive.deletion import ReferencedPersonAttachment
 from m2.release_drain import AdmissionBoundary
 from m2.http_boundary.boundary import Forbidden, LocalBoundary, json_response, login, logout, session
 from m2.http_boundary.config import deployment_origin
@@ -50,14 +50,14 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
             return json_response({'error': 'invalid_request'}, 400)
         return json_response({'error': 'unavailable'}, 503)
 
-    from m2.web_people import routes as people_routes
-    from m2.web_conversations import routes as conversation_routes
-    from m2.web_chat import routes as chat_routes
-    from m2.web_siwc import routes as siwc_routes
-    from m2.web_tones import routes as tone_routes
-    from m2.web_transits import routes as transit_routes
-    from m2.web_synastry import routes as synastry_routes
-    from m2.web_advanced import routes as advanced_routes
+    from m2.http_boundary.web_people import routes as people_routes
+    from m2.http_boundary.web_conversations import routes as conversation_routes
+    from m2.http_boundary.web_chat import routes as chat_routes
+    from m2.http_boundary.web_siwc import routes as siwc_routes
+    from m2.http_boundary.web_tones import routes as tone_routes
+    from m2.http_boundary.web_transits import routes as transit_routes
+    from m2.http_boundary.web_synastry import routes as synastry_routes
+    from m2.http_boundary.web_advanced import routes as advanced_routes
 
     app = Starlette(routes=[Route('/api/session', session),
                             Route('/api/login', login, methods=['POST']),

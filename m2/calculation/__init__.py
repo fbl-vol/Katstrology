@@ -1,1 +1,1 @@
-"""Shared Swiss/time and qualified chart-source contracts for distinct techniques."""
+"""Saved charts and distinct techniques over checked Swiss/time/source primitives."""

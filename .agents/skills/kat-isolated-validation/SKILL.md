@@ -15,10 +15,10 @@ python3 scripts/validate.py --profile all
 python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic reading layout' --execute
 
 # Focus backend work using actual unittest selectors, not a new test harness.
-python3 scripts/validate.py --profile backend --tests m2.test_store --execute
+python3 scripts/validate.py --profile backend --tests tests.archive.test_store --execute
 
 # Targeted backend and synthetic SIWC in one invocation, with distinct filters.
-python3 scripts/validate.py --profiles backend siwc --tests m2.test_provider_output_compat --browser-grep 'synthetic streamed read' --execute
+python3 scripts/validate.py --profiles backend siwc --tests tests.provider.test_provider_output_compat --browser-grep 'synthetic streamed read' --execute
 
 # Final UI batch: share one fixture and the normal build across browser profiles.
 python3 scripts/validate.py --profiles browser siwc clock --execute
@@ -29,7 +29,7 @@ python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic r
 
 ## Choose the feedback loop
 
-- During iteration, run the relevant existing/new checks using `--tests m2.test_...` or `--browser-grep 'test title'`. Match consequential behavior, not whichever test is cheapest. Inspect selection/results; zero matches, skips and unrun profiles are not validation of the change.
+- During iteration, run the relevant existing/new checks using `--tests tests.<capability>.test_...` or `--browser-grep 'test title'`. Match consequential behavior, not whichever test is cheapest. Inspect selection/results; zero matches, skips and unrun profiles are not validation of the change.
 - Group related approved changes into a bounded delivery batch, using focused checks while implementing and keeping commits coherent. An individual todo or commit does not automatically trigger broad acceptance. Include related pending work before the broader pass where practical, but close the batch at a coherent boundary rather than postponing acceptance indefinitely as requests arrive.
 - Once the delivery batch is ready, run its required broader checks and rendered acceptance. Group applicable profiles with `--profiles` rather than launching separate invocations that repeat builds/setup. `--profile all` retains the complete suite; do not substitute a focused pass for required handoff checks.
 - After a failure, diagnose and rerun the failing scenario first. Once resolved, rerun the broader checks affected by the fix, preserving applicable evidence for unchanged code and fixtures. A test-selector-only correction does not automatically invalidate unrelated backend checks. Preserve required exact-tip acceptance; do not present earlier-revision evidence as a run of the final tip.
@@ -41,7 +41,7 @@ python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic r
 
 Grouped profiles execute **sequentially**. Backend tests additionally clone an invocation-local migrated synthetic template except for explicit migration/recovery/auth paths, retaining independent databases, files and deletion journals. They share one newly owned PostgreSQL container; each browser-server launch still creates its own disposable database/files. Normal assets build once when needed, solely within that invocation's new ignored `.local/kat-validation/` directory. There is no cross-run cache and no reuse of served `web/dist`. Keep source fixed while a validation invocation runs; source edits require another run of the affected checks, not automatically every profile. Dirty-source results are advisory, not exact committed-tip acceptance.
 
-The runner clears ambient `KAT_*`/PG/provider fixture variables, uses `m2/test_support.py` and `web/browser_fixture.py`, and selects explicit compatible browser flags. SIWC must **not** combine with the prelinked fake-plan flag; the fixed-clock profile explicitly enables synthetic callback and prelinked scenarios. Normal browser tests use the fake plan; all browser profiles deny external hosts. Never substitute port 8765, the user's fixture, actual provider calls or an unowned container when setup fails.
+The runner clears ambient `KAT_*`/PG/provider fixture variables, uses `tests/support/database.py` and `web/browser_fixture.py`, and selects explicit compatible browser flags. SIWC must **not** combine with the prelinked fake-plan flag; the fixed-clock profile explicitly enables synthetic callback and prelinked scenarios. Normal browser tests use the fake plan; all browser profiles deny external hosts. Never substitute port 8765, the user's fixture, actual provider calls or an unowned container when setup fails.
 
 ## Read the report
 

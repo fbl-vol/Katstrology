@@ -11,14 +11,14 @@ from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 
-from m2.charts import Charts
-from m2.advanced import Advanced
-from m2.synastry import Synastry
-from m2.deletion import Tombstones
-from m2.evidence import LocalEmbedder, personal_context, search_evidence
-from m2.references import References
-from m2.recall import search
-from m2.store import Store
+from m2.calculation.charts import Charts
+from m2.calculation.advanced import Advanced
+from m2.calculation.synastry import Synastry
+from m2.archive.deletion import Tombstones
+from m2.references.evidence import LocalEmbedder, personal_context, search_evidence
+from m2.references.references import References
+from m2.chat.recall import search
+from m2.archive.store import Store
 
 
 def chart_tools(store, session):

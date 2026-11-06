@@ -269,7 +269,7 @@ class ValidationPerformanceTests(unittest.TestCase):
     def test_grouped_backend_and_siwc_use_distinct_filters_one_template_and_fixture(self):
         with self.synthetic_runner() as (calls, start, _, _):
             code, report = invoke(validation.main, ['--profiles', 'backend', 'siwc',
-                '--tests', 'm2.test_store', '--browser-grep', 'synthetic selection', '--execute'])
+                '--tests', 'tests.archive.test_store', '--browser-grep', 'synthetic selection', '--execute'])
         self.assertEqual((code, report['selected'], report['unrun']),
                          (0, ['backend', 'siwc'], []))
         start.assert_called_once()
@@ -281,10 +281,10 @@ class ValidationPerformanceTests(unittest.TestCase):
                        kwargs['log'].name == 'backend.log')
         browser = next(argv for argv, kwargs in calls if kwargs.get('log') and
                        kwargs['log'].name == 'siwc.log')
-        self.assertIn('m2.test_store', backend)
+        self.assertIn('tests.archive.test_store', backend)
         self.assertNotIn('--grep', backend)
         self.assertEqual(browser[-2:], ['--grep', 'synthetic selection'])
-        self.assertNotIn('m2.test_store', browser)
+        self.assertNotIn('tests.archive.test_store', browser)
         self.assertEqual(sum(argv[:3] == ['docker', 'rm', '-f'] for argv, _ in calls), 1)
 
     def test_browser_filter_applies_to_each_selected_profile(self):
@@ -382,7 +382,7 @@ class ValidationPerformanceTests(unittest.TestCase):
     def test_invalid_mixed_selectors_fail_before_any_execution(self):
         invalid = [
             ['--profile', 'browser', '--profiles', 'clock'],
-            ['--profiles', 'probes', 'browser', '--tests', 'm2.test_store'],
+            ['--profiles', 'probes', 'browser', '--tests', 'tests.archive.test_store'],
             ['--profiles', 'backend', 'probes', '--browser-grep', 'synthetic'],
             ['--profiles', 'all'],
             ['--profile', 'siwc', '--private-layout-reference'],

@@ -7,9 +7,9 @@ nor changes the external event envelope or source-qualification policy.
 
 from datetime import datetime
 
-from m2.charts import Charts
-from m2.evidence import LocalEmbedder, search_evidence
-from m2.tool_answers import chart_answer, event_answer, reference_answer
+from m2.calculation.charts import Charts
+from m2.references.evidence import LocalEmbedder, search_evidence
+from m2.chat.tool_answers import chart_answer, event_answer, reference_answer
 
 CHART_PREFIX = 'saved chart '
 EVENT_PREFIX = 'chart events '

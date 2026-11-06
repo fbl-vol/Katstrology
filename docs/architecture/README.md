@@ -1,112 +1,90 @@
-# Katstrology architecture
+# Architecture and source map
 
-The diagram below is **historical** (native-natal tip `3a82e36`), not the current deployment or feature inventory. For installed packaging and promotion boundaries, see [deployment](../../deploy/README.md); for current turn and chart contracts, see [the M2 guide](../../m2/README.md).
+[Documentation index](../README.md)
 
-![Historical Katstrology local architecture](katstrology.png)
+Kat is a single-process application, not a collection of network microservices.
+The browser loads built Preact/TypeScript assets from the same Python service that
+handles its API. PostgreSQL and private runtime files are separate owned storage.
+Packaged HTTPS deployment and standalone loopback development have distinct
+configuration/security boundaries; see [deployment](../../deploy/README.md).
 
-- [PNG diagram](katstrology.png)
-- [Scalable SVG](katstrology.svg)
-- [Editable Mermaid source](katstrology.mmd)
+## Request and data flow
 
-## Reading the diagram
+1. The HTTP boundary validates Host/Origin, session and mutation CSRF, then sends
+   owner-scoped work through one serialized Store executor/connection.
+2. Conversation workflow captures draft/navigation intent. The browser archive
+   owner alone sends turns, tracks pending IDs and consumes ACK/SSE events.
+3. The backend commits input and immutable selected source identities before
+   inference. Context assembly selects bounded eligible ancestry and authoritative
+   chart/reference facts; the provider may request qualified read-only tools.
+4. Tool results, visible output chunks and terminal state commit before delivery.
+   Reconnect pages committed events by cursor; same-ID retry never reruns inference.
+5. Search, summaries and vectors are derived projections. Corrections, branch
+   changes and revoked sources invalidate eligibility without rewriting originals.
 
-The diagram uses a compact three-column, four-row layout. Everything except the
-orange dashed OpenAI box runs on the local computer. Arrows show the principal
-logical paths, not every internal call; the unarrowed database/files connection
-represents related private storage and recovery, not a database calling the
-filesystem. The model-connection box includes its optional sign-in adapter.
+Manual chart generation/inspection/export is separate from model sending. A saved
+result can be selected for a draft, but only an explicit send attaches it to a
+turn. Current person/chart pointers never replace an archived turn's versions.
+Numerical solvers share checked Swiss/time/source primitives without merging
+distinct techniques or changing their qualification contracts.
 
-The browser loads React/TypeScript assets from the same loopback Python server
-that handles the API. PostgreSQL is an owned dependency. The app has a container image and a Compose deployment configuration; the local synthetic fixture and deployed runtime are distinct. See [the deployment guide](../../deploy/README.md) for the actual packaging and release checks.
+## Frontend ownership
 
-The backend owns workspace authentication, authorization, conversation execution,
-context selection and persistence. One serialized Store worker preserves the
-current single-process database/transaction boundary. HTTP requests do not each
-create a separate independent Store. CLI and MCP are alternative entry points
-into shared code, not simultaneously safe writers to the browser's live archive.
-
-The archive retains original messages and ordered events. The conversation path
-commits user input before inference and output before browser delivery. The
-browser receives committed events and reconnects using a cursor. Selected people
-and chart versions belong to each turn; changing today's selection does not
-rewrite historical context.
-
-Context assembly uses bounded selected ancestry and an applicable summary rather
-than loading the complete archive. Reference/history search and local embeddings
-are separate bounded capabilities. Corrections, branch lineage, deletion and
-restore validity affect which records are eligible to reappear.
-
-## Models, tools and important limits
-
-- Local chat uses a small Qwen test model. It is a plumbing fixture, not a
-  product-quality astrology model.
-- The optional OpenAI path uses official account authorization and a direct
-  Responses adapter. It does not require a Codex process or separate Codex
-  app-server in this implementation. Dashed provider paths/dependencies are
-  optional, not proof of a successful live connection.
-- Account authorization and model inference are separate: identity sign-in alone
-  does not establish permission to use plan allowance. The user reports successful
-  live conversations. Agent-run provider tests use synthetic fixtures; this is not
-  independent verification of live eligibility, inference or chart-reading quality.
-- Selected context is sent to OpenAI in plan mode. Local archive ownership and
-  `store: false` must not be described as a guarantee of local-only processing or
-  provider zero retention. No provider chat history is imported.
-- Hosted Responses can request bounded read-only tools and continue after committed tool results, subject to owner, capacity, cancellation and evidence limits. Browser/CLI/MCP and model reads grant different scopes; the model does not acquire a write/import tool through MCP.
-- Native tropical natal charts now provide versioned planetary positions, nodes,
-  major aspects and supported Placidus/whole-sign house/angle facts. Exact birth
-  time and explicit coordinates are required for full house results; uncertain
-  or unsupported quantities remain partial, not invented. The same saved result
-  drives the original SVG wheel, accessible tables and selected-chart model
-  evidence. See [the natal contract](../../m2/NATAL-CHART.md) for supported dates,
-  conventions, numerical references and licensing. Legacy solar methods remain
-  available. Other calculations, including transits, relationships and symbolic timing, have their own qualified [method contracts](../../m2/ADVANCED-TECHNIQUES.md).
-- Historical person-chart files remain in old archive/backup/deletion data and original turn attribution; there is no new person-file upload, download, deletion route or provider forwarding path. Calculated chart history and generated wheel exports are separate and remain available.
-- Reference editions and explicitly selected, bounded model reads are distinct from archived person files. An imported edition is not automatically selected or approved as an interpretive library.
-- Files are private runtime state too: attachments, credentials, journals and
-  snapshots do not all live inside PostgreSQL. Independent exports/backups have
-  their own retention/deletion implications.
-
-These are logical responsibilities inside the existing application, not a
-proposal to split it into microservices or evidence of production readiness.
-
-## Source map
-
-| Responsibility | Current implementation |
+| Location | Owner |
 | --- | --- |
-| Mount, session lifetime, workspace navigation and shell | `web/src/main.tsx`, `web/src/app/` |
-| Discovery, draft workflow, committed transport/ACK/SSE and turn rendering | `web/src/features/conversation/`; `archive.ts` is the sole sender |
-| People, chart workflows and settings | `web/src/features/{people,charts,settings}/` |
-| Shared API, theme/style and brand assets | `web/src/shared/` |
-| Browser regressions and common assertions | `web/tests/{app,charts,conversation,people,settings,provider,layout,support}/` |
-| HTTP/security boundary and serialized lifecycle | `m2/http_boundary/{boundary,runtime,config,app}.py`, `m2/web_server.py` (compatible entry/facade), `m2/web_auth.py` |
-| Checked Swiss/time/angle primitives and owner-qualified natal source | `m2/calculation/{ephemeris,time,chart_source}.py`; technique solvers remain separate |
-| People, conversation, event and account endpoints | `m2/web_people.py`, `web_conversations.py`, `web_chat.py`, `web_siwc.py` |
-| Turn scheduling and commit-before-delivery | `m2/chat_jobs.py`, `gateway.py`, `store.py` |
-| Committed-turn selection and qualified evidence | `m2/turn_context.py` (snapshot read), `m2/evidence_links.py` (existing chart/reference command events); `gateway.py` alone sequences archive writes and provider reads |
-| Bounded continuity, provenance and retrieval | `m2/recall.py`, `provenance.py`, `evidence.py`, `references.py` |
-| Versioned chart records, native natal and legacy solar methods | `m2/charts.py`, `natal.py`, `core_calc.py` (`probes/core_calc.py` is a compatibility re-export) |
-| Natal SVG wheel and accessible placement/aspect tables | `web/src/features/charts/natal.tsx` |
-| Optional provider authentication/inference | `m2/siwc.py`, `provider_model.py` |
-| Private files, deletion and restore | `m2/attachments.py`, `deletion.py`, `backup.py` |
-| Alternative local tools | `m2/cli.py`, `fixture_cli.py`, `mcp_server.py` |
+| `web/src/main.tsx` | Vite mount entry |
+| `web/src/app/` | Session application, workspace navigation and shell composition |
+| `web/src/features/conversation/` | Discovery, draft workflow, sole archive sender, turns/context and scrolling |
+| `web/src/features/people/` | Birth/profile UI, insights, timing and private records |
+| `web/src/features/charts/` | Manual catalogue, technique intents/results, geometry and exports |
+| `web/src/features/settings/` | Appearance, provider and tone controls |
+| `web/src/shared/` | API, shared style/theme and brand assets/source notice |
+| `web/tests/` | Matching capability suites plus layout/provider and shared support |
 
-The diagram reflects the local implementation through native-natal feature tip
-`3a82e36`. It is architecture documentation, not an independent code, numerical,
-security or live-provider review. Green boxes are logical responsibilities inside
-one application, not additional network services.
+Discovery refreshes capture browse intent before awaiting work. A delayed create,
+send/retry or title completion cannot reset newer search/paging intent. Explicit
+All conversations navigation remains a distinct reset. Component grouping does
+not move transport/ACK/SSE ownership out of the archive module.
 
-## Regenerate
+## Backend ownership
 
-With Mermaid CLI (`mmdc`) and a local Chromium installation:
+| Location | Owner |
+| --- | --- |
+| `m2/archive/` | Store, conversations, revisions/provenance, blobs, deletion and snapshots |
+| `m2/chat/` | Turn execution, bounded context/compaction, evidence/read tools, prompts/tones and titles |
+| `m2/calculation/` | Versioned charts, method-specific solvers and checked numerical primitives |
+| `m2/people/` | People/birth workflow, offline place inputs and explicit saved records |
+| `m2/references/` | Edition/package admission, retrieval, pinned embeddings and citation audit |
+| `m2/provider/` | Optional local binding, SIWC, Responses parsing and capacity |
+| `m2/http_boundary/` | Routes, auth, request security/configuration and serialized runtime lifecycle |
+| `m2/operations/` | Clock/policy, owned fixture access and synthetic walkthrough/evaluation |
+| `tests/` | Capability-grouped backend/release contracts; common database/template support |
+| `probes/` | Separate feasibility/numerical checks and legacy probe import contract |
 
-```sh
-mmdc -i docs/architecture/katstrology.mmd \
-  -o docs/architecture/katstrology.svg --size 1800 -b '#f5f3ec'
-mmdc -i docs/architecture/katstrology.mmd \
-  -o docs/architecture/katstrology.png --size 1800 -s 1.5 -b '#f5f3ec'
-```
+The [backend guide](../../m2/README.md) records the evidence-backed root CLI and
+installed compatibility exceptions. Resource paths `m2/migrations`, `m2/data`,
+requirements and model license stay stable. Docker explicitly copies production
+packages; tests are not runtime dependencies. The source offer includes preferred
+source/build inputs independently of installed image contents.
 
-If Chromium is not discoverable, supply `-p /path/to/puppeteer-config.json` with
-an `executablePath` appropriate to the machine. Rendering requires no real
-workspace data, account credentials or external model request. Images use only
-architecture labels, not screenshots of private runtime content.
+## Boundaries that grouping must preserve
+
+- One Store/advisory owner and commit-before-delivery sequence; no per-request
+  Store, duplicate sender, second journal or distributed-write design.
+- Source-qualified facts, original event identities/order, immutable chart/result
+  versions and schema24 compatibility. No inferred exact birth time or invented
+  houses, interpretation or relationship score.
+- Owner-scoped model reads are narrower than CLI/MCP. Prompt text is not an
+  authorization boundary; provider reasoning is transient, not archive content.
+- Private attachments, credentials, journals and snapshots are not all in the
+  database. Older snapshots require independently retained current deletion
+  authority before access; exported copies have their own retention lifecycle.
+- Installed release helpers and immutable image/source identities have explicit
+  trust contracts. Moving application modules is not permission to repin helpers,
+  activate migrations, replace a source offer or deploy.
+
+See [archive/recovery](../archive-and-recovery.md),
+[provider/context](../provider-and-context.md), [reference library](../reference-library.md)
+and [synthetic validation](../testing.md). Local checks do not establish live
+provider quality, external-host capture, physical-device acceptance or your
+production backup/retention policy.

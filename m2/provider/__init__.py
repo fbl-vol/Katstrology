@@ -1,1 +1,1 @@
-"""Responses transport and cooperative provider I/O boundaries."""
+"""Provider authorization, Responses I/O, capacity and optional local inference."""

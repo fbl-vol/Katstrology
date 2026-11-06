@@ -7,7 +7,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from urllib.request import ProxyHandler, build_opener
 
-from m2.local_model import DEFAULT_MODEL
+from m2.provider.local_model import DEFAULT_MODEL
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_REVISION = '9217f5db79a29953eb74d5343926648285ec7e67'

@@ -29,6 +29,10 @@ COPY m2/http_boundary/*.py ./m2/http_boundary/
 COPY m2/calculation/*.py ./m2/calculation/
 COPY m2/chat/*.py ./m2/chat/
 COPY m2/provider/*.py ./m2/provider/
+COPY m2/archive/*.py ./m2/archive/
+COPY m2/people/*.py ./m2/people/
+COPY m2/references/*.py ./m2/references/
+COPY m2/operations/*.py ./m2/operations/
 COPY m2/migrations ./m2/migrations
 COPY m2/data ./m2/data
 # build_local stages and verifies only the five pinned public CPU model files.
@@ -47,6 +51,6 @@ RUN groupadd --gid 10001 kat && useradd --uid 10001 --gid kat --home-dir /opt/ka
       /var/lib/kat/browser-runtime/siwc
 USER 10001:10001
 # Fail the build if the final runtime user cannot read the exact offline model.
-RUN python -c 'from m2.evidence import LocalEmbedder; assert len(LocalEmbedder().query("public model smoke")) == 384'
+RUN python -c 'from m2.references.evidence import LocalEmbedder; assert len(LocalEmbedder().query("public model smoke")) == 384'
 EXPOSE 8765
 CMD ["python", "-m", "m2.web_server", "serve"]

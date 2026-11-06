@@ -263,7 +263,7 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
     python = ROOT / '.venv-swiss/bin/python'
     web = ROOT / 'web'
     if profile == 'backend':
-        argv, cwd = [str(python), '-m', 'm2.validation_runner', '--timings',
+        argv, cwd = [str(python), '-m', 'tests.runner', '--timings',
                      str(out / 'backend-timing.json'), *tests], ROOT
     elif profile == 'probes':
         argv, cwd = [str(python), '-m', 'unittest', 'discover', '-s', 'probes', '-p', 'test_*.py', '-q'], ROOT
@@ -330,7 +330,7 @@ def main():
     selection.add_argument('--profiles', nargs='+', choices=PROFILES,
                            help='Run selected profiles sequentially, sharing fixture and run-local builds')
     parser.add_argument('--execute', action='store_true', help='Create isolated fixture and run selected profile')
-    parser.add_argument('--tests', nargs='+', default=[], help='Explicit m2.test_* or deploy.test_* unittest selectors (backend only)')
+    parser.add_argument('--tests', nargs='+', default=[], help='Explicit tests.<capability>.test_* unittest selectors (backend only)')
     parser.add_argument('--browser-grep', help='Playwright title filter (browser profiles only)')
     parser.add_argument('--private-layout-reference', action='store_true',
                         help='Explicitly compare with an available approved private mockup and historical CSS')
@@ -342,8 +342,8 @@ def main():
     else:
         selected = (args.profile,)
     if args.tests and ('backend' not in selected or any(not re.fullmatch(
-            r'(?:m2|deploy)\.test_[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+){0,2}', name) for name in args.tests)):
-        parser.error('--tests requires a backend profile and m2.test_* or deploy.test_* selectors')
+            r'tests\.[a-z_]+\.test_[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+){0,2}', name) for name in args.tests)):
+        parser.error('--tests requires a backend profile and tests.<capability>.test_* selectors')
     if args.browser_grep and not any(profile in selected for profile in PROFILES[2:]):
         parser.error('--browser-grep requires a browser profile')
     if args.private_layout_reference and 'browser' not in selected:
@@ -370,7 +370,7 @@ def main():
                 env['KAT_ISOLATED_TEST_TEMPLATE'] = 'kat_m2_template_' + secrets.token_hex(6)
                 env['KAT_ISOLATED_TEST_RUN_DIR'] = str(out)
                 with timed_stage(report['timings'], 'template-setup'):
-                    command([str(ROOT / '.venv-swiss/bin/python'), '-m', 'm2.test_template'],
+                    command([str(ROOT / '.venv-swiss/bin/python'), '-m', 'tests.support.template'],
                             env=env, log=out / 'template.log')
             for profile in selected:
                 report['unrun'].remove(profile)

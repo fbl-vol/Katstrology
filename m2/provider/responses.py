@@ -2,10 +2,10 @@
 
 import json
 import math
-from m2.agent_reads import TOOLS
-from m2.model_capacity import resolve_capacity
-from m2.prompting import HOSTED
-from m2.siwc import ProviderFailure
+from m2.chat.agent_reads import TOOLS
+from m2.provider.model_capacity import resolve_capacity
+from m2.chat.prompting import HOSTED
+from m2.provider.siwc import ProviderFailure
 
 MAX_RESPONSE_TEXT_BYTES = 512 * 1024
 MAX_RESPONSE_FOOTER_BYTES = 2 * 1024 * 1024

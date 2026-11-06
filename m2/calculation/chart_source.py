@@ -2,7 +2,7 @@
 import swisseph as swe
 
 from m2.calculation.ephemeris import ephemeris
-from m2.charts import Charts
+from m2.calculation.charts import Charts
 
 
 class NatalChartSource:

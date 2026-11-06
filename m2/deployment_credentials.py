@@ -12,10 +12,10 @@ import getpass
 from pathlib import Path
 import sys
 
-from m2.deletion import Tombstones
-from m2.local_fixture import fixture_dsn
-from m2.siwc import CredentialFiles
-from m2.store import Store
+from m2.archive.deletion import Tombstones
+from m2.operations.local_fixture import fixture_dsn
+from m2.provider.siwc import CredentialFiles
+from m2.archive.store import Store
 from m2.http_boundary.config import deployment_dsn
 
 

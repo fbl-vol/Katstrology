@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from psycopg.conninfo import make_conninfo
 
-from m2.store import Store
+from m2.archive.store import Store
 
 
 def deployment_origin(value):

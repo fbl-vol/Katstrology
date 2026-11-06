@@ -15,11 +15,11 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 import uvicorn
 
-from m2.deletion import Tombstones
-from m2.local_fixture import ROOT
-from m2.store import Store
-from m2.test_support import test_fixture_dsn
-from m2.web_server import create_app
+from m2.archive.deletion import Tombstones
+from m2.operations.local_fixture import ROOT
+from m2.archive.store import Store
+from tests.support.database import test_fixture_dsn
+from m2.http_boundary.app import create_app
 
 
 async def synthetic_provider(reader, writer, app_port):
@@ -80,8 +80,8 @@ async def main():
                 for owner in ('reader-shell', 'reader-people', 'reader-shared', 'reader-mobile', 'reader-chat', 'reader-shell-chat', 'reader-complete-normal', 'reader-complete-sky-normal', 'reader-complete-mobile-normal', 'reader-complete-three-normal', 'reader-complete-270-normal', 'reader-complete-alt', 'reader-newchat-normal', 'reader-delete', 'reader-race', 'reader-create-race', 'reader-local-pending', 'reader-instant-normal', 'reader-instant-error', 'reader-instant-disconnected', 'reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader', 'reader-paged-normal', 'reader-siwc', 'reader-siwc-identity', 'reader-siwc-failure', 'reader-output-compat', 'reader-streamed-output', 'reader-incomplete-output', 'reader-budget-reads', 'reader-continuity-hotfix', 'reader-profile-media', 'reader-profile-media-mobile', 'reader-handoff-file', 'reader-budget-desktop', 'reader-budget-mobile', 'reader-compaction-desktop', 'reader-compaction-mobile', 'reader-markdown-desktop', 'reader-markdown-mobile', 'reader-grounded-desktop', 'reader-grounded-mobile', 'reader-grounded-short-mobile', 'reader-grounded-wide', 'reader-natal', 'reader-natal-mobile', 'reader-natal-unknown', 'reader-natal-polar', 'reader-transit-desktop', 'reader-transit-mobile', 'reader-appearance', 'reader-clock-desktop', 'reader-clock-mobile', 'reader-clock-retained-desktop', 'reader-clock-retained-mobile', 'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-lilith', 'reader-motion', 'reader-motion-conjunction', 'reader-thinking-normal', 'reader-thinking-reduced', 'reader-browse-mobile', 'reader-browse-wide', 'reader-notebook', 'reader-ordinary-desktop', 'reader-ordinary-mobile', 'reader-review-fixes', 'reader-review-records', 'reader-review-page', 'reader-review-pagination', 'reader-review-journal') + layout_owners + scroll_owners:
                     store.register_local(owner, 'synthetic-browser-password')
                 store.register_local('reader-escaped-boundary', 'synthetic-browser-password')
-                from m2.people import People
-                from m2.test_support import seed_legacy_person_file
+                from m2.people.people import People
+                from tests.support.database import seed_legacy_person_file
                 legacy_session = store.authenticate('reader-handoff-file', 'synthetic-browser-password')
                 People(store).charts.add_person(legacy_session, 'legacy-file-person', 'Synthetic file-only person')
                 seed_legacy_person_file(store, legacy_session, 'legacy-file-person', 'existing-file',
@@ -99,7 +99,7 @@ async def main():
                         'earliest_utc': '2001-06-21T04:00:00+00:00',
                         'latest_utc': '2001-06-21T16:00:00+00:00'})
                     people.create_chart(session, 'transit-person', unknown, 'natal-default', 1)
-                    from m2.birth_flow import BirthFlow
+                    from m2.people.birth_flow import BirthFlow
                     flow = BirthFlow(store)
                     def generated(person_id, request_id, day, hour, label, latitude, longitude):
                         flow.generate(session, person_id, {
@@ -122,8 +122,8 @@ async def main():
                               '09:15', 'Synthetic New York', 40.7, -73.9)
                     people.charts.add_person(session, 'legacy-transit-person',
                                              'Legacy chart without generated natal')
-                from m2.birth_flow import BirthFlow
-                from m2.references import References
+                from m2.people.birth_flow import BirthFlow
+                from m2.references.references import References
                 budget_session = store.authenticate('reader-budget-reads', 'synthetic-browser-password')
                 People(store).charts.add_person(budget_session, 'budget-person', 'Budget synthetic reader')
                 budget_chart_id = BirthFlow(store).generate(budget_session, 'budget-person', {
@@ -139,7 +139,7 @@ async def main():
                 References(store).add_passage(budget_session, 'budget-source-ref',
                     'budget-passage', 'Afsnit 1',
                     'Syntetisk læsning er ikke dokumentation for præcise begivenheder. ' * 35)
-                from m2.conversations import Conversations
+                from m2.archive.conversations import Conversations
                 for owner in ('reader-instant-long-normal', 'reader-instant-pending-long', 'reader-instant-ack-reader'):
                     session = store.authenticate(owner, 'synthetic-browser-password')
                     Conversations(store).create(session, 'long-instant', 'A long synthetic conversation')
@@ -162,7 +162,7 @@ async def main():
                                  {'content': f'Fictional archived answer {index}.'})
                     store.append(session, 'paged-normal', turn_id, 'complete', {})
                     parent = turn_id
-                from m2.recall import rebuild_pending
+                from m2.chat.recall import rebuild_pending
                 for owner in ('reader-grounded-desktop', 'reader-grounded-mobile',
                               'reader-grounded-short-mobile', 'reader-grounded-wide'):
                     session = store.authenticate(owner, 'synthetic-browser-password')
@@ -187,8 +187,8 @@ async def main():
                                     'content': reference}])
             provider_factory = None
             if synthetic_siwc or fake_plan:
-                from m2.siwc import ProviderBridge
-                from m2.test_siwc import FakeOpenAI
+                from m2.provider.siwc import ProviderBridge
+                from tests.provider.test_siwc import FakeOpenAI
                 from base64 import b64decode
                 from hashlib import sha256
 
@@ -208,8 +208,8 @@ async def main():
                     def response_events(self, token, body):
                         self.calls.append(('responses', token, body))
                         parts = body['input'][0]['content']
-                        from m2.prompting import SUMMARY
-                        from m2.title_work import TITLE_INSTRUCTIONS
+                        from m2.chat.prompting import SUMMARY
+                        from m2.chat.title_work import TITLE_INSTRUCTIONS
                         if body['instructions'] == TITLE_INSTRUCTIONS:
                             if len(parts) != 1 or 'tools' in body or body.get('model') != 'gpt-6.1-sol' or body.get('max_output_tokens') != 80:
                                 raise AssertionError('Title work must be fixed-model, bounded and tool-free')
@@ -556,8 +556,8 @@ async def main():
                             yield {'type': 'response.completed'}, 'req-markdown-fixture'
                             return
                         if 'Synthetic chart handoff' in parts[0]['text']:
-                            from m2.prompting import HOSTED
-                            from m2.tone_profiles import DEFAULT, instructions
+                            from m2.chat.prompting import HOSTED
+                            from m2.chat.tone_profiles import DEFAULT, instructions
                             prompt = parts[0]['text']
                             if body.get('instructions') != instructions(DEFAULT)[0] or HOSTED in prompt:
                                 raise AssertionError('Hosted instruction missing or duplicated in model input')

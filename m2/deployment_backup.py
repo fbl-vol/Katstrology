@@ -8,8 +8,8 @@ import argparse
 from pathlib import Path
 import sys
 
-from m2.backup import backup, deployment_pg_command, deployment_snapshot_source, restore
-from m2.deletion import Tombstones
+from m2.archive.backup import backup, deployment_pg_command, deployment_snapshot_source, restore
+from m2.archive.deletion import Tombstones
 from m2.http_boundary.config import deployment_dsn
 
 

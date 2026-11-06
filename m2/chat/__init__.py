@@ -1,1 +1,1 @@
-"""Committed conversation context and archive evidence interpretation."""
+"""Conversation execution, bounded continuity, evidence and prompt identities."""

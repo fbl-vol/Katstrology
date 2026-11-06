@@ -3,7 +3,7 @@
 import os
 
 from m2.cli import main
-from m2.local_fixture import fixture_dsn
+from m2.operations.local_fixture import fixture_dsn
 
 
 if __name__ == '__main__':

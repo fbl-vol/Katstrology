@@ -9,12 +9,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[4]
 VALIDATE = ROOT / '.agents/skills/kat-isolated-validation/scripts/validate.py'
 CASES = {
-    'stream': ['m2.test_provider_output_compat.OutputParserTests',
-               'm2.test_provider_output_compat.OutputArchiveTests'],
-    'identity': ['m2.test_agent_reads.AgentReadTests'],
-    'many-reads': ['m2.test_tool_evidence_budget.ToolEvidenceBudgetTests'],
-    'capacity': ['m2.test_agent_reads.AgentReadTests.test_continuation_capacity_preserves_call_result_but_never_sends_overflow',
-                 'm2.test_tool_evidence_budget.ToolEvidenceBudgetTests.test_exhausted_aggregate_byte_guard_archives_result_and_stops_cleanly'],
+    'stream': ['tests.provider.test_provider_output_compat.OutputParserTests',
+               'tests.provider.test_provider_output_compat.OutputArchiveTests'],
+    'identity': ['tests.chat.test_agent_reads.AgentReadTests'],
+    'many-reads': ['tests.chat.test_tool_evidence_budget.ToolEvidenceBudgetTests'],
+    'capacity': ['tests.chat.test_agent_reads.AgentReadTests.test_continuation_capacity_preserves_call_result_but_never_sends_overflow',
+                 'tests.chat.test_tool_evidence_budget.ToolEvidenceBudgetTests.test_exhausted_aggregate_byte_guard_archives_result_and_stops_cleanly'],
 }
 BROWSER_GREP = 'three native reads|eight model-directed reads|synthetic completed streamed read|incomplete synthetic streamed call'
 

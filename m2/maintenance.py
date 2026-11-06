@@ -10,10 +10,10 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-from m2.backup import backup, restore
-from m2.deletion import Tombstones
-from m2.local_fixture import fixture_dsn
-from m2.store import Store
+from m2.archive.backup import backup, restore
+from m2.archive.deletion import Tombstones
+from m2.operations.local_fixture import fixture_dsn
+from m2.archive.store import Store
 
 
 def main(argv=None):

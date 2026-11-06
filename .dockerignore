@@ -13,8 +13,7 @@
 !web/src/**
 !web/public/
 !web/public/**
-m2/__pycache__/
-m2/test_*.py
+m2/**/__pycache__/
 probes/test_*.py
 web/node_modules/
 web/dist/

@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from m2.public_model import stage_cache
+from m2.references.public_model import stage_cache
 
 
 def run(*args):

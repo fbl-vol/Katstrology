@@ -18,7 +18,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
-from m2.backup import current_schema_version
+from m2.archive.backup import current_schema_version
 from deploy.release_pipeline import artifact
 from deploy.release_remote import native_image_identity
 

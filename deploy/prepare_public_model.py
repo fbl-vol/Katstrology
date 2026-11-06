@@ -8,7 +8,7 @@ from urllib.request import ProxyHandler, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from m2.public_model import CACHE_FOLDER, FILES, REPOSITORY, REVISION, verified_snapshot
+from m2.references.public_model import CACHE_FOLDER, FILES, REPOSITORY, REVISION, verified_snapshot
 
 
 def prepare(cache):

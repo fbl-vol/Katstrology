@@ -13,7 +13,7 @@ def verify(command, compose, env, image, verification_volume):
              '--entrypoint', 'chown', image, '10001:10001', '/verification'])
     c('stop', 'app')
     seed = """from m2.web_server import deployment_dsn
-from m2.store import Store
+from m2.archive.store import Store
 from m2.deletion import Tombstones
 root='/var/lib/kat/browser-runtime/'
 with Store(deployment_dsn('/run/secrets/db_password','db','kat','kat'),root+'files',Tombstones(root+'deletions/deletions.jsonl')) as store:

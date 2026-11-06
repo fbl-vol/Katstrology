@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import swisseph as swe
 
-from m2.core_calc import START_YEAR, END_YEAR
+from m2.calculation.core_calc import START_YEAR, END_YEAR
 
 
 def utc(value):

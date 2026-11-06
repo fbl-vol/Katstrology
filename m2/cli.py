@@ -10,17 +10,17 @@ from uuid import uuid4
 
 import swisseph as swe
 
-from m2.attachments import Attachments, MAX_ATTACHMENT
-from m2.book_package import prepare as prepare_book, validate as validate_book
-from m2.deletion import Tombstones
-from m2.evidence import LocalEmbedder, personal_context, rebuild_vectors, search_evidence
-from m2.gateway import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
+from m2.archive.attachments import Attachments, MAX_ATTACHMENT
+from m2.references.book_package import prepare as prepare_book, validate as validate_book
+from m2.archive.deletion import Tombstones
+from m2.references.evidence import LocalEmbedder, personal_context, rebuild_vectors, search_evidence
+from m2.chat.gateway import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
                         run_turn)
-from m2.local_model import DEFAULT_MODEL, model_at
-from m2.recall import rebuild_one, rebuild_pending, repair_stale_draft_derivatives, search
-from m2.references import References
-from m2.revisions import correct, export_conversation, select_branch
-from m2.store import Store
+from m2.provider.local_model import DEFAULT_MODEL, model_at
+from m2.chat.recall import rebuild_one, rebuild_pending, repair_stale_draft_derivatives, search
+from m2.references.references import References
+from m2.archive.revisions import correct, export_conversation, select_branch
+from m2.archive.store import Store
 
 
 def output(value):
