@@ -14,11 +14,12 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
   const [nextConversationOffset, setNextConversationOffset] = useState<number | null>(null);
   const [listStatus, setListStatus] = useState('');
   const requestVersion = useRef(0);
+  const browseIntent = useRef({ query: '', offset: 0 });
   const identity = `${workspace?.owner || ''}:${workspace?.csrf || ''}`;
   const context = useRef({ identity, filter: navigation.filterPersonId });
   context.current = { identity, filter: navigation.filterPersonId };
 
-  const loadThreads = useCallback(async (offset = 0, text = searched) => {
+  const requestThreads = useCallback(async (offset: number, text: string) => {
     if (!workspace) return;
     const version = ++requestVersion.current;
     const filter = navigation.filterPersonId;
@@ -36,20 +37,43 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
     } catch {
       if (current()) setListStatus('Conversations unavailable. Retry the search.');
     }
-  }, [identity, navigation.filterPersonId, searched]);
+  }, [identity, navigation.filterPersonId]);
+
+  function loadThreads(offset = 0, text = browseIntent.current.query) {
+    browseIntent.current = { query: text, offset };
+    return requestThreads(offset, text);
+  }
+
+  /** Capture before async work; a newer browsing decision wins over its refresh. */
+  function captureRefresh() {
+    const intent = browseIntent.current;
+    const filter = navigation.filterPersonId;
+    return () => {
+      if (browseIntent.current !== intent || intent.offset !== 0 ||
+          context.current.identity !== identity || context.current.filter !== filter) return;
+      // Do not collapse loaded pages or use an unsubmitted search-box draft.
+      void requestThreads(0, intent.query);
+    };
+  }
 
   function reset() {
-    requestVersion.current++;
     setConversations([]); setNextConversationOffset(null); setListStatus('');
     clearSearch();
   }
 
-  function clearSearch() { setSearched(''); setSearchQuery(''); }
+  function clearSearch() {
+    browseIntent.current = { query: '', offset: 0 };
+    requestVersion.current++;
+    setSearched(''); setSearchQuery('');
+  }
   function search() { setSearched(searchQuery); void loadThreads(0, searchQuery); }
 
   useEffect(() => {
     reset();
-    return () => { requestVersion.current++; };
+    return () => {
+      requestVersion.current++;
+      browseIntent.current = { query: '', offset: 0 };
+    };
   }, [identity]);
 
   useEffect(() => {
@@ -58,7 +82,7 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
 
   async function refreshTitleAfterCompletion(id: string) {
     const version = navigation.version.current;
-    const listVersion = requestVersion.current;
+    const refresh = captureRefresh();
     const current = () => navigation.isCurrent(version) && context.current.identity === identity;
     for (let attempt = 0; attempt < 8; attempt++) {
       await new Promise(resolve => window.setTimeout(resolve, 1500));
@@ -68,8 +92,7 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
         if (!current()) return;
         navigation.updateConversation(thread => thread?.id === id ? updated : thread);
         if (updated.title_status === 'generated') {
-          // A title job must not replace a search or page selected while it waited.
-          if (requestVersion.current === listVersion) void loadThreads(0);
+          refresh();
           return;
         }
         if (updated.title_status !== 'waiting' && updated.title_status !== 'pending') return;
@@ -83,10 +106,10 @@ export function useConversationDiscovery(workspace: Workspace | null, navigation
       if (navigation.isCurrent(version) && context.current.identity === identity)
         navigation.updateConversation(thread => thread?.id === id ? updated : thread);
     }).catch(() => {});
-    void loadThreads(0);
+    captureRefresh()();
     if (status === 'complete') void refreshTitleAfterCompletion(id);
   }
 
   return { conversations, searchQuery, setSearchQuery, searched, nextConversationOffset,
-    listStatus, loadThreads, search, clearSearch, reset, onTerminal };
+    listStatus, loadThreads, captureRefresh, search, clearSearch, reset, onTerminal };
 }

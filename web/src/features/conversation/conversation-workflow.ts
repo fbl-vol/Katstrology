@@ -86,6 +86,7 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
 
   async function startConversation(selected: Selection[]): Promise<Conversation | null> {
     if (!workspace) return null;
+    const refreshDiscovery = discovery.captureRefresh();
     const version = navigation.beginConversation();
     if (!pendingConversationId.current) pendingConversationId.current = 'thread-' + crypto.randomUUID();
     try {
@@ -94,7 +95,7 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
       });
       if (!navigation.isCurrent(version)) return null;
       navigation.showConversation(result); setNotice(''); pendingConversationId.current = '';
-      void discovery.loadThreads(0, ''); // Sidebar failure cannot make a send ambiguous.
+      refreshDiscovery(); // Sidebar work cannot gate a send or override newer browsing.
       return result;
     } catch {
       if (navigation.isCurrent(version))
@@ -110,6 +111,7 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
       setNotice('This message is longer than 64 KiB. Shorten it before sending; your draft is still here.');
       return false;
     }
+    const refreshDiscovery = discovery.captureRefresh();
     submissionInFlight.current = true; setPreparingSend(true);
     const submission = ++submissionVersion.current;
     if (!conversation && !pendingConversationId.current)
@@ -129,7 +131,7 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
       if (!connected) archive.failPending('ChatGPT is not connected yet. Connect your plan, then retry this message.', true);
       else {
         const thread = conversation || await startConversation(selected);
-        if (thread) { await archive.retry(); void discovery.loadThreads(0, ''); }
+        if (thread) { await archive.retry(); refreshDiscovery(); }
       }
       return true; // Accepted into local projection, not claimed saved.
     } finally {
@@ -145,12 +147,13 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
     if (item.failure?.reconnect && !connected) {
       archive.failPending('ChatGPT is not connected yet. Connect your plan, then retry this message.', true); return;
     }
+    const refreshDiscovery = discovery.captureRefresh();
     submissionInFlight.current = true; setPreparingSend(true);
     const submission = ++submissionVersion.current;
     try {
       if (!conversation && pendingConversationId.current !== item.conversationId) return;
       const thread = conversation || await startConversation(item.payload.selected_people);
-      if (thread?.id === item.conversationId) { await archive.retry(); void discovery.loadThreads(0, ''); }
+      if (thread?.id === item.conversationId) { await archive.retry(); refreshDiscovery(); }
     } finally {
       if (submission === submissionVersion.current) {
         submissionInFlight.current = false; setPreparingSend(false);
