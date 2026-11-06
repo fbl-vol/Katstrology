@@ -61,6 +61,49 @@ class TransitHttpTests(unittest.TestCase):
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(self.name)))
         self.directory.cleanup()
 
+    def test_exploration_is_owned_read_only_and_uses_saved_profile(self):
+        from unittest.mock import patch
+        from m2.calculation.charts import Charts
+        from tests.calculation.test_exploration import saved_chart
+        from tests.calculation.test_natal import SETTINGS
+
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            session = store.authenticate('alice', 'synthetic-password-alice')
+            charts = Charts(store)
+            chart = charts.get_chart(session, self.chart_id)
+            result = chart['result']
+            result['natal'] = saved_chart({'sun': 0, 'moon': 90, 'mars': 180,
+                                         'saturn': 270})['result']['natal']
+            store.db.execute('UPDATE charts SET result=%s WHERE id=%s',
+                             (psycopg.types.json.Jsonb(result), self.chart_id))
+            charts.add_profile(session, chart['profile_id'], {
+                **SETTINGS, 'aspects': ['conjunction'], 'orbs': {'conjunction': 1}})
+            store.db.execute("UPDATE charts SET result=result - 'natal' WHERE id=%s",
+                             (self.legacy_id,))
+            before = store.db.execute('SELECT result::text FROM charts WHERE id=%s',
+                                      (self.chart_id,)).fetchone()['result']
+        # TestClient's base URL is only ASGI host validation, never a live listener.
+        with TestClient(create_app(self.dsn, self.files, self.ledger, self.dist),
+                        base_url='http://127.0.0.1:8765') as client:
+            url = f'/api/charts/{self.chart_id}/exploration'
+            self.assertEqual(client.get(url).status_code, 401)
+            for owner, expected in (('bob', 404), ('alice', 200)):
+                client.post('/api/login', headers={'Origin': 'http://127.0.0.1:8765'},
+                    json={'username': owner, 'password': f'synthetic-password-{owner}'})
+                with patch('swisseph.calc_ut', side_effect=AssertionError('read recalculated')):
+                    response = client.get(url)
+                self.assertEqual(response.status_code, expected)
+            self.assertEqual(len(response.json()['patterns']), 5)
+            self.assertEqual(client.get(f'/api/charts/{self.legacy_id}/exploration').json()['reason'],
+                             'legacy_chart')
+            self.assertEqual(client.post(url, json={}, headers={
+                'Origin': 'http://127.0.0.1:8765',
+                'X-Kat-CSRF': client.get('/api/session').json()['csrf']}).status_code, 405)
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            self.assertEqual(store.db.execute('SELECT result::text FROM charts WHERE id=%s',
+                (self.chart_id,)).fetchone()['result'], before)
+            self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
+
     def test_advanced_return_is_owner_scoped_persisted_and_not_a_model_send(self):
         payload = {'id': 'synthetic-return-http', 'person_id': 'one',
                    'technique': 'solar_return',

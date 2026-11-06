@@ -2,6 +2,8 @@
 
 from starlette.routing import Route
 
+from m2.calculation.charts import Charts
+from m2.calculation.exploration import explore_chart
 from m2.people.birth_flow import BirthFlow, BirthInputError
 from m2.people.insights import SavedInsights
 from m2.people.person_records import Watchlist, Journal
@@ -102,6 +104,13 @@ async def charts(request):
         session, request.path_params['person_id'], data['birth_id'],
         data['profile_id'], data['revision']))
     return json_response(result, 201)
+
+
+async def chart_exploration(request):
+    session = await authorized(request)
+    result = await request.app.state.runtime.call(lambda store, _: explore_chart(
+        Charts(store).get_chart(session, request.path_params['chart_id'])))
+    return json_response(result)
 
 
 async def insights(request):
@@ -207,7 +216,8 @@ async def journal_entry(request):
     return json_response({'status': 'recorded'})
 
 
-routes = [Route('/api/people', people, methods=['GET', 'POST']),
+routes = [Route('/api/charts/{chart_id}/exploration', chart_exploration, methods=['GET']),
+          Route('/api/people', people, methods=['GET', 'POST']),
           Route('/api/people/{person_id}', person, methods=['GET', 'DELETE']),
           Route('/api/people/{person_id}/drafts', drafts, methods=['POST']),
           Route('/api/places/search', places, methods=['POST']),
