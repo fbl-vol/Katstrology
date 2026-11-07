@@ -4,6 +4,7 @@ import type { Chart, NatalResult } from './natal';
 import { catalogue, categories, patternExplanation, type Category, type Entry, type Exploration } from './exploration-data';
 import { Highlight, type WheelOverlay } from './exploration-geometry';
 import { ExplorationTargets, type WheelChoice } from './exploration-targets';
+import { PatternConnections, PatternScope } from './pattern-scope';
 import './natal-explorer.css';
 
 function focusHeading(heading: HTMLHeadingElement | null) {
@@ -69,8 +70,8 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
     const children = items.filter(e => e.pattern?.contained_by.length);
     return <>{parents.map(entryButton)}{children.length > 0 && <details className="explorer-contained"
       open={!!query || children.some(e => e.id === listFocus.current) || undefined}>
-      <summary>{children.length} contained T-squares</summary>
-      <p>These reuse connections within Grand Crosses, not separate events. Each detail lists every containing formation.</p>
+      <summary>{children.length} contained formations</summary>
+      <p>These share connections with larger formations, not separate events. Each detail lists every containing formation.</p>
       {children.map(child => <div key={child.id}>{entryButton(child)}
         <p className="explorer-note">Within {entries.patterns.filter(parent => child.pattern!.contained_by.includes(parent.id))
           .map(parent => `${parent.title} (${parent.subtitle})`).join('; ')}</p></div>)}
@@ -88,7 +89,7 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
         {choices && <circle className="exploration-marker" cx={choices.location.x} cy={choices.location.y} r="5"
           fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-angle, #304f3b)" strokeWidth="2" pointerEvents="none" />}
       </>, !!selected && !choices)}
-      {hasWheel && <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. The directory offers the same details without precise pointing.</p>}
+      {hasWheel && <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. Concentrations and whole-chart shapes use the inner ring, not polygons. The directory offers the same details without precise pointing.</p>}
       <div className="explorer-selection"><span>{choices ? 'Choose at this point' : selected?.title ?? 'Nothing selected'}<small>{choices ? 'Several details share this location.' : selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
         <button type="button" onClick={browse}>Browse all</button></div>
     </div>
@@ -106,16 +107,18 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
         <div className="explorer-back"><button type="button" onClick={browse}>← All {category}</button>
           <small>{index + 1} / {entries[category].length} {category}</small></div>
         <h3 tabIndex={-1} ref={heading}>{selected.title}</h3><p>{selected.subtitle}</p>
+        {selected.pattern && <p>{patternExplanation(selected.pattern)}</p>}
+        {selected.pattern?.geometry === 'distribution' && <p className="explorer-note">The inner ring follows the chart’s distribution. Solid arcs mark groups; dotted stretches show the spaces between them.</p>}
         <dl className="explorer-facts">{selected.facts.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
         {selected.pattern && <>
-          <p>{patternExplanation(selected.pattern)}</p>
-          <details className="explorer-connections"><summary>{selected.edges.length} connections and saved orb limits</summary>
-            {entries.aspects.filter(e => selected.edges.includes(e.id)).map(entryButton)}</details>
-          {selected.pattern.contained_by.length > 0 && <div className="explorer-parent"><p>Also part of these Grand Crosses:</p>
+          <PatternConnections pattern={selected.pattern} projection={projection} />
+          {selected.edges.some(id => entries.aspects.some(e => e.id === id)) && <details><summary>Explore individual saved aspects</summary>
+            {entries.aspects.filter(e => selected.edges.includes(e.id)).map(entryButton)}</details>}
+          {selected.pattern.contained_by.length > 0 && <div className="explorer-parent"><p>Also part of these formations:</p>
             {entries.patterns.filter(e => selected.pattern!.contained_by.includes(e.id)).map(entryButton)}</div>}
-          {entries.patterns.some(e => e.pattern?.contained_by.includes(selected.id)) && <details><summary>T-squares within this formation</summary>
+          {entries.patterns.some(e => e.pattern?.contained_by.includes(selected.id)) && <details><summary>Contained formations</summary>
             {entries.patterns.filter(e => e.pattern?.contained_by.includes(selected.id)).map(entryButton)}</details>}
-          <p className="explorer-note">Geometric patterns use this saved chart’s selected aspects and orb limits. Only the ten planets and luminaries participate. No strength score or prediction is implied.</p>
+          <p className="explorer-note">Major connections keep the saved aspect settings. Derived minor connections use a fixed 2° pattern orb and dotted highlights. Only the ten planets and luminaries participate. No strength score or prediction is implied.</p>
         </>}
         {selected.house && <p>The shaded sector uses this chart’s actual cusp boundaries. Empty houses remain part of the chart.</p>}
         {selected.category === 'aspects' && <p>{selected.id.startsWith('conjunction:') ? 'The arc and endpoint rings mark this conjunction.' : 'The highlighted connection joins these exact positions. Oppositions use a dashed line.'}</p>}
@@ -143,7 +146,8 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
           {(category !== 'patterns' || projection?.status === 'supported') &&
             <p className="explorer-note" role="status">{visible.length} of {entries[category].length} {category}{category === 'houses' ? ' and angles' : ''}</p>}
           {category === 'patterns' && (!projection ? <p role="status">{failed ? <>Patterns could not be loaded. <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry patterns</button></> : 'Loading patterns…'}</p> :
-            projection.status !== 'supported' ? <p>{unavailable}</p> : !entries.patterns.length ? <p>No supported patterns match this chart’s settings.</p> : null)}
+            projection.status !== 'supported' ? <p>{unavailable}</p> : !entries.patterns.length ? <p>No matches among the evaluated pattern rules.</p> : null)}
+          {category === 'patterns' && projection && <PatternScope projection={projection} />}
           {category === 'houses' && !entries.houses.length && <p>Houses and angles are unavailable. No substitute cusps were calculated.</p>}
           {query && !visible.length && <p>No matching details. Try another name or clear your search.</p>}
           {category === 'patterns' ? patternList(visible) : visible.map(entryButton)}

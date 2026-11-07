@@ -93,7 +93,12 @@ class TransitHttpTests(unittest.TestCase):
                 with patch('swisseph.calc_ut', side_effect=AssertionError('read recalculated')):
                     response = client.get(url)
                 self.assertEqual(response.status_code, expected)
-            self.assertEqual(len(response.json()['patterns']), 5)
+            projection = response.json()
+            self.assertEqual(len([p for p in projection['patterns']
+                                  if p['kind'] in ('grand_cross', 't_square')]), 5)
+            self.assertEqual(projection['rule_version'], 'natal-patterns-v2')
+            self.assertEqual(len(projection['catalogue']), 25)
+            self.assertTrue(any(p['kind'] == 'sign_stellium' for p in projection['patterns']))
             self.assertEqual(client.get(f'/api/charts/{self.legacy_id}/exploration').json()['reason'],
                              'legacy_chart')
             self.assertEqual(client.post(url, json={}, headers={

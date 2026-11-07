@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { point } from './chart-geometry';
 import type { NatalResult } from './natal';
-import { aspectPath, type WheelGeometry } from './exploration-geometry';
+import { aspectPath, patternRing, type WheelGeometry } from './exploration-geometry';
 import { edgeId, type Category, type Entry } from './exploration-data';
 
 type Location = { x: number; y: number };
@@ -63,7 +63,12 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
     let candidates = bodies.filter(b => near(b.center, 16 + 4 / scale)).map(b => b.entry);
     if (!candidates.length) candidates = houses.filter(h => near(h.center, 12 + 4 / scale)).map(h => h.entry);
     if (!candidates.length) candidates = aspectCandidates(svg, cursor, entries.aspects);
-    if (!candidates.length) candidates = patterns.filter(p => inside(cursor, p.vertices)).map(p => p.entry);
+    if (!candidates.length) {
+      const ringHits = new Set([...svg.querySelectorAll<SVGGeometryElement>('[data-pattern-ring-hit]')]
+        .filter(shape => shape.isPointInStroke(cursor)).map(shape => shape.getAttribute('data-pattern-ring-hit')));
+      candidates = patterns.filter(p => p.entry.pattern?.geometry && p.entry.pattern.geometry !== 'aspects'
+        ? ringHits.has(p.entry.id) : inside(cursor, p.vertices)).map(p => p.entry);
+    }
     if (candidates.length === 1) choose(candidates[0]);
     else if (candidates.length > 1) overlap({ entries: candidates, location: cursor, origin: event.currentTarget });
   }
@@ -76,8 +81,13 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
       } };
   }
   return <g className="exploration-targets">
-    {patterns.map(p => <g key={p.entry.id} {...control(p.entry)}><polygon
-      points={p.vertices.map(v => `${v.x},${v.y}`).join(' ')} fill="transparent" /></g>)}
+    {patterns.map(p => <g key={p.entry.id} {...control(p.entry)}>
+      {p.entry.pattern?.geometry && p.entry.pattern.geometry !== 'aspects' ? <>
+        <path d={patternRing(p.entry, geometry)} fill="none" stroke="var(--wheel-angle, #304f3b)" strokeOpacity=".25" />
+        <path data-pattern-ring-hit={p.entry.id} d={patternRing(p.entry, geometry)} fill="none" {...aspectHitStroke} strokeLinecap="round" />
+        <g fill="none" stroke="transparent" pointerEvents="none"><path d={patternRing(p.entry, geometry)} /></g>
+      </> : <polygon points={p.vertices.map(v => `${v.x},${v.y}`).join(' ')} fill="transparent" />}
+    </g>)}
     {aspects.map(a => <g key={a.entry.id} {...control(a.entry)}>
       {a.kind === 'conjunction' && <path d={a.path} fill="none" stroke="var(--wheel-aspect-gold, #a87931)" strokeWidth="1" />}
       <path data-aspect-hit={a.entry.id} d={a.path} fill="none" {...aspectHitStroke} strokeLinecap="round" />

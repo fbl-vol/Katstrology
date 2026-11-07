@@ -3,7 +3,7 @@
 from copy import deepcopy
 import unittest
 
-from m2.calculation.exploration import MEMBERS, explore_chart
+from m2.calculation.exploration import MEMBERS, explore_chart as project_chart
 from m2.calculation.natal import _aspects
 from tests.calculation.test_natal import SETTINGS
 
@@ -17,6 +17,14 @@ def saved_chart(degrees, settings=None):
     return {'id': 'saved', 'source_status': 'current', 'result': {
         'profile': {'settings': settings}, 'natal': {
             'status': 'complete', 'positions': positions, 'aspects': _aspects(points, settings)}}}
+
+
+def explore_chart(chart):
+    """Preserve the original three-rule regression assertions within the expanded catalogue."""
+    result = project_chart(chart)
+    result['patterns'] = [p for p in result['patterns']
+                          if p['kind'] in ('grand_trine', 'grand_cross', 't_square')]
+    return result
 
 
 class PatternTests(unittest.TestCase):

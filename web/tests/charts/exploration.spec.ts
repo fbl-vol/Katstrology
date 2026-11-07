@@ -2,12 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { personIdFor, seedLegacy } from '../support/legacy-fixture';
-import { patternFixture } from '../support/exploration-fixture';
+import { expandedPatternFixture, patternFixture } from '../support/exploration-fixture';
 import type { Chart } from '../../src/features/charts/natal';
 
 test.beforeEach(async ({ page }) => page.setViewportSize({ width: 1440, height: 1024 }));
 
-async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' | 'exact' | 'trine' = false) {
+async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' | 'exact' | 'trine' | 'expanded' = false) {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-natal');
   await page.getByLabel('Password').fill('synthetic-browser-password');
@@ -23,7 +23,7 @@ async function openChart(page: Page, name: string, syntheticPatterns: boolean | 
   const saved = await (await page.request.get(`/api/people/${personId}`)).json();
   if (syntheticPatterns) {
     const record: Chart = saved.charts.find((c: Chart) => c.id === chartId);
-    const projection = patternFixture(record, syntheticPatterns === 'multi');
+    const projection = syntheticPatterns === 'expanded' ? expandedPatternFixture(record) : patternFixture(record, syntheticPatterns === 'multi');
     if (syntheticPatterns === 'exact') {
       record.result.natal!.positions.find(p => p.id === 'mercury')!.longitude_degrees = 142;
       record.result.natal!.aspects.find(a => a.kind === 'conjunction')!.orb_degrees = 0;
@@ -87,6 +87,78 @@ for (const size of [{ width: 1440, height: 1024 }, { width: 390, height: 844 }, 
   });
 }
 
+for (const size of [{ width: 1440, height: 1024 }, { width: 1920, height: 1080 },
+  { width: 2560, height: 1080 }, { width: 3440, height: 1440 },
+  { width: 390, height: 844 }, { width: 390, height: 560 }]) {
+  test(`expanded pattern families and geometry ${size.width}x${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    const { chart } = await openChart(page, `Expanded ${size.width} ${size.height}`, 'expanded');
+    const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
+    const wheel = chart.locator('svg.natal-wheel');
+    await panel.getByRole('tab', { name: /^Patterns/ }).click();
+    await panel.getByText('Supported patterns and definitions', { exact: true }).click();
+    await expect(panel.locator('.explorer-scope dt')).toHaveCount(25);
+    await expect(panel.locator('.explorer-scope')).toContainText('fixed 2° orb');
+    await panel.getByText('Supported patterns and definitions', { exact: true }).click();
+    await panel.getByLabel('Find in patterns').fill('Finger of God');
+    await expect(panel.getByRole('button', { name: /^Yod · Mars apex/ })).toBeVisible();
+    await panel.getByRole('button', { name: /^Yod · Mars apex/ }).click();
+    await expect(panel.getByRole('heading', { name: 'Yod · Mars apex', exact: true })).toBeFocused();
+    await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(3);
+    await expect(wheel.locator('[data-highlight-edge] path[stroke-dasharray="2 4"]')).toHaveCount(2);
+    await panel.getByText('3 qualifying connections and orb limits', { exact: true }).click();
+    await expect(panel.locator('.explorer-connections')).toContainText('Derived from saved positions');
+    await expect(panel.locator('.explorer-parent')).toContainText('Boomerang Yod');
+    mkdirSync('../.local/patterns-library/renders', { recursive: true });
+    await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await page.screenshot({ path: `../.local/patterns-library/renders/yod-wheel-${size.width}-${size.height}.png` });
+    await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
+    await page.screenshot({ path: `../.local/patterns-library/renders/yod-detail-${size.width}-${size.height}.png` });
+    await panel.getByRole('button', { name: '← All patterns' }).click();
+    await expect(panel.getByRole('button', { name: /^Yod · Mars apex/ })).toBeFocused();
+    await panel.getByRole('button', { name: 'Clear search' }).click();
+    const shape = wheel.getByRole('button', { name: /^Explore Seesaw:/ });
+    await expect(shape.locator('polygon')).toHaveCount(0);
+    await shape.focus(); await shape.press('Tab'); await shape.focus();
+    expect(await shape.evaluate(element => element.matches(':focus-visible'))).toBe(true);
+    await expect(shape.locator('[data-pattern-ring-hit]')).toHaveCSS('stroke-width', '16px');
+    await wheel.screenshot({ path: `../.local/patterns-library/renders/ring-focus-${size.width}-${size.height}.png` });
+    await shape.press('Enter');
+    await expect(panel.getByRole('heading', { name: 'Seesaw', exact: true })).toBeFocused();
+    await expect(wheel.locator('[data-highlight-distribution="distribution"]')).toHaveCount(1);
+    await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(0);
+    await expect(panel).toContainText('Smallest occupied arc');
+    await expect(panel).toContainText('Group 2');
+    await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await page.screenshot({ path: `../.local/patterns-library/renders/seesaw-${size.width}-${size.height}.png` });
+    const concentration = wheel.getByRole('button', { name: /^Explore Sign Stellium:/ }).first();
+    await expect(concentration.locator('polygon')).toHaveCount(0);
+    await concentration.focus(); await concentration.press('Space');
+    await expect(panel.getByRole('heading', { name: 'Sign Stellium', exact: true })).toBeFocused();
+    await expect(wheel.locator('[data-highlight-distribution="members"]')).toHaveCount(1);
+    await expect(panel).toContainText('Shared sign');
+    if (size.width === 1440) {
+      const pending = page.waitForEvent('download');
+      await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
+      const markup = await readFile(await (await pending).path(), 'utf8');
+      expect(markup).not.toMatch(/data-pattern-ring-hit|data-highlight-distribution|natal-patterns-v2|quincunx/);
+      expect(markup).toContain('kat-chart-provenance');
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      await page.getByRole('button', { name: /Appearance/ }).click();
+      await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: 'Dark', exact: true }).click();
+      await page.getByRole('region', { name: 'Appearance' }).getByRole('button', { name: /Blue Hour/ }).click();
+      await page.getByRole('button', { name: 'Close settings panel' }).click();
+      await page.getByRole('button', { name: 'Back to workspace' }).click();
+      const yod = wheel.getByRole('button', { name: /^Explore Yod · Mars apex:/ });
+      await yod.focus(); await yod.press('Enter');
+      await expect(wheel.locator('[data-highlight-edge] path[stroke-dasharray="2 4"]')).toHaveCount(2);
+      await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+      await page.screenshot({ path: '../.local/patterns-library/renders/yod-blue-hour.png' });
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
 test('pattern read failure and retry leave individual exploration available', async ({ page }) => {
   await page.route('**/api/charts/*/exploration', route => route.fulfill({ status: 503, json: { error: 'synthetic' } }));
   const { chart } = await openChart(page, 'Explorer retry');
@@ -104,24 +176,61 @@ test('pattern read failure and retry leave individual exploration available', as
   await expect(panel.getByRole('button', { name: 'Retry patterns' })).toHaveCount(0);
 });
 
-for (const status of ['supported', 'unavailable'] as const) {
-  test(`empty pattern projection distinguishes ${status}`, async ({ page }) => {
-    await page.route('**/api/charts/*/exploration', route => route.fulfill({ json: {
-      chart_id: new URL(route.request().url()).pathname.split('/')[3],
-      rule_version: 'natal-patterns-v1', source_status: 'current', status,
-      reason: status === 'supported' ? null : 'unusable_facts', patterns: [],
-    } }));
-    const { chart } = await openChart(page, `Explorer ${status}`);
+for (const size of [{ width: 1440, height: 1024 }, { width: 390, height: 844 }, { width: 390, height: 560 }])
+for (const status of ['supported', 'partial', 'unavailable'] as const) {
+  test(`empty pattern projection distinguishes ${status} ${size.width}x${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.route('**/api/charts/*/exploration', async route => {
+      const projection = await (await route.fetch()).json();
+      await route.fulfill({ json: { ...projection, status: status === 'partial' ? 'supported' : status,
+        reason: status === 'unavailable' ? 'unusable_facts' : null, patterns: [], distribution: null,
+        catalogue: projection.catalogue.map((rule: { kind: string }) => ({ ...rule, matches: 0,
+          status: status === 'unavailable' || status === 'partial' && rule.kind === 'house_stellium' ? 'unavailable' :
+            status === 'partial' && rule.kind === 'yod' ? 'excluded' : 'evaluated',
+          reason: rule.kind === 'house_stellium' ? 'unavailable_houses' : 'saved_aspect_settings' })),
+      } });
+    });
+    const { chart } = await openChart(page, `Explorer ${status} ${size.width} ${size.height}`);
     const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
     await panel.getByRole('tab', { name: /^Patterns/ }).click();
-    if (status === 'supported') await expect(panel).toContainText('No supported patterns match');
+    if (status !== 'unavailable') await expect(panel).toContainText('No matches among the evaluated pattern rules');
     else {
       await expect(panel).toContainText('Patterns need established natal positions and aspects');
-      await expect(panel.getByText('No supported patterns match', { exact: false })).toHaveCount(0);
+      await expect(panel.getByText('No matches among the evaluated pattern rules', { exact: false })).toHaveCount(0);
+    }
+    if (status === 'partial') {
+      await expect(panel).toContainText('Some formations could not be checked');
+      await panel.getByText('Supported patterns and definitions', { exact: true }).click();
+      await expect(panel.locator('.explorer-scope')).toContainText('Not checked: excluded by saved aspect settings.');
+      await expect(panel.locator('.explorer-scope')).toContainText('Not checked: reliable houses unavailable.');
     }
     await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
     mkdirSync('../.local/explorable-charts/renders', { recursive: true });
-    await page.screenshot({ path: `../.local/explorable-charts/renders/${status}.png` });
+    await page.screenshot({ path: `../.local/explorable-charts/renders/${status}-${size.width}-${size.height}.png` });
+  });
+}
+
+for (const size of [{ width: 390, height: 844 }, { width: 390, height: 560 }]) {
+  test(`pattern pending failure and recovery ${size.width}x${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/charts/*/exploration', async route => {
+      await pending; await route.fulfill({ status: 503, json: { error: 'synthetic' } });
+    });
+    const { chart } = await openChart(page, `Pattern pending ${size.height}`);
+    const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
+    await panel.getByRole('tab', { name: /^Patterns/ }).click();
+    await expect(panel).toContainText('Loading patterns');
+    await panel.evaluate(element => element.scrollIntoView({ block: 'start' }));
+    mkdirSync('../.local/patterns-library/renders', { recursive: true });
+    await page.screenshot({ path: `../.local/patterns-library/renders/loading-${size.width}-${size.height}.png` });
+    release();
+    await expect(panel.getByRole('button', { name: 'Retry patterns' })).toBeVisible();
+    await page.screenshot({ path: `../.local/patterns-library/renders/failure-${size.width}-${size.height}.png` });
+    await page.unroute('**/api/charts/*/exploration');
+    await panel.getByRole('button', { name: 'Retry patterns' }).click();
+    await expect(panel.getByText('Supported patterns and definitions', { exact: true })).toBeVisible();
   });
 }
 
@@ -211,6 +320,38 @@ async function patternPoint(wheel: import('@playwright/test').Locator, overlap: 
 
 test.describe('direct natal exploration', () => {
   test.use({ hasTouch: true });
+  for (const input of ['mouse', 'touch'] as const) {
+    test(`expanded distribution ring pointer ${input}`, async ({ page }) => {
+      await page.setViewportSize(input === 'touch' ? { width: 390, height: 844 } : { width: 1440, height: 1024 });
+      const { chart } = await openChart(page, `Distribution pointer ${input}`, 'expanded');
+      const wheel = chart.locator('svg.natal-wheel');
+      const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
+      await expect(wheel.locator('[data-pattern-ring-hit]')).not.toHaveCount(0);
+      await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+      const cursor = await wheel.evaluate(element => {
+        const svg = element as SVGSVGElement, matrix = svg.getScreenCTM()!;
+        const scale = Math.hypot(matrix.a, matrix.b);
+        const ring = svg.querySelector<SVGPathElement>('[data-pattern-ring-hit*="|seesaw|"]')!;
+        const circles = [...svg.querySelectorAll<SVGCircleElement>('.exploration-target > circle')];
+        const aspectShapes = [...svg.querySelectorAll<SVGGeometryElement>('[data-aspect-hit]')];
+        for (let step = 0; step < 360; step++) {
+          const local = ring.getPointAtLength(ring.getTotalLength() * step / 360);
+          if (circles.some(c => Math.hypot(c.cx.baseVal.value - local.x, c.cy.baseVal.value - local.y) <= c.r.baseVal.value + 4 / scale)) continue;
+          if (aspectShapes.some(s => s.isPointInStroke(local) || s instanceof SVGCircleElement && s.isPointInFill(local))) continue;
+          const screen = local.matrixTransform(matrix);
+          if (!document.elementFromPoint(screen.x, screen.y)?.hasAttribute('data-pattern-ring-hit')) continue;
+          return { x: screen.x, y: screen.y };
+        }
+        throw new Error('No exposed distribution ring target');
+      });
+      if (input === 'touch') await page.touchscreen.tap(cursor.x, cursor.y);
+      else await page.mouse.click(cursor.x, cursor.y);
+      if (await panel.getByRole('heading', { name: 'Patterns at this point', exact: true }).isVisible())
+        await panel.getByRole('button', { name: /^Seesaw / }).click();
+      await expect(panel.getByRole('heading', { name: 'Seesaw', exact: true })).toBeFocused();
+      await expect(wheel.locator('[data-highlight-distribution]')).toHaveCount(1);
+    });
+  }
   for (const exact of [false, true]) for (const input of ['mouse', 'touch'] as const) {
     test(`conjunction hit geometry ${exact ? 'exact' : 'near'} ${input}`, async ({ page }) => {
       test.setTimeout(60_000);

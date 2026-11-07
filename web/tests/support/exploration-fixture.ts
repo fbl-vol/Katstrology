@@ -1,5 +1,25 @@
+import { execFileSync } from 'node:child_process';
 import type { Chart } from '../../src/features/charts/natal';
 import type { Exploration, Pattern } from '../../src/features/charts/exploration-data';
+
+// A synthetic saved record goes through the real read projection for v2 UI checks.
+// No database, ephemeris, private record or provider is consulted by this process.
+export function expandedPatternFixture(chart: Chart): Exploration {
+  const degrees: Record<string, number> = { sun: 0, mercury: 5, venus: 12, jupiter: 30,
+    moon: 60, mars: 210, saturn: 216, uranus: 240, neptune: 260, pluto: 280 };
+  const natal = chart.result.natal!;
+  natal.positions = natal.positions.map(p => {
+    const degree = degrees[p.id] ?? p.longitude_degrees;
+    const house = natal.houses.cusps.find((c, i) => (degree - c.longitude_degrees + 360) % 360 <
+      (natal.houses.cusps[(i + 1) % 12].longitude_degrees - c.longitude_degrees + 360) % 360)?.number ?? null;
+    return { ...p, longitude_degrees: degree, sign: Math.floor(degree / 30), house };
+  });
+  const result = JSON.parse(execFileSync('../.venv-swiss/bin/python', ['-c',
+    'import json,sys; from m2.calculation.natal import _aspects; from m2.calculation.exploration import explore_chart; c=json.load(sys.stdin); c["result"]["natal"]["aspects"]=_aspects(c["result"]["natal"]["positions"],c["result"]["profile"]["settings"]); print(json.dumps({"chart":c,"projection":explore_chart(c)}))'],
+  { input: JSON.stringify(chart), env: { ...process.env, PYTHONPATH: '..', PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8' }));
+  natal.aspects = result.chart.result.natal.aspects;
+  return result.projection;
+}
 
 // Presentation-only fixture: explicit graphs, not a second pattern detector.
 // The API/detector tests independently verify real saved-graph derivation.
