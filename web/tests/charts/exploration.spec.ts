@@ -444,9 +444,25 @@ test.describe('direct natal exploration', () => {
       const a = path.getPointAtLength(0).matrixTransform(matrix);
       const b = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
       const length = Math.hypot(b.x - a.x, b.y - a.y);
-      return { x: (a.x + b.x) / 2 + 6 * (b.y - a.y) / length,
-        y: (a.y + b.y) / 2 - 6 * (b.x - a.x) / length };
+      // The midpoint's six-pixel offset grazes another aspect after touch-coordinate
+      // rounding. Test a separated part of this line, not genuine overlap arbitration.
+      const candidates = Array.from({ length: 17 }, (_, i) => .1 + i * .05).flatMap(fraction => [-1, 1].map(side => {
+        const x = a.x * (1 - fraction) + b.x * fraction + side * 6 * (b.y - a.y) / length;
+        const y = a.y * (1 - fraction) + b.y * fraction - side * 6 * (b.x - a.x) / length;
+        const otherClearance = Math.min(...[...path.ownerSVGElement!.querySelectorAll<SVGPathElement>('path[data-aspect-hit]')]
+          .filter(other => other !== path).map(other => {
+            const transform = other.getScreenCTM()!;
+            const start = other.getPointAtLength(0).matrixTransform(transform);
+            const end = other.getPointAtLength(other.getTotalLength()).matrixTransform(transform);
+            const dx = end.x - start.x, dy = end.y - start.y;
+            const t = Math.max(0, Math.min(1, ((Math.round(x) - start.x) * dx + (Math.round(y) - start.y) * dy) / (dx * dx + dy * dy)));
+            return Math.hypot(Math.round(x) - start.x - t * dx, Math.round(y) - start.y - t * dy);
+          }));
+        return { x, y, otherClearance };
+      }));
+      return candidates.sort((first, second) => second.otherClearance - first.otherClearance)[0];
     });
+    expect(location.otherClearance).toBeGreaterThan(10);
     await page.touchscreen.tap(location.x, location.y);
     const actual = JSON.parse((await wheel.getAttribute('data-test-press'))!);
     expect(Math.hypot(actual.x - location.x, actual.y - location.y)).toBeLessThan(1.5);

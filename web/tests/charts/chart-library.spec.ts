@@ -70,25 +70,34 @@ test('chart library pages all saved versions and labels body variants beyond the
   await openLibrary(page);
   const session = await (await page.request.get('/api/session')).json();
   const headers = { 'X-Kat-CSRF': session.csrf, Origin: new URL(page.url()).origin };
+  const created = await page.request.post('/api/people', { headers, data: { name: 'Synthetic paged library' } });
+  expect(created.status()).toBe(201);
+  const personId: string = (await created.json()).id;
+  const natal = await page.request.post(`/api/people/${personId}/generate`, { headers, data: {
+    request_id: `library-source-${crypto.randomUUID()}`, birth_date: '2001-06-21', birth_time: '04:00',
+    time_unknown: false, birthplace: 'Copenhagen, Capital Region, Denmark', place_id: '2618425',
+    provisional: true, zone_override: null, latitude_override: null, longitude_override: null, fold: null, settings: null,
+  } });
+  expect(natal.status()).toBe(201);
   const ids: string[] = [];
   for (let index = 0; index < 24; index++) {
     const id = `library-history-${crypto.randomUUID()}`;
     ids.push(id);
     const reply = await page.request.post('/api/advanced-results', { headers, data: {
-      id, person_id: 'transit-person', technique: 'true_solar_arc', parameters: { effective_utc: '2024-03-25T00:00:00+00:00' },
+      id, person_id: personId, technique: 'true_solar_arc', parameters: { effective_utc: '2024-03-25T00:00:00+00:00' },
     } });
     expect(reply.status()).toBe(201);
   }
   for (const body of ['venus', 'saturn']) {
     const reply = await page.request.post('/api/advanced-results', { headers, data: {
-      id: `library-body-${crypto.randomUUID()}`, person_id: 'transit-person', technique: 'planetary_return', parameters: {
+      id: `library-body-${crypto.randomUUID()}`, person_id: personId, technique: 'planetary_return', parameters: {
         body, start_utc: '2024-03-01T00:00:00+00:00', end_utc: '2024-04-01T00:00:00+00:00', latitude: 51.5, longitude: -1 / 6,
       },
     } });
     expect(reply.status()).toBe(201);
   }
   await page.reload();
-  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic paged library' }).click();
   await page.getByRole('tab', { name: 'Charts', exact: true }).click();
   const library = page.locator('.chart-library');
   await expect(library.locator('[data-technique="planetary_return"]')).toContainText('Saturn');
@@ -97,7 +106,7 @@ test('chart library pages all saved versions and labels body variants beyond the
   const historyRows = library.locator('.library-history li');
   await expect(historyRows).toHaveCount(20);
   await expect(historyRows.first()).toHaveAttribute('data-result-id', ids.at(-1)!);
-  await page.route('**/api/people/transit-person/chart-library/true_solar_arc?before=*', route =>
+  await page.route(`**/api/people/${personId}/chart-library/true_solar_arc?before=*`, route =>
     route.fulfill({ status: 503, json: { error: 'synthetic_page_failure' } }), { times: 1 });
   await library.getByRole('button', { name: 'Load older results' }).click();
   await expect(library.getByRole('alert')).toContainText('Already listed versions are still available');
