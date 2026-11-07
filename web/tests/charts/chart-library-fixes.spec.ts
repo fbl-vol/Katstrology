@@ -32,8 +32,15 @@ test('chart library corrections carry contextual creation and reset global and s
   await page.setViewportSize({ width: 1440, height: 1024 });
   await openLibrary(page);
   await expect(page.getByRole('button', { name: 'Start conversation', exact: true })).not.toHaveClass(/primary/);
-  await expect(page.locator('.chart-library').getByRole('button', { name: 'Create chart', exact: true })).toHaveClass(/primary/);
-  await page.locator('.chart-library').getByRole('button', { name: 'Create chart', exact: true }).click();
+  const create = page.locator('.chart-library').getByRole('button', { name: 'Create chart', exact: true });
+  await expect(create).toHaveClass(/primary/);
+  const createBackground = await create.evaluate(button => getComputedStyle(button).backgroundColor);
+  const discuss = page.getByRole('button', { name: 'Start conversation', exact: true });
+  expect(await discuss.evaluate(button => getComputedStyle(button).backgroundColor)).not.toBe(createBackground);
+  await page.getByRole('tab', { name: 'Overview', exact: true }).click();
+  expect(await discuss.evaluate(button => getComputedStyle(button).backgroundColor)).toBe(createBackground);
+  await page.getByRole('tab', { name: 'Charts', exact: true }).click();
+  await create.click();
   for (const title of ['Solar return', 'Lunar returns', 'Planetary returns', 'Midheaven transit contacts',
     'Secondary progressions', 'Solar-arc directions', 'Progressed lunar phases', 'Lunations and eclipses']) {
     await hub(page).getByRole('button', { name: new RegExp(`^${title}`) }).click();

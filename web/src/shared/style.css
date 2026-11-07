@@ -275,7 +275,7 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .person-page{max-width:920px;padding-top:26px}.person-page[data-active-section="charts"]{max-width:1200px}
 .profile-header{align-items:flex-start;padding:12px 0 17px}.profile-header h1{margin:0 0 7px}
 .person-page .profile-edit-action{display:block;background:none;border:0;color:var(--link);padding:8px 0;margin:3px 0 0;min-height:44px;text-align:left}
-.person-page .profile-chat-action{border:0;background:var(--accent);color:var(--on-accent);min-height:44px;white-space:nowrap}
+.person-page .profile-chat-action{min-height:44px;white-space:nowrap}.person-page .profile-chat-action.primary{border:0;background:var(--accent);color:var(--on-accent)}
 .profile-tabs{gap:22px}.person-page .profile-tabs button{min-width:0;min-height:46px;padding:7px 4px;border-radius:0}
 .person-page .profile-tabs button[aria-selected="true"]{background:transparent;color:var(--ink);box-shadow:inset 0 -2px var(--accent)}
 .profile-group-label{margin:25px 0 9px;color:var(--muted);font-size:11px;letter-spacing:.11em;text-transform:uppercase}
