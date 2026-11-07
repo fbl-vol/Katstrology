@@ -102,15 +102,24 @@ test('chart library pages all saved versions and labels body variants beyond the
   const library = page.locator('.chart-library');
   await expect(library.locator('[data-technique="planetary_return"]')).toContainText('Saturn');
   await expect(library.locator('[data-technique="planetary_return"]')).toContainText('2 variants');
+  mkdirSync(renders, { recursive: true });
+  for (const size of [{ width: 1440, height: 1024 }, { width: 390, height: 560 }]) {
+    await page.setViewportSize(size);
+    await page.screenshot({ path: resolve(renders, `body-variants-${size.width}-${size.height}.png`), fullPage: true });
+  }
   await library.getByRole('button', { name: /Solar-arc directions history/ }).click();
   const historyRows = library.locator('.library-history li');
   await expect(historyRows).toHaveCount(20);
   await expect(historyRows.first()).toHaveAttribute('data-result-id', ids.at(-1)!);
+  await expect(historyRows.first()).toContainText(`Version ${ids.at(-1)}`);
+  await page.screenshot({ path: resolve(renders, 'history-first-page-390-560.png') });
   await page.route(`**/api/people/${personId}/chart-library/true_solar_arc?before=*`, route =>
     route.fulfill({ status: 503, json: { error: 'synthetic_page_failure' } }), { times: 1 });
   await library.getByRole('button', { name: 'Load older results' }).click();
   await expect(library.getByRole('alert')).toContainText('Already listed versions are still available');
   await expect(historyRows).toHaveCount(20);
+  await library.getByRole('button', { name: 'Retry history' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(renders, 'history-page-failure-390-560.png') });
   await library.getByRole('button', { name: 'Retry history' }).click();
   await expect(historyRows).not.toHaveCount(20);
   while (await library.getByRole('button', { name: 'Load older results' }).count()) {
@@ -120,6 +129,12 @@ test('chart library pages all saved versions and labels body variants beyond the
   const all = await historyRows.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-result-id')));
   expect(new Set(all).size).toBe(all.length);
   expect(ids.every(id => all.includes(id))).toBe(true);
+  for (const size of [{ width: 1440, height: 1024 }, { width: 390, height: 560 }]) {
+    await page.setViewportSize(size);
+    await historyRows.last().scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: resolve(renders, `history-final-page-${size.width}-${size.height}.png`) });
+  }
 });
 
 test.describe('chart library touch and local preference', () => {
