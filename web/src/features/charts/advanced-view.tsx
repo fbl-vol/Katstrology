@@ -25,10 +25,10 @@ type ReturnHistory = { id: string; first_utc: string | null;
   reference_place?: ReturnResult['reference_place'];
   reference_place_source?: ReturnResult['reference_place_source'] };
 
-export function AdvancedView({ workspace, people, technique, onClose, onCreateNatal, onDiscuss, initialDraft }: {
+export function AdvancedView({ workspace, people, technique, onClose, onCreateNatal, onDiscuss, initialDraft, initialPersonId }: {
   workspace: Workspace; people: Person[]; technique: Technique; onClose: () => void;
   onCreateNatal: (personId: string, draft: AdvancedDraft) => void; onDiscuss?: (personId: string, result: SelectedResult, label: string) => void;
-  initialDraft?: AdvancedDraft;
+  initialDraft?: AdvancedDraft; initialPersonId?: string;
 }) {
   const label = technique === 'solar_return' ? 'Solar return' : 'Lunar returns';
   const [personId, setPersonId] = useState('');
@@ -57,7 +57,8 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
   const eventHeadings = useRef<(HTMLHeadingElement | null)[]>([]);
   const sourceVersion = useRef(0);
   useEffect(() => {
-    if (initialDraft?.personId) choosePerson(initialDraft.personId);
+    const origin = initialDraft?.personId || initialPersonId;
+    if (origin) choosePerson(origin);
     return () => { sourceVersion.current++; };
   }, []);
   const person = people.find(item => item.id === personId);

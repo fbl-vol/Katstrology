@@ -64,12 +64,12 @@ function PairWheel({ result, aName, bName }: { result: SynastryData; aName: stri
   </div>;
 }
 
-export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, discussionDisabled = false, savedResult }: {
-  workspace: Workspace; people: Pick<Person, 'id' | 'name'>[]; onClose: () => void;
+export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, discussionDisabled = false, savedResult, initialPersonId }: {
+  workspace: Workspace; people: Pick<Person, 'id' | 'name'>[]; onClose: () => void; initialPersonId?: string;
   onCreate?: (personId: string) => void; onDiscuss?: (people: string[]) => void;
   discussionDisabled?: boolean; savedResult?: SynastryData & { id: string };
 }) {
-  const [a, setA] = useState(savedResult?.person_a_id || '');
+  const [a, setA] = useState(savedResult?.person_a_id || initialPersonId || '');
   const [b, setB] = useState(savedResult?.person_b_id || '');
   const [result, setResult] = useState<SynastryData | null>(savedResult || null);
   const [error, setError] = useState('');

@@ -68,11 +68,11 @@ function CompositeWheel({ result }: { result: Derived }) {
   </div>;
 }
 
-export function RelationshipDerivedView({ workspace, people, onClose, savedResult }: {
-  workspace: Workspace; people: Pick<Person, 'id' | 'name' | 'active_chart_id'>[]; onClose: () => void;
+export function RelationshipDerivedView({ workspace, people, onClose, savedResult, initialPersonId }: {
+  workspace: Workspace; people: Pick<Person, 'id' | 'name' | 'active_chart_id'>[]; onClose: () => void; initialPersonId?: string;
   savedResult?: Derived;
 }) {
-  const [first, setFirst] = useState('');
+  const [first, setFirst] = useState(initialPersonId || '');
   const [second, setSecond] = useState('');
   const [technique, setTechnique] = useState<Technique>('midpoint_composite');
   const { result: calculated, history, busy, error, setError, change,

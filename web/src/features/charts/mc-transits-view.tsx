@@ -13,8 +13,8 @@ type McResult = { id?: string; status: string; source_status?: string;
 const bodies = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
 const aspects = ['conjunction', 'opposition', 'square', 'trine', 'sextile'];
 
-export function McTransitsView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function McTransitsView({ workspace, people, onClose, initialPersonId }: {
+  workspace: Workspace; people: Person[]; onClose: () => void; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [start, setStart] = useState('');
@@ -30,6 +30,7 @@ export function McTransitsView({ workspace, people, onClose }: {
     useManualResultLifecycle<McResult, { id: string; first_utc: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
   const person = people.find(item => item.id === personId);
+  useEffect(() => { if (initialPersonId) choosePerson(initialPersonId); }, [initialPersonId]);
   function choosePerson(id: string) {
     setPersonId(id);
     loadPerson(id, 'mc_transit', 'Saved timelines could not be listed. Calculation remains available.');

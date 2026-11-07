@@ -22,8 +22,8 @@ type SolarArcResult = { id?: string; status: string; source_status?: string; cha
   ephemeris_sha256: Record<string, string>; profile_id: string;
   profile_revision: number; engine_version: string };
 
-export function SolarArcView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function SolarArcView({ workspace, people, onClose, initialPersonId }: {
+  workspace: Workspace; people: Person[]; onClose: () => void; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [date, setDate] = useState('');
@@ -33,6 +33,7 @@ export function SolarArcView({ workspace, people, onClose }: {
     choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
     useManualResultLifecycle<SolarArcResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
+  useEffect(() => { if (initialPersonId) choosePerson(initialPersonId); }, [initialPersonId]);
   function choosePerson(id: string) {
     setPersonId(id);
     loadPerson(id, 'true_solar_arc', 'Could not list saved solar arcs.');

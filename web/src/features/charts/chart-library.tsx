@@ -63,13 +63,14 @@ function ChartLibraryHistory({ personId, technique, onOpen, onBack }: {
   </section>;
 }
 
-export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, natalRequest = 0 }: {
+export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, natalRequest = 0, refreshRevision = 0 }: {
   workspace: Workspace; personId: string; activeChartId: string | null; enabled: boolean;
-  onCreate: () => void; onCreateNatal: () => void; onDiscuss: (result: SelectedResult, label: string) => void; natalRequest?: number;
+  onCreate: () => void; onCreateNatal: () => void; onDiscuss: (result: SelectedResult, label: string) => void; natalRequest?: number; refreshRevision?: number;
 }) {
   const [layout, setLayout] = useState(preferredLayout);
   const [summary, setSummary] = useState<LibrarySummary | null>(null);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [visited, setVisited] = useState(enabled);
   const [selected, setSelected] = useState<LibraryResult | null>(null);
@@ -83,12 +84,13 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
   useEffect(() => {
     if (!hasVisited) return;
     let current = true;
-    setSummary(null); setError(false);
+    setLoading(true); setError(false);
     void api<LibrarySummary>(`people/${encodeURIComponent(personId)}/chart-library`)
       .then(value => { if (current) setSummary(value); })
-      .catch(() => { if (current) setError(true); });
+      .catch(() => { if (current) setError(true); })
+      .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [personId, activeChartId, hasVisited, attempt]);
+  }, [personId, activeChartId, hasVisited, attempt, refreshRevision]);
 
   useEffect(() => {
     if (!summary || natalRequest <= handledNatalRequest.current) return;
@@ -116,14 +118,14 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
     <div hidden={!!selected || !!history}>
       <div className="library-heading"><div><h2 ref={collectionHeading} tabIndex={-1}>Your chart collection</h2>
         <p>Current natal and latest saved results. Earlier versions stay in History.</p></div>
-        <button type="button" onClick={onCreate}>Create chart</button></div>
+        <button type="button" className="primary" onClick={onCreate}>Create chart</button></div>
       <div className="library-toolbar"><p>{summary ? `${summary.entries.length} saved chart types` : 'Saved chart library'}</p>
         <div className="library-view-toggle" role="group" aria-label="Chart library layout">
           <button type="button" aria-pressed={layout === 'list'} onClick={() => chooseLayout('list')}>List</button>
           <button type="button" aria-pressed={layout === 'gallery'} onClick={() => chooseLayout('gallery')}>Gallery</button>
         </div></div>
-      {!summary && !error && hasVisited && <p role="status">Loading saved chart library…</p>}
-      {error && <div role="alert"><p>The saved chart library could not be loaded. Nothing was recalculated.</p>
+      {loading && <p role="status">{summary ? 'Updating saved chart library… You can still open the previously loaded charts.' : 'Loading saved chart library…'}</p>}
+      {error && <div role="alert"><p>{summary ? 'The saved chart library could not be updated. Previously loaded charts remain available; newer saves may be missing.' : 'The saved chart library could not be loaded. Nothing was recalculated.'}</p>
         <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry chart library</button></div>}
       {summary && !summary.entries.length && <div className="library-empty"><h3>No saved charts yet</h3>
         <p>Create a chart using supplied birth details. Unsaved calculations do not appear here.</p></div>}
@@ -131,10 +133,12 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
         <button type="button" onClick={onCreateNatal}>Create first chart</button></div>}
       <div className="library-collection" data-view={layout}>{summary?.entries.map(entry => {
         const result = entry.representative;
+        const recency = loading || error ? entry.technique === 'natal' ? 'Previously loaded natal' : 'Previously loaded' :
+          entry.technique === 'natal' ? result ? 'Current natal' : 'Saved natal versions' : 'Latest saved';
         return <article className="library-card" key={entry.technique} data-technique={entry.technique}
           data-result-id={result?.id} aria-label={libraryTitles[entry.technique]}>
           {result && <ChartLibraryPreview preview={result.preview} label={libraryTitles[entry.technique]} />}
-          <div className="library-card-copy"><span className="library-label">{entry.technique === 'natal' ? result ? 'Current natal' : 'Saved natal versions' : 'Latest saved'}</span>
+          <div className="library-card-copy"><span className="library-label">{recency}</span>
             <h3>{libraryTitles[entry.technique]}</h3>
             {result ? <ResultSummary result={result} personId={personId} /> : <p>No active natal. Earlier saved versions remain in History.</p>}
             <button type="button" className="library-history-link" aria-label={`${libraryTitles[entry.technique]} history, ${entry.count} saved`}
@@ -149,6 +153,7 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
     {history && <div hidden={!!selected}><ChartLibraryHistory key={history} personId={personId} technique={history}
       onOpen={open} onBack={() => { setHistory(null); requestAnimationFrame(() => historyOpener.current?.focus()); }} /></div>}
     {selected && <ChartLibraryReader key={`${selected.technique}:${selected.id}`} workspace={workspace} selected={selected}
-      isActiveNatal={selected.id === activeChartId} onBack={backToCollection} onDiscuss={onDiscuss} />}
+      isActiveNatal={!loading && !error && selected.id === summary?.entries.find(entry => entry.technique === 'natal')?.representative?.id}
+      onBack={backToCollection} onDiscuss={onDiscuss} />}
   </div>;
 }

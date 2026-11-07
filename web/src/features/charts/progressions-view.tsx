@@ -23,8 +23,8 @@ type Progression = { id?: string; status: string; source_status?: string; chart_
 
 
 
-export function ProgressionsView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function ProgressionsView({ workspace, people, onClose, initialPersonId }: {
+  workspace: Workspace; people: Person[]; onClose: () => void; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [date, setDate] = useState('');
@@ -34,6 +34,7 @@ export function ProgressionsView({ workspace, people, onClose }: {
     choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
     useManualResultLifecycle<Progression, { id: string; created_at: string; first_utc?: string }>(workspace);
   const intent = useManualChartIntent(result);
+  useEffect(() => { if (initialPersonId) choosePerson(initialPersonId); }, [initialPersonId]);
   function choosePerson(id: string) {
     setPersonId(id);
     loadPerson(id, 'secondary_progression', 'Saved progressions could not be listed. Calculation remains available.');

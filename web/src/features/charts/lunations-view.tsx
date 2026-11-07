@@ -43,8 +43,8 @@ function downloadCsv(result: SkyResult) {
   anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export function LunationsView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function LunationsView({ workspace, people, onClose, initialPersonId }: {
+  workspace: Workspace; people: Person[]; onClose: () => void; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [start, setStart] = useState('');
@@ -60,6 +60,7 @@ export function LunationsView({ workspace, people, onClose }: {
     useManualResultLifecycle<SkyResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
   const [selected, setSelected] = useState<{ kind: 'syzygy' | 'eclipse'; index: number }>({ kind: 'syzygy', index: 0 });
+  useEffect(() => { if (initialPersonId) choosePerson(initialPersonId); }, [initialPersonId]);
   function choosePerson(id: string) {
     setPersonId(id);
     loadPerson(id, 'actual_lunations_eclipses', 'Saved real-sky searches could not be listed.');

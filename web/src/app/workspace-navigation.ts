@@ -7,7 +7,8 @@ import type { PlanetaryReturnDraft } from '../features/charts/planetary-returns-
 
 type ReturnIntent =
   | { kind: 'advanced'; choice: 'solar_return' | 'lunar_return'; draft: AdvancedDraft }
-  | { kind: 'planetary'; draft: PlanetaryReturnDraft };
+  | { kind: 'planetary'; draft: PlanetaryReturnDraft }
+  | { kind: 'chart'; choice: ChartChoice };
 
 type Navigation = {
   person: Person | null; conversation: Conversation | null; chartHub: ChartChoice | null;
@@ -15,6 +16,7 @@ type Navigation = {
   filterPersonId: string | null; profileFromHub: boolean; profileChartFocus: boolean;
   profileChildFocus: boolean; profileEditorPersonId: string | null; profileEditorRequest: number;
   advancedDraft: AdvancedDraft | null; planetaryDraft: PlanetaryReturnDraft | null;
+  chartOriginId: string | null; libraryRevision: number;
 };
 
 const initial: Navigation = {
@@ -22,6 +24,7 @@ const initial: Navigation = {
   settingsOpen: false, drawer: false, filterPersonId: null, profileFromHub: false,
   profileChartFocus: false, profileChildFocus: false, profileEditorPersonId: null,
   profileEditorRequest: 0, advancedDraft: null, planetaryDraft: null,
+  chartOriginId: null, libraryRevision: 0,
 };
 
 /** Owns view/overlay transitions and return intents, not chat transport or thread creation. */
@@ -52,7 +55,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     leaveChat();
     returnIntent.current = null;
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, skyFromHub: false,
-      chartHub: null, person: null, conversation: null, filterPersonId: null,
+      chartHub: null, chartOriginId: null, person: null, conversation: null, filterPersonId: null,
       profileFromHub: false, profileChartFocus: false, profileChildFocus: false,
       advancedDraft: null, planetaryDraft: null }));
   }
@@ -62,13 +65,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     leaveChat();
     returnIntent.current = null;
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, chartHub: null,
-      profileChartFocus: false, person: null, conversation: null, drawer: false }));
+      chartOriginId: null, profileChartFocus: false, person: null, conversation: null, drawer: false }));
   }
 
   function beginConversation() {
     const request = ++version.current;
     returnIntent.current = null;
-    setView(current => ({ ...current, settingsOpen: false, skyOpen: false, chartHub: null }));
+    setView(current => ({ ...current, settingsOpen: false, skyOpen: false, chartHub: null, chartOriginId: null }));
     return request;
   }
 
@@ -78,13 +81,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     setView(current => ({ ...current, conversation: thread, person: null, drawer: false }));
   }
 
-  function openChartHub() {
+  function openChartHub(originId: string | null = null) {
     version.current++;
     returnIntent.current = null;
     previousPerson.current = view.person;
     previousFilter.current = view.filterPersonId;
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, chartHub: 'hub',
-      advancedDraft: null, planetaryDraft: null, drawer: false }));
+      advancedDraft: null, planetaryDraft: null, drawer: false, chartOriginId: originId }));
   }
 
   function selectChart(choice: ChartChoice | 'transits') {
@@ -94,7 +97,11 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
   }
 
   function backToChartChoices() { setView(current => ({ ...current, chartHub: 'hub' })); }
-  function closeChartHub() { setView(current => ({ ...current, chartHub: null })); }
+  function closeChartHub() {
+    returnIntent.current = null;
+    setView(current => ({ ...current, chartHub: null, chartOriginId: null,
+      libraryRevision: current.libraryRevision + 1 }));
+  }
   function closeTechnique() {
     setView(current => ({ ...current, chartHub: 'hub', advancedDraft: null, planetaryDraft: null }));
   }
@@ -109,7 +116,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     previousFilter.current = view.filterPersonId;
     setView(current => ({ ...current, person, filterPersonId: person.id,
       profileFromHub: true, profileChartFocus: true, profileChildFocus: false,
-      profileEditorPersonId: null, skyOpen: false, chartHub: null, drawer: false }));
+      profileEditorPersonId: null, skyOpen: false, chartHub: null, chartOriginId: null, drawer: false }));
   }
 
   function beginHubPerson() {
@@ -126,6 +133,9 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
   }
 
   function abandonReturn() { returnIntent.current = null; }
+  function createNatalForTechnique(choice: ChartChoice) {
+    returnIntent.current = { kind: 'chart', choice };
+  }
   function createNatalFromAdvanced(choice: 'solar_return' | 'lunar_return', draft: AdvancedDraft) {
     returnIntent.current = { kind: 'advanced', choice, draft };
   }
@@ -137,10 +147,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     version.current++;
     const resume = returnIntent.current;
     returnIntent.current = null;
-    setView(current => ({ ...current, person: current.conversation ? null : previousPerson.current,
+    setView(current => ({ ...current,
+      person: current.conversation ? null : current.person?.id === previousPerson.current?.id ? current.person : previousPerson.current,
       filterPersonId: previousFilter.current, profileFromHub: false,
       profileChildFocus: false, profileChartFocus: false,
-      chartHub: resume?.kind === 'advanced' ? resume.choice : resume?.kind === 'planetary' ? 'planetary_return' : current.chartHub,
+      chartHub: resume?.kind === 'advanced' || resume?.kind === 'chart' ? resume.choice : resume?.kind === 'planetary' ? 'planetary_return' : current.chartHub,
+      chartOriginId: resume ? current.chartOriginId : null, profileEditorPersonId: null,
+      libraryRevision: current.libraryRevision + 1,
       advancedDraft: resume?.kind === 'advanced' ? resume.draft : current.advancedDraft,
       planetaryDraft: resume?.kind === 'planetary' ? resume.draft : current.planetaryDraft }));
   }
@@ -151,7 +164,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     focusProfile.current = { id, navigation: request };
     effectsRef.current.resetArchive();
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, skyFromHub: false,
-      chartHub: null, profileEditorPersonId: null, profileFromHub: false,
+      chartHub: null, chartOriginId: null, person: null, profileEditorPersonId: null, profileFromHub: false,
       profileChartFocus: false, profileChildFocus: false, filterPersonId: id,
       conversation: null, drawer: false }));
     return request;
@@ -182,13 +195,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     version.current++;
     leaveChat();
     setView(current => ({ ...current, settingsOpen: false, chartHub: null, skyOpen: false,
-      person: null, conversation: null, drawer: false }));
+      person: null, conversation: null, drawer: false, chartOriginId: null }));
   }
 
   return { ...view, version, focusProfile, isCurrent, signOut, allConversations, newConversation,
     beginConversation, showConversation, openChartHub, selectChart, backToChartChoices,
     closeChartHub, closeTechnique, closeSky, openContextChart, beginHubPerson, showHubPerson,
-    abandonReturn, createNatalFromAdvanced, createNatalFromPlanetary, returnFromPerson,
+    abandonReturn, createNatalForTechnique, createNatalFromAdvanced, createNatalFromPlanetary, returnFromPerson,
     beginSidebarPerson, showSidebarPerson, createdPerson, personDeleted, discussResult,
     openDrawer: () => setView(current => ({ ...current, drawer: true })),
     closeDrawer: () => setView(current => ({ ...current, drawer: false })),

@@ -51,6 +51,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
   const chatComposer = useGrowingComposer(message);
   const menuButton = useRef<HTMLButtonElement>(null);
   const chartNavButton = useRef<HTMLButtonElement>(null);
+  const chartOpener = useRef<HTMLElement | null>(null);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const settingsOpener = useRef<HTMLElement | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -163,14 +164,16 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
     requestAnimationFrame(() => historyHeading.current?.focus());
   }
 
-  function openChartHub() {
-    navigation.openChartHub();
+  function openChartHub(originId: string | null = null) {
+    chartOpener.current = document.activeElement as HTMLElement;
+    navigation.openChartHub(originId);
   }
 
   function closeChartHub() {
     navigation.closeChartHub();
     window.requestAnimationFrame(() => {
-      if (window.matchMedia('(max-width:700px)').matches) menuButton.current?.focus();
+      if (chartOpener.current?.getClientRects().length && getComputedStyle(chartOpener.current).visibility !== 'hidden') chartOpener.current.focus();
+      else if (window.matchMedia('(max-width:700px)').matches) menuButton.current?.focus();
       else chartNavButton.current?.focus();
     });
   }
@@ -190,12 +193,16 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
     } });
   }
 
+  const chartOrigin = people.find(item => item.id === navigation.chartOriginId);
+  const needsNatal = chartOrigin && !chartOrigin.active_chart_id && chartHub &&
+    !['hub', 'natal', 'child'].includes(chartHub);
+
   return <div className="app">
     {drawer && <button className="drawer-scrim" aria-label="Close navigation" onClick={closeDrawer} />}
     <aside className={`sidebar${drawer ? ' open' : ''}`} aria-label="Workspace navigation" onKeyDown={drawerKeys}>
       <div className="brand-row"><button className="brand" type="button" aria-label="katstrology. — New conversation" onClick={() => newChat()}><BrandKitten /><span>katstrology.</span></button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
       <div className="side-main-actions"><button className="new-chat" type="button" onClick={() => newChat()}>＋ &nbsp; New conversation</button>
-        <button ref={chartNavButton} className="create-chart-nav" type="button" onClick={openChartHub}>＋ &nbsp; Create chart</button></div>
+        <button ref={chartNavButton} className="create-chart-nav" type="button" onClick={() => openChartHub()}>＋ &nbsp; Create chart</button></div>
       <nav aria-label="People"><div className="side-heading-row"><h2 className="side-heading">PEOPLE</h2><button aria-label="Add person" onClick={() => {
         personDialogOpener.current = document.activeElement as HTMLElement;
         navigation.openPersonDialog(); setPersonDialog(true);
@@ -230,7 +237,15 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
             provider.status.connected ? 'ChatGPT connected' : 'Connect ChatGPT plan to send'}</span></header>
       {settingsOpen && <SettingsView workspace={workspace} provider={provider} onClose={closeSettings} />}
       <div className={settingsOpen ? 'settings-hidden' : 'settings-visible'} inert={settingsOpen}>
-      {chartHub === 'synastry' && <SynastryView workspace={workspace} people={people}
+      {needsNatal ? <section className="chart-hub" aria-label="Natal required">
+        <div className="chart-hub-heading"><div><h1>{chartOrigin.name} needs a current natal</h1>
+          <p>Create a natal from this person’s supplied birth details to continue.</p></div>
+          <button type="button" onClick={navigation.backToChartChoices}>Back to chart choices</button></div>
+        <div className="chart-hub-people"><button type="button" className="primary" onClick={() => {
+          navigation.createNatalForTechnique(chartHub); openHubPerson(chartOrigin.id);
+        }}>Create natal for {chartOrigin.name}</button></div>
+      </section> : <>
+      {chartHub === 'synastry' && <SynastryView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         discussionDisabled={archive.hasPending || archive.busy}
         onClose={navigation.backToChartChoices} onCreate={id => openHubPerson(id)}
         onDiscuss={ids => {
@@ -240,26 +255,26 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         }} />}
       {(chartHub === 'solar_return' || chartHub === 'lunar_return') &&
         <AdvancedView key={chartHub} workspace={workspace} people={people} technique={chartHub}
-          initialDraft={navigation.advancedDraft || undefined}
+          initialDraft={navigation.advancedDraft || undefined} initialPersonId={navigation.chartOriginId || undefined}
           onDiscuss={discussSavedResult}
           onClose={navigation.closeTechnique}
           onCreateNatal={(id, draft) => {
             navigation.createNatalFromAdvanced(chartHub, draft); openHubPerson(id);
           }} />}
-      {chartHub === 'mc_transit' && <McTransitsView workspace={workspace} people={people}
+      {chartHub === 'mc_transit' && <McTransitsView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
-      {chartHub === 'secondary_progression' && <ProgressionsView workspace={workspace} people={people}
+      {chartHub === 'secondary_progression' && <ProgressionsView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
-      {chartHub === 'relationship_derived' && <RelationshipDerivedView workspace={workspace} people={people}
+      {chartHub === 'relationship_derived' && <RelationshipDerivedView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
-      {chartHub === 'true_solar_arc' && <SolarArcView workspace={workspace} people={people}
+      {chartHub === 'true_solar_arc' && <SolarArcView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
-      {chartHub === 'progressed_lunar_phases' && <ProgressedPhasesView workspace={workspace} people={people}
+      {chartHub === 'progressed_lunar_phases' && <ProgressedPhasesView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
-      {chartHub === 'actual_lunations_eclipses' && <LunationsView workspace={workspace} people={people}
+      {chartHub === 'actual_lunations_eclipses' && <LunationsView workspace={workspace} people={people} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.backToChartChoices} />}
       {chartHub === 'planetary_return' && <PlanetaryReturnsView workspace={workspace} people={people}
-        initialDraft={navigation.planetaryDraft || undefined}
+        initialDraft={navigation.planetaryDraft || undefined} initialPersonId={navigation.chartOriginId || undefined}
         onClose={navigation.closeTechnique}
         onCreateNatal={(id, draft) => { navigation.createNatalFromPlanetary(draft); openHubPerson(id); }} />}
       {chartHub && chartHub !== 'synastry' && chartHub !== 'solar_return' &&
@@ -268,7 +283,9 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         chartHub !== 'true_solar_arc' && chartHub !== 'progressed_lunar_phases' &&
         chartHub !== 'actual_lunations_eclipses' && chartHub !== 'planetary_return' && <ChartHub choice={chartHub} people={people}
         onSelect={choice => {
-          navigation.selectChart(choice);
+          if (navigation.chartOriginId && (choice === 'natal' || choice === 'child')) {
+            openHubPerson(navigation.chartOriginId, choice === 'child');
+          } else navigation.selectChart(choice);
         }}
         onPerson={id => openHubPerson(id, chartHub === 'child')}
         onAddPerson={() => {
@@ -276,13 +293,14 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
           setPersonDialog(true);
         }}
         onClose={() => chartHub === 'hub' ? closeChartHub() : navigation.backToChartChoices()} />}
+      </>}
       {skyOpen && <TransitView workspace={workspace} people={people}
-        initialPersonId={person?.id || selection[0]?.person_id}
+        initialPersonId={skyFromHub ? navigation.chartOriginId || undefined : person?.id || selection[0]?.person_id}
         returnLabel={skyFromHub ? 'Back to chart choices' : 'Return to conversation'}
         onClose={navigation.closeSky} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
       {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople}
-        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={openChartHub}
+        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={() => openChartHub(person.id)} libraryRevision={navigation.libraryRevision}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'overview'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
         onReturn={profileFromHub ? () => {

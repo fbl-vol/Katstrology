@@ -10,7 +10,7 @@ const expectedTitles: Record<string, string> = {
   synastry_overlay: 'Synastry', midpoint_composite: 'Midpoint composite', uncorrected_davison: 'Uncorrected Davison',
 };
 
-const renders = resolve(import.meta.dirname, '../../../.local/chart-library-release2/renders');
+const renders = resolve(import.meta.dirname, '../../../.local/chart-library-release2-fixes/renders');
 
 test('chart library opens every persisted technique with its original reader and no writes', async ({ page }) => {
   test.setTimeout(120_000);

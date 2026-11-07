@@ -70,12 +70,12 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
   initialEditorOpen = false, initialTab = 'overview', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
-  discussSavedResult, createChart }: {
+  discussSavedResult, createChart, libraryRevision = 0 }: {
   workspace: Workspace; person: Person; refresh: () => Promise<void>;
   startConversation: () => void; openConversation: (id: string) => void;
   discussSavedResult: (result: SelectedResult, label: string) => void;
   onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'charts'; editorRequest?: number;
-  childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
+  libraryRevision?: number; childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
 }) {
   const tabsId = useId();
   const [tab, setTab] = useState<'overview' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab);
@@ -110,7 +110,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
     if (initialEditorOpen) {
       setTab('charts'); setEditorOpen(true);
       window.requestAnimationFrame(() => editorRef.current?.focus());
-    }
+    } else setEditorOpen(false);
   }, [initialEditorOpen, editorRequest]);
 
   function openEditor() {
@@ -145,7 +145,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       {newerDraft && <p className="profile-draft-notice" role="status"><strong>Latest details are not in the current chart.</strong> The saved chart still uses {savedTime === 'unknown' ? 'an unknown birth time' : savedTime === 'not recorded' ? 'birth inputs without a recorded time' : `the saved birth time of ${savedTime}`}{savedDate ? ` on ${savedDate}` : ''}. Start conversation still uses this saved chart until you calculate an updated version.</p>}
       <button ref={editButtonRef} type="button" className="profile-edit-action" onClick={openEditor} aria-controls={`${tabsId}-editor`} aria-expanded={editorOpen}>
         {hasActive ? 'Edit birth details' : 'Add birth details'}</button>
-    </div><button type="button" className="primary profile-chat-action" onClick={startConversation}>Start conversation</button></div>
+    </div><button type="button" className={`${tab === 'charts' ? '' : 'primary '}profile-chat-action`} onClick={startConversation}>Start conversation</button></div>
     <div className="profile-tabs" role="tablist" aria-label="Person sections">
       {(['overview', 'charts', 'saved'] as const).map((item, index) => <button key={item} type="button" role="tab"
         id={`${tabsId}-${item}-tab`} aria-controls={`${tabsId}-${item}-panel`} aria-selected={tab === item}
@@ -188,7 +188,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       <p className="profile-overview-note">The chart, conversation and notes stay separate. Open what you want to explore.</p>
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
-      {!editorOpen && <ChartLibrary workspace={workspace} personId={person.id} activeChartId={activeChart?.id || person.active_chart_id}
+      {!editorOpen && <ChartLibrary key={person.id} workspace={workspace} personId={person.id} refreshRevision={libraryRevision} activeChartId={activeChart?.id || person.active_chart_id}
         enabled={tab === 'charts'} natalRequest={natalRequest} onCreate={createChart || openEditor} onCreateNatal={openEditor} onDiscuss={discussSavedResult} />}
       {editorOpen && <>
       <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>

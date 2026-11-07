@@ -32,8 +32,8 @@ function downloadCsv(result: PhaseResult) {
   anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export function ProgressedPhasesView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function ProgressedPhasesView({ workspace, people, onClose, initialPersonId }: {
+  workspace: Workspace; people: Person[]; onClose: () => void; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [start, setStart] = useState('');
@@ -47,6 +47,7 @@ export function ProgressedPhasesView({ workspace, people, onClose }: {
     useManualResultLifecycle<PhaseResult, { id: string; first_utc?: string; created_at: string }>(workspace);
   const intent = useManualChartIntent(result);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  useEffect(() => { if (initialPersonId) choosePerson(initialPersonId); }, [initialPersonId]);
   function choosePerson(id: string) {
     setPersonId(id);
     loadPerson(id, 'progressed_lunar_phases', 'Saved phase searches could not be listed.');

@@ -39,10 +39,10 @@ function downloadCsv(result: ReturnResult) {
   a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal, initialDraft }: {
+export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal, initialDraft, initialPersonId }: {
   workspace: Workspace; people: Person[]; onClose: () => void;
   onCreateNatal: (personId: string, draft: PlanetaryReturnDraft) => void;
-  initialDraft?: PlanetaryReturnDraft;
+  initialDraft?: PlanetaryReturnDraft; initialPersonId?: string;
 }) {
   const [personId, setPersonId] = useState('');
   const [active, setActive] = useState<Chart | null>(null);
@@ -65,7 +65,8 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
   const restoreDraft = useRef(!!initialDraft);
   const exactSource = active?.result.natal?.status === 'complete';
   useEffect(() => {
-    if (initialDraft?.personId) choosePerson(initialDraft.personId);
+    const origin = initialDraft?.personId || initialPersonId;
+    if (origin) choosePerson(origin);
     return () => { personVersion.current++; };
   }, []);
   function choosePerson(id: string) {
