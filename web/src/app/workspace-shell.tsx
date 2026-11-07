@@ -282,7 +282,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         onClose={navigation.closeSky} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
       {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople}
-        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)}
+        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={openChartHub}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'overview'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
         onReturn={profileFromHub ? () => {

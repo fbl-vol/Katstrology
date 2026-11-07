@@ -35,11 +35,18 @@ async function openChart(page: Page, name: string, syntheticPatterns: boolean | 
     saved.active_chart_id = chartId;
     await page.route(`**/api/people/${personId}`, route => route.fulfill({ json: saved }));
     await page.route(`**/api/charts/${chartId}/exploration`, route => route.fulfill({ json: projection }));
+    await page.route(`**/api/charts/${chartId}`, route => route.fulfill({ json: record }));
+    const history = await (await page.request.get(`/api/people/${personId}/chart-library/natal`)).json();
+    await page.route(`**/api/people/${personId}/chart-library`, route => route.fulfill({ json: {
+      person_id: personId, entries: [{ technique: 'natal', count: 1, variants: 1,
+        representative: history.entries.find((entry: { id: string }) => entry.id === chartId) }],
+    } }));
   }
   await page.reload();
   if ((page.viewportSize()?.width ?? 1440) < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: new RegExp(name) }).click();
   await page.getByRole('tab', { name: 'Charts', exact: true }).click();
+  if (syntheticPatterns) await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   const chart = syntheticPatterns ? page.locator('.profile-active-chart') :
     page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"]`);
   if (!syntheticPatterns) {

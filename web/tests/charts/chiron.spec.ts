@@ -50,6 +50,7 @@ test('explicit Chiron profile renders, exports and survives reload without chang
   await page.reload();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic Chiron reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic Chiron reader' })).toBeVisible();
   await page.getByRole('tabpanel', { name: 'Charts' }).getByText('All chart tables', { exact: true }).first().click();
   await expect(page.getByRole('tabpanel', { name: 'Charts' }).getByRole('row', { name: /Chiron/ }).first()).toBeVisible();

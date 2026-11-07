@@ -118,6 +118,7 @@ test('child route creates one ordinary generated natal without child metadata or
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic family member/ }).click();
   await expect(page.locator('.profile-child-note')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');
   await expect(page.locator('.chart-history > summary')).toHaveText('Earlier charts and birth details');
   await page.locator('.chart-history > summary').click();

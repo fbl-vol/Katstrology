@@ -4,6 +4,7 @@ import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from '../charts/natal';
 import { InsightNotebook } from './insights';
 import { PersonTiming } from './person-timing';
+import { ChartLibrary } from '../charts/chart-library';
 import { PersonRecords } from './person-records';
 import { AstrologyHelp } from '../charts/astrology-help';
 import type { SelectedResult } from '../conversation/archive';
@@ -69,15 +70,16 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
   initialEditorOpen = false, initialTab = 'overview', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
-  discussSavedResult }: {
+  discussSavedResult, createChart }: {
   workspace: Workspace; person: Person; refresh: () => Promise<void>;
   startConversation: () => void; openConversation: (id: string) => void;
   discussSavedResult: (result: SelectedResult, label: string) => void;
   onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'charts'; editorRequest?: number;
-  childFocus?: boolean; onReturn?: () => void; returnLabel?: string;
+  childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
 }) {
   const tabsId = useId();
   const [tab, setTab] = useState<'overview' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab);
+  const [natalRequest, setNatalRequest] = useState(initialTab === 'charts' && !initialEditorOpen ? 1 : 0);
   const [savedSection, setSavedSection] = useState<'insights' | 'later' | 'journal'>('insights');
   const [savedOpenRequest, setSavedOpenRequest] = useState(0);
   const [openedCharts, setOpenedCharts] = useState<Set<string>>(() => new Set());
@@ -154,7 +156,10 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
     <section id={`${tabsId}-overview-panel`} role="tabpanel" aria-labelledby={`${tabsId}-overview-tab`} hidden={tab !== 'overview'} className="profile-panel">
       <p className="profile-group-label">Explore</p>
       <div className="profile-quiet-group">
-        <button type="button" className="profile-quiet-row" onClick={() => hasActive ? setTab('charts') : openEditor()}>
+        <button type="button" className="profile-quiet-row" onClick={() => {
+          if (hasActive) { setTab('charts'); setNatalRequest(value => value + 1); }
+          else openEditor();
+        }}>
           <span className="profile-row-icon" aria-hidden="true">☉</span><span><strong>{hasActive ? 'Birth chart' : 'First birth chart'}</strong>
             <small>{hasActive ? activeChart?.source_status !== 'current' ? 'Saved chart · source needs review' :
               activeChart?.result.natal?.status === 'unsupported_uncertain_birth_time' ? 'Limited chart · birth time unknown' :
@@ -183,15 +188,17 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       <p className="profile-overview-note">The chart, conversation and notes stay separate. Open what you want to explore.</p>
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
+      {!editorOpen && <ChartLibrary workspace={workspace} personId={person.id} activeChartId={activeChart?.id || person.active_chart_id}
+        enabled={tab === 'charts'} natalRequest={natalRequest} onCreate={createChart || openEditor} onCreateNatal={openEditor} onDiscuss={discussSavedResult} />}
+      {editorOpen && <>
       <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>
         <p>{activeChart ? <>Calculated from saved birth details{savedDate && ` · ${savedDate}`} · {savedTime === 'unknown' ? 'birth time unknown' : savedTime === 'not recorded' ? 'birth time not recorded' : `saved birth time ${savedTime}`}. Earlier versions stay below.</> :
           'No active generated natal. Nothing is guessed from a draft or an earlier chart.'}</p></div>
       </div>
       {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion explorationEnabled={tab === 'charts'} /> :
         <p>This generated chart has only supported partial/solar information. Birth time or houses were not inferred.</p>}</div> :
-        <div className="profile-chart-empty"><p>{editorOpen ? 'Supply the birth details below to generate the first chart.' :
-          'Choose Create first chart to supply birth details and generate a natal chart.'}</p>
-          {!editorOpen && <button type="button" onClick={openEditor}>Create first chart</button>}</div>}
+        <div className="profile-chart-empty"><p>Supply the birth details below to generate the first chart.</p></div>}
+      </>}
       <div id={`${tabsId}-editor`} ref={editorRef} tabIndex={-1} hidden={!editorOpen} className="profile-editor">
         <div className="profile-editor-heading"><h2>{hasActive ? 'Update current natal' : 'Create first chart'}</h2>
           <button type="button" onClick={() => { setEditorOpen(false); editButtonRef.current?.focus(); }}>Close editor</button></div>

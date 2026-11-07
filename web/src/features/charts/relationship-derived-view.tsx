@@ -11,7 +11,7 @@ import type { Person } from '../people/people';
 type Technique = 'midpoint_composite' | 'uncorrected_davison';
 type CompositePoint = { id: string; status: string; longitude_degrees: number | null;
   source_a_degrees: number; source_b_degrees: number };
-type Derived = { id?: string; status: string; technique: Technique; method_version: string;
+export type Derived = { id?: string; status: string; technique: Technique; method_version: string;
   chart_a_id: string; chart_b_id: string; person_a_id: string; person_b_id: string;
   source_a_birth_id: string; source_b_birth_id: string;
   source_a_birth: Record<string, unknown>; source_b_birth: Record<string, unknown>;
@@ -68,19 +68,21 @@ function CompositeWheel({ result }: { result: Derived }) {
   </div>;
 }
 
-export function RelationshipDerivedView({ workspace, people, onClose }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
+export function RelationshipDerivedView({ workspace, people, onClose, savedResult }: {
+  workspace: Workspace; people: Pick<Person, 'id' | 'name' | 'active_chart_id'>[]; onClose: () => void;
+  savedResult?: Derived;
 }) {
   const [first, setFirst] = useState('');
   const [second, setSecond] = useState('');
   const [technique, setTechnique] = useState<Technique>('midpoint_composite');
-  const { result, history, busy, error, setError, change,
+  const { result: calculated, history, busy, error, setError, change,
     choosePerson: loadPerson, calculate: saveResult, openSaved: openResult } =
     useManualResultLifecycle<Derived, { id: string; created_at: string }>(workspace);
+  const result = savedResult || calculated;
   const intent = useManualChartIntent(result);
   useEffect(() => {
-    loadPerson(first, technique, 'Could not list saved relationship charts.');
-  }, [first, technique]);
+    if (!savedResult) loadPerson(first, technique, 'Could not list saved relationship charts.');
+  }, [first, technique, savedResult]);
   async function calculate(event: FormEvent) {
     event.preventDefault();
     if (first === second) { setError('Choose two different people with current natals.'); return; }
@@ -99,9 +101,9 @@ export function RelationshipDerivedView({ workspace, people, onClose }: {
   const name = (id: string) => people.find(person => person.id === id)?.name || 'saved person';
   return <section className="advanced-view" aria-label="Relationship-derived chart">
     <div className="transit-heading"><div><span className="eyebrow">RELATIONSHIP CHARTS</span>
-      <h1 ref={intent.viewHeading} tabIndex={-1}>Relationship-derived charts</h1><p>Choose a symbolic midpoint composite or the explicitly uncorrected time-and-coordinate Davison. Neither measures compatibility.</p></div>
-      <button type="button" onClick={onClose}>Back to chart choices</button></div>
-    <form className="advanced-form" onSubmit={event => void calculate(event)}>
+      <h1 ref={intent.viewHeading} tabIndex={-1}>Relationship-derived charts</h1><p>{savedResult ? 'Original saved chart, with both source versions preserved. No values were recalculated.' : 'Choose a symbolic midpoint composite or the explicitly uncorrected time-and-coordinate Davison. Neither measures compatibility.'}</p></div>
+      <button type="button" onClick={onClose}>{savedResult ? 'Back to chart library' : 'Back to chart choices'}</button></div>
+    {!savedResult && <form className="advanced-form" onSubmit={event => void calculate(event)}>
       <label>First person<select required value={first} onChange={event => { change(); setFirst(event.target.value); }}>
         <option value="">Choose a person</option>{people.filter(person => person.active_chart_id).map(person =>
           <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
@@ -114,8 +116,8 @@ export function RelationshipDerivedView({ workspace, people, onClose }: {
       </select></label>
       <button className="primary" type="submit" disabled={busy || !first || !second || first === second}>
         {busy ? 'Calculating…' : 'Calculate derived chart'}</button>
-    </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved relationship charts"><h2>Saved derived charts</h2>
+    </form>}
+    {!savedResult && history.length > 0 && <nav className="advanced-history" aria-label="Saved relationship charts"><h2>Saved derived charts</h2>
       {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
         Open saved derived chart · {row.created_at.slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}

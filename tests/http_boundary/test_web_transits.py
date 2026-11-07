@@ -61,6 +61,38 @@ class TransitHttpTests(unittest.TestCase):
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(self.name)))
         self.directory.cleanup()
 
+    def test_chart_library_gets_are_owner_scoped_and_never_calculate_or_write(self):
+        from unittest.mock import patch
+        urls = ['/api/people/one/chart-library', '/api/people/one/chart-library/natal',
+                f'/api/charts/{self.chart_id}']
+        # ASGI-only host validation, not traffic to any live listener.
+        with TestClient(create_app(self.dsn, self.files, self.ledger, self.dist),
+                        base_url='http://127.0.0.1:8765') as client:
+            for url in urls:
+                self.assertEqual(client.get(url).status_code, 401)
+            for owner, status in (('bob', 404), ('alice', 200)):
+                client.post('/api/login', headers={'Origin': 'http://127.0.0.1:8765'},
+                    json={'username': owner, 'password': f'synthetic-password-{owner}'})
+                with patch('swisseph.calc_ut', side_effect=AssertionError('library calculated')):
+                    for url in urls:
+                        self.assertEqual(client.get(url).status_code, status)
+            summary = client.get(urls[0]).json()
+            self.assertEqual(summary['entries'][0]['representative']['id'], self.chart_id)
+            self.assertEqual(client.get(urls[1]).json()['entries'][0]['id'], self.chart_id)
+            legacy = client.get('/api/people/legacy/chart-library').json()['entries'][0]
+            self.assertEqual(legacy['count'], 1)
+            self.assertIsNone(legacy['representative'])
+            self.assertEqual(client.get(urls[0] + '?owner=bob').status_code, 400)
+            self.assertEqual(client.get(urls[1] + '?before=missing').status_code, 404)
+            self.assertEqual(client.get('/api/people/one/chart-library/invented').status_code, 400)
+            headers = {'Origin': 'http://127.0.0.1:8765',
+                       'X-Kat-CSRF': client.get('/api/session').json()['csrf']}
+            for url in urls:
+                self.assertEqual(client.post(url, headers=headers).status_code, 405)
+        with Store(self.dsn, self.files, Tombstones(self.ledger)) as store:
+            self.assertEqual(store.db.execute('SELECT count(*) AS n FROM turns').fetchone()['n'], 0)
+            self.assertEqual(store.db.execute('SELECT count(*) AS n FROM advanced_results').fetchone()['n'], 0)
+
     def test_exploration_is_owned_read_only_and_uses_saved_profile(self):
         from unittest.mock import patch
         from m2.calculation.charts import Charts

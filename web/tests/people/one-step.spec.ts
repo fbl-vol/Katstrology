@@ -79,6 +79,7 @@ for (const viewport of [
     if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: new RegExp(`Synthetic one-step ${viewport.name}`) }).click();
     await page.getByRole('tab', { name: 'Charts' }).click();
+    await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
     await page.locator('.chart-history > summary').click();
     await expect(page.locator(`.chart-history > details[data-kat-chart-id="${chartId}"] > summary`)).toContainText('Current natal');
     await expect(page.locator('.profile-chart-heading')).toContainText('Current birth chart');

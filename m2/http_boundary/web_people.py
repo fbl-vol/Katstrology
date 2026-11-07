@@ -5,6 +5,7 @@ from starlette.routing import Route
 from m2.calculation.charts import Charts
 from m2.calculation.exploration import explore_chart
 from m2.people.birth_flow import BirthFlow, BirthInputError
+from m2.people.chart_library import ChartLibrary
 from m2.people.insights import SavedInsights
 from m2.people.person_records import Watchlist, Journal
 from m2.people.places import search as search_places
@@ -39,6 +40,25 @@ async def person(request):
             session, result['id'], draft['revision'], draft['details']['birthplace']) if draft else None
         return result
     result = await request.app.state.runtime.call(read_person)
+    return json_response(result)
+
+
+async def chart_library(request):
+    session = await authorized(request)
+    person_id = request.path_params['person_id']
+    technique = request.path_params.get('technique')
+    if set(request.query_params) - ({'before'} if technique else set()):
+        raise ValueError('Unsupported chart library query')
+    result = await request.app.state.runtime.call(lambda store, _: (
+        ChartLibrary(store).history(session, person_id, technique, request.query_params.get('before'))
+        if technique else ChartLibrary(store).summary(session, person_id)))
+    return json_response(result)
+
+
+async def saved_chart(request):
+    session = await authorized(request)
+    result = await request.app.state.runtime.call(lambda store, _: Charts(store).get_chart(
+        session, request.path_params['chart_id']))
     return json_response(result)
 
 
@@ -217,6 +237,9 @@ async def journal_entry(request):
 
 
 routes = [Route('/api/charts/{chart_id}/exploration', chart_exploration, methods=['GET']),
+          Route('/api/charts/{chart_id}', saved_chart, methods=['GET']),
+          Route('/api/people/{person_id}/chart-library', chart_library, methods=['GET']),
+          Route('/api/people/{person_id}/chart-library/{technique}', chart_library, methods=['GET']),
           Route('/api/people', people, methods=['GET', 'POST']),
           Route('/api/people/{person_id}', person, methods=['GET', 'DELETE']),
           Route('/api/people/{person_id}/drafts', drafts, methods=['POST']),

@@ -106,6 +106,7 @@ test('empty, loading and failed transit controls retain dates without an automat
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   const panel = page.locator('.transit-motion');
   let requests = 0;
   page.on('request', request => { if (request.url().includes('/transit-frames')) requests++; });

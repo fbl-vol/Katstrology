@@ -29,6 +29,7 @@ for (const viewport of [
     await expect(page.getByLabel('Your reflection', { exact: true })).toBeVisible();
 
     await page.getByRole('tab', { name: 'Charts' }).click();
+    await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
     const chart = page.locator('.profile-active-chart');
     await expect(chart.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
     await expect(chart.getByRole('tab', { name: /^Positions/ })).toBeVisible();

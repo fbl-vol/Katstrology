@@ -57,6 +57,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await page.reload();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic apogee reader/ }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   await page.getByRole('tabpanel', { name: 'Charts' }).getByText('All chart tables', { exact: true }).first().click();
   await expect(page.getByRole('tabpanel', { name: 'Charts' }).getByRole('row', { name: /Black Moon Lilith \(mean lunar apogee\)/ }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Edit birth details' }).click();
@@ -65,6 +66,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await expect(form.getByRole('button', { name: 'Change birthplace' })).toBeVisible();
   await form.getByRole('button', { name: 'Generate chart' }).click();
   await expect(form.locator('.birth-status')).toContainText('Current natal saved');
+  await charts.getByText('All chart tables', { exact: true }).first().click();
   await expect(charts.getByRole('row', { name: /Black Moon Lilith \(true \/ osculating lunar apogee\)/ }).first()).toBeVisible();
   await expect(charts.getByText('Swiss osculating lunar apogee', { exact: false }).first()).toBeVisible();
   const history = await (await page.request.get(`/api/people/${selected.id}`)).json();

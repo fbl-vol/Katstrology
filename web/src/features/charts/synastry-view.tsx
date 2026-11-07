@@ -64,19 +64,19 @@ function PairWheel({ result, aName, bName }: { result: SynastryData; aName: stri
   </div>;
 }
 
-export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, discussionDisabled = false }: {
-  workspace: Workspace; people: Person[]; onClose: () => void;
-  onCreate: (personId: string) => void; onDiscuss: (people: string[]) => void;
-  discussionDisabled?: boolean;
+export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, discussionDisabled = false, savedResult }: {
+  workspace: Workspace; people: Pick<Person, 'id' | 'name'>[]; onClose: () => void;
+  onCreate?: (personId: string) => void; onDiscuss?: (people: string[]) => void;
+  discussionDisabled?: boolean; savedResult?: SynastryData & { id: string };
 }) {
-  const [a, setA] = useState('');
-  const [b, setB] = useState('');
-  const [result, setResult] = useState<SynastryData | null>(null);
+  const [a, setA] = useState(savedResult?.person_a_id || '');
+  const [b, setB] = useState(savedResult?.person_b_id || '');
+  const [result, setResult] = useState<SynastryData | null>(savedResult || null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savedId, setSavedId] = useState('');
-  const [historical, setHistorical] = useState(false);
+  const [savedId, setSavedId] = useState(savedResult?.id || '');
+  const [historical, setHistorical] = useState(savedResult?.source_status === 'historical');
   const [history, setHistory] = useState<{ id: string; created_at: string; person_b_id: string }[]>([]);
   const saveRequest = useRef('');
   const version = useRef(0);
@@ -87,14 +87,14 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
     setSavedId(''); setHistory([]); saveRequest.current = ''; setHistorical(false); }
 
   useEffect(() => {
-    if (!a || !b || a === b) return;
+    if (savedResult || !a || !b || a === b) return;
     const current = version.current;
     void api<{ results: { id: string; created_at: string; person_b_id: string }[] }>(
       `advanced-results?person_id=${encodeURIComponent(a)}&technique=synastry_overlay`)
       .then(response => { if (current === version.current)
         setHistory(response.results.filter(item => item.person_b_id === b)); })
       .catch(() => { if (current === version.current) setError('Saved comparisons could not be listed. The current comparison is still available.'); });
-  }, [a, b]);
+  }, [a, b, savedResult]);
 
   async function save() {
     if (!result || result.status !== 'supported' || !a || !b) return;
@@ -147,13 +147,13 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
   const bName = people.find(person => person.id === b)?.name || 'Person B';
   return <section className="synastry-page" aria-label="Synastry chart">
     <div className="transit-heading"><div><span className="eyebrow">RELATIONSHIPS</span><h1 ref={heading} tabIndex={-1}>Synastry</h1>
-      <p>Compare two people's current natal positions and aspects, side by side. This is not a compatibility score.</p></div>
-      <button type="button" onClick={onClose}>Back to chart choices</button></div>
-    <form className="synastry-controls" onSubmit={event => void compare(event)}>
+      <p>{savedResult ? 'Original saved comparison. Both source versions are preserved; no values were recalculated.' : "Compare two people's current natal positions and aspects, side by side. This is not a compatibility score."}</p></div>
+      <button type="button" onClick={onClose}>{savedResult ? 'Back to chart library' : 'Back to chart choices'}</button></div>
+    {!savedResult && <form className="synastry-controls" onSubmit={event => void compare(event)}>
       <label>Person A<select value={a} required onChange={event => { change(); setA(event.target.value); }}><option value="">Choose person</option>{people.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       <label>Person B<select value={b} required onChange={event => { change(); setB(event.target.value); }}><option value="">Choose person</option>{people.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       <button className="primary" type="submit" disabled={busy || !a || !b || a === b}>{busy ? 'Calculating…' : 'Compare charts'}</button>
-    </form>
+    </form>}
     {a && b && a === b && <p className="error" role="alert">Choose two different people; no chart was calculated.</p>}
     {history.length > 0 && <nav className="advanced-history" aria-label="Saved comparisons"><h2>Saved comparisons</h2>
       {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
@@ -162,7 +162,7 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
     </nav>}
     {error && <p className="error" role="alert">{error}</p>}
     {result?.status === 'no_active_natal' && <div role="status" className="synastry-unavailable"><p>Both people need a current generated natal. An older or uploaded chart is never substituted.</p>
-      {result.missing_person_ids?.map(id => <button type="button" key={id} onClick={() => onCreate(id)}>Create chart for {people.find(person => person.id === id)?.name || 'person'}</button>)}</div>}
+      {result.missing_person_ids?.map(id => <button type="button" key={id} onClick={() => onCreate?.(id)}>Create chart for {people.find(person => person.id === id)?.name || 'person'}</button>)}</div>}
     {result && result.status !== 'supported' && result.status !== 'no_active_natal' && <p className="synastry-unavailable" role="status">Comparison unavailable. {result.status === 'unsupported_stale_birth_source'
       ? 'One chart uses superseded birth details. Update it before comparing.'
       : result.status === 'unsupported_uncertain_birth_time_or_non_natal_chart'
@@ -176,7 +176,7 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
       <h2>{aName} · {bName}</h2>
       <p className="pair-ring-key">A · {aName} (outer teal) · B · {bName} (inner amber). Exact degrees and aspects are in the tables.</p>
       {historical && <p role="status" className="error">Historical comparison: one or both source charts are no longer current. These archived placements were not recalculated.</p>}
-      {savedId ? <p role="status">Saved comparison; reopen it from Saved comparisons after a refresh.</p> :
+      {savedId ? <p role="status">{savedResult ? 'Saved comparison; original source charts.' : 'Saved comparison; reopen it from Saved comparisons after a refresh.'}</p> :
         <button type="button" disabled={saving} onClick={() => void save()}>{saving ? 'Saving comparison…' : 'Save this comparison'}</button>}
       <PairWheel result={result} aName={aName} bName={bName} />
       {(!result.a_angles || !result.b_angles) && <p className="natal-qualification">Houses or angles are unavailable for one of these charts; only the supported direction of house overlay is shown.</p>}
@@ -203,7 +203,7 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
         <p>The rings show separate tropical positions, not a composite. House overlays are labelled in their own tables, not drawn as sectors. A new discussion uses the current charts when a message is sent; it does not attach this manual result.</p>
       </details>
       {discussionDisabled && <p role="status">Finish or check the pending conversation before starting a different discussion. This chart did not change your draft.</p>}
-      <button type="button" disabled={discussionDisabled} onClick={() => onDiscuss([a, b])}>Start conversation about these people</button>
+      {!savedResult && onDiscuss && <button type="button" disabled={discussionDisabled} onClick={() => onDiscuss([a, b])}>Start conversation about these people</button>}
     </div>}
   </section>;
 }

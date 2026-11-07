@@ -31,6 +31,7 @@ for (const viewport of [
     await overview.focus(); await overview.press('ArrowRight');
     await expect(charts).toBeFocused();
     await expect(charts).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
     await expect(page.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
     await page.screenshot({ path: resolve(renders, `saved-chart-${viewport.name}.png`) });
     if (viewport.name === 'desktop') {
@@ -38,6 +39,7 @@ for (const viewport of [
       await page.reload();
       await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
       await page.getByRole('tab', { name: 'Charts' }).click();
+      await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
       await page.screenshot({ path: resolve(renders, 'saved-chart-dark-desktop.png') });
     }
     await page.getByRole('button', { name: 'Edit birth details' }).click();

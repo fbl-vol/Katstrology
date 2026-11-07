@@ -157,6 +157,7 @@ for (const size of [
     if (size.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
     await page.getByRole('tab', { name: 'Charts' }).click();
+    await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
     await page.locator('.chart-history > summary').click();
     await page.locator('.chart-history > details > summary').first().click();
     const profileRanges = await verticalRanges(page, ['.main', '.reader-content', '.person-page', '.natal-wheel-scroll', '.natal-tables']);

@@ -122,6 +122,9 @@ class People:
             SELECT id FROM charts WHERE owner_id=%s AND person_id=%s
             ORDER BY created_at DESC,id DESC LIMIT 20
         ''', (owner, person_id)).fetchall()]
+        # The current chart is an identity, not necessarily a member of the latest history page.
+        if person['active_chart_id'] and not any(chart['id'] == person['active_chart_id'] for chart in person['charts']):
+            person['charts'].append(self.charts.get_chart(session, person['active_chart_id']))
         return person
 
     def active_chart_id(self, session, person_id):

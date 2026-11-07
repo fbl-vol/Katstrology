@@ -68,6 +68,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'Birth chart' })).toContainText('Your current natal, placements and aspects');
       await page.screenshot({ path: resolve(renders, `${viewport.name}-${label}-overview.png`) });
       await page.getByRole('tab', { name: 'Charts' }).click();
+      await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
       await expect(page.locator('.profile-chart-heading')).toContainText('saved birth time 04:00');
       await expect(page.locator('.profile-active-chart').getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
       await page.screenshot({ path: resolve(renders, `${viewport.name}-${label}-charts.png`) });
@@ -107,7 +108,9 @@ test('unknown-time saved chart remains limited when latest draft supplies an exa
   await expect(page.getByRole('button', { name: 'Birth chart' })).toContainText('Limited chart · birth time unknown');
   await page.screenshot({ path: resolve(renders, 'short-mobile-inverse-overview.png') });
   await page.getByRole('tab', { name: 'Charts' }).click();
-  await expect(page.locator('.profile-chart-heading')).toContainText('2001-06-21 · birth time unknown');
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
+  await expect(page.locator('.profile-chart-heading')).toContainText('birth time unknown');
+  await expect(page.locator('.profile-chart-heading')).toContainText('2001-06-20 – 2001-06-21 · UTC interval');
   await expect(page.locator('.profile-active-chart').getByRole('img', { name: /Tropical natal wheel/ })).toHaveCount(0);
   await page.screenshot({ path: resolve(renders, 'short-mobile-inverse-charts.png') });
 });

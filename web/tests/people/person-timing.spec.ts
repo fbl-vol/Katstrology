@@ -19,6 +19,7 @@ test('bundled wheel fonts obey isolated CSP in page and export', async ({ page }
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic transit reader' }).click();
   await page.getByRole('tab', { name: 'Charts' }).click();
+  await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
   await expect(page.locator('.natal-wheel').first()).toBeVisible();
   const observation = await page.evaluate(async () => {
     let loaded = -1;
