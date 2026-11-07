@@ -72,8 +72,10 @@ substituting a new baseline. Synthetic Chromium is not physical-phone,
 virtual-keyboard, screen-reader, real-provider or human visual acceptance.
 
 `tests/people/personal-context.spec.ts` exercises provider-free manual context,
-server paging/search, edit/removal, failure recovery, stable details, linking and
-consent at desktop, wide desktop, mobile, short mobile and tablet sizes. Its
+section-owned multi-group paging/search, disclosure keyboard focus through loading
+and failure, edit/removal, failure recovery, stable details, linking beyond the
+sidebar's first 50 people (including duplicate names), and consent at desktop,
+wide desktop, mobile, short mobile and tablet sizes. Its
 renders are under `.local/personal-context/renders/`. Personal-context drafts and
 navigation memory belong to the mounted workspace, not global/localStorage state.
 The separate typed update capability reuses the existing archive sender and

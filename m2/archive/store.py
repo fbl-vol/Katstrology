@@ -463,7 +463,14 @@ class Store:
                     UPDATE turns SET status=%s WHERE owner_id=%s AND conversation_id=%s AND id=%s
                 ''', (kind, owner, conv_id, turn_id))
                 if kind == 'complete':
-                    self._changed(owner, conv_id, turn_id, invalidate_compaction=False)
+                    context_changed = any(item['outcome'] == 'saved' for item in outcomes)
+                    self._changed(owner, conv_id, turn_id, invalidate_compaction=context_changed)
+                    if context_changed:
+                        # Publish the source head before invalidating context-dependent
+                        # caches; otherwise its newly derived entries appear abandoned.
+                        for other in self.db.execute('SELECT id FROM conversations WHERE owner_id=%s AND id<>%s',
+                                                     (owner, conv_id)).fetchall():
+                            self._changed(owner, other['id'])
         return next_sequence
 
     def _changed(self, owner, conv_id, active_head=UNCHANGED, invalidate_dependents=True,

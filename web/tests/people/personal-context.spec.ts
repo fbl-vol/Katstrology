@@ -9,6 +9,7 @@ const viewports = [
   { name: 'tablet', width: 768, height: 1024 },
 ];
 for (const viewport of viewports) test(`personal context complete manual workflow ${viewport.name}`, async ({ page }) => {
+  test.setTimeout(90_000);
   mkdirSync(renders, { recursive: true });
   await page.setViewportSize(viewport);
   async function capture(state: string, fullPage = false) {
@@ -26,8 +27,12 @@ for (const viewport of viewports) test(`personal context complete manual workflo
     const response = await page.request.post('/api/people', { headers, data: { name } });
     expect(response.status()).toBe(201); return (await response.json()).id as string;
   };
-  const person = await make('Synthetic context reader');
   const other = await make('Synthetic linked person');
+  for (let index = 0; index < 52; index++) await make(`Synthetic picker filler ${index}`);
+  const duplicate = await make('Synthetic linked person');
+  const person = await make('Synthetic context reader');
+  const sidebar = await (await page.request.get('/api/people')).json();
+  expect(sidebar.people.some((entry: { id: string }) => entry.id === other)).toBe(false);
   await page.reload();
   if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic context reader' }).click();
@@ -36,8 +41,10 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   const held = new Promise<void>(resolve => { release = resolve; });
   let firstRead = true;
   let failRead = false;
+  let expansionGate: Promise<void> | null = null;
   await page.route(`**/api/people/${person}/context/search`, async route => {
     if (firstRead) { firstRead = false; await held; }
+    if (expansionGate && route.request().postDataJSON().group === 'life') await expansionGate;
     if (failRead) { failRead = false; await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }); }
     else await route.continue();
   });
@@ -45,14 +52,16 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await page.keyboard.press('ArrowRight');
   await expect(contextTab).toBeFocused();
   const pane = page.getByRole('tabpanel', { name: 'Context', exact: true });
-  await expect(pane.getByText('Opening context…')).toBeVisible();
+  const life = pane.getByRole('region', { name: 'Life & plans', exact: true });
+  const learning = pane.getByRole('region', { name: 'Interests & learning', exact: true });
+  await expect(pane.getByText('Opening context…').first()).toBeVisible();
   await capture('loading', true);
   release();
   await expect(pane.getByText('Nothing here yet. Add what matters to you.')).toHaveCount(2);
   await capture('empty', true);
   await page.getByRole('tab', { name: 'Overview' }).click(); failRead = true; await contextTab.click();
   await expect(pane.getByRole('alert')).toContainText('Context could not be refreshed');
-  await expect(pane.getByText('Nothing here yet. Add what matters to you.')).toHaveCount(0);
+  await expect(pane.getByText('Nothing here yet. Add what matters to you.')).toHaveCount(1);
   await capture('unavailable', true);
   await pane.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(pane.getByText('Nothing here yet. Add what matters to you.')).toHaveCount(2);
@@ -90,17 +99,53 @@ for (const viewport of viewports) test(`personal context complete manual workflo
         date: { text: 'Sometime next year', precision: 'unknown', start: null, end: null } },
     } }); expect(response.status()).toBe(200);
   }
+  for (const group of ['life_now', 'interests', 'goals']) {
+    for (let index = 0; index < 5; index++) {
+      const response = await page.request.post(`/api/people/${person}/context`, { headers, data: {
+        id: `${group}-${index}`, operation_id: `${group}-${index}`, expected_version: 0,
+        content: { group, title: `${group} topic ${index}`, notes: 'Orchard workshop', state: null,
+          date: { text: 'Spring festival', precision: 'unknown', start: null, end: null } },
+      } }); expect(response.status()).toBe(200);
+    }
+  }
   await page.getByRole('tab', { name: 'Overview' }).click(); await contextTab.click();
-  await expect(pane.getByRole('button', { name: 'View all (26, 24 more)' })).toBeVisible();
+  await expect(life.getByRole('button', { name: 'View all (31, 27 more)' })).toBeVisible();
   await capture('large', true);
-  await pane.getByRole('button', { name: 'View all (26, 24 more)' }).click();
-  await expect(pane.getByRole('button', { name: 'More entries' })).toBeVisible();
-  await pane.getByRole('button', { name: 'More entries' }).click();
-  await expect(pane.locator('.context-row')).toHaveCount(26);
-  await pane.locator('.context-row').last().scrollIntoViewIfNeeded();
+  const disclosure = life.getByRole('button', { name: /^View all/ });
+  let releaseExpansion!: () => void;
+  expansionGate = new Promise<void>(resolve => { releaseExpansion = resolve; });
+  failRead = true;
+  await disclosure.focus(); await disclosure.press('Enter');
+  const lifeSearch = life.getByLabel('Search Life & plans');
+  await expect(lifeSearch).toBeFocused();
+  await expect(life.getByText('Opening context…')).toBeVisible();
+  await capture('expanded-loading', true);
+  releaseExpansion(); expansionGate = null;
+  await expect(life.getByRole('alert')).toContainText('Context could not be refreshed');
+  await expect(lifeSearch).toBeFocused();
+  await capture('expanded-unavailable', true);
+  await life.getByRole('button', { name: 'Try again', exact: true }).click();
+  await lifeSearch.focus();
+  await page.keyboard.press('Tab');
+  await expect(life.getByRole('button', { name: 'Show less', exact: true })).toBeFocused();
+  await expect(learning.getByRole('button', { name: /Short explanations/ })).toBeVisible();
+  await expect(life.getByRole('button', { name: 'More entries' })).toBeVisible();
+  await life.getByRole('button', { name: 'More entries' }).click();
+  await expect(life.locator('.context-row')).toHaveCount(31);
+  await capture('expanded-top', true);
+  await life.locator('.context-row').last().scrollIntoViewIfNeeded();
   await capture('expanded-bottom');
-  await pane.getByLabel('Search context').fill('possible move');
-  await expect(pane.locator('.context-row')).toHaveCount(1);
+  for (const query of ['life_now topic', 'Orchard', 'Spring festival']) {
+    await lifeSearch.fill(query);
+    await expect(life.locator('.context-row')).toHaveCount(5);
+    await expect(learning.locator('.context-row')).toHaveCount(5);
+  }
+  await life.getByRole('button', { name: 'Show less', exact: true }).press('Space');
+  await expect(disclosure).toBeFocused();
+  await expect(life.locator('.context-row')).toHaveCount(2);
+  await disclosure.press('Space'); await expect(lifeSearch).toBeFocused();
+  await lifeSearch.fill('possible move');
+  await expect(life.locator('.context-row')).toHaveCount(1);
   await capture('search', true);
   await pane.getByRole('button', { name: /A possible move/ }).click();
   const edit = page.getByRole('dialog', { name: 'Edit entry', exact: true });
@@ -112,13 +157,34 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await page.getByRole('region', { name: 'Personal details and linked people' }).getByRole('button', { name: 'Edit', exact: true }).click();
   const details = page.getByRole('dialog', { name: 'Edit personal details', exact: true });
   await details.getByLabel('Occupation', { exact: true }).fill('Synthetic teacher');
+  await capture('profile-dialog');
   await details.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(details).not.toBeVisible();
   await expect(page.getByText('Synthetic teacher', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Link person', exact: true }).click();
   const link = page.getByRole('dialog', { name: 'Link person', exact: true });
-  await link.getByRole('combobox', { name: 'Person', exact: true }).selectOption(other);
   await link.getByLabel('Their relationship').fill('Friend');
+  await expect(link.getByRole('button', { name: 'More people', exact: true })).toBeEnabled();
+  await link.getByRole('button', { name: 'More people', exact: true }).click();
+  await expect(link.getByText('55 of 55 matching owned people loaded; this person cannot link to itself.')).toBeVisible();
+  await link.getByLabel('Search owned people').fill('Synthetic linked person');
+  await expect(link.getByRole('option', { name: `Synthetic linked person · ${other}`, exact: true })).toHaveCount(1);
+  await expect(link.getByRole('option', { name: `Synthetic linked person · ${duplicate}`, exact: true })).toHaveCount(1);
+  await link.getByRole('combobox', { name: 'Person', exact: true }).selectOption(other);
+  let failPicker = true;
+  await page.route('**/api/people/picker', async route => {
+    if (failPicker) { failPicker = false; await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }); }
+    else await route.continue();
+  });
+  await link.getByLabel('Search owned people').fill('missing');
+  await expect(link.getByRole('alert')).toContainText('Your selection and relationship draft are retained');
+  await expect(link.getByLabel('Their relationship')).toHaveValue('Friend');
+  await expect(link.getByRole('combobox', { name: 'Person', exact: true })).toHaveValue(other);
+  await capture('picker-failure');
+  await link.getByRole('button', { name: 'Retry people search' }).click();
+  await expect(link.getByText('Finding owned people…')).not.toBeVisible();
+  await link.getByLabel('Search owned people').fill('Synthetic linked person');
+  await expect(link.getByText('2 of 2 matching owned people loaded; this person cannot link to itself.')).toBeVisible();
   await page.screenshot({ path: resolve(renders, `link-${viewport.name}.png`) });
   await link.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(link).not.toBeVisible();
@@ -127,7 +193,7 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic context reader' }).click();
   await contextTab.click();
-  await expect(pane.getByLabel('Search context')).toHaveValue('possible move');
+  await expect(life.getByLabel('Search Life & plans')).toHaveValue('possible move');
   await expect(pane.getByRole('button', { name: /A revised possible move/ })).toBeVisible();
   await pane.getByRole('button', { name: /A revised possible move/ }).click();
   page.once('dialog', dialog => dialog.accept());
@@ -141,13 +207,13 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   expect((await page.request.get(`/api/people/${other}`)).status()).toBe(200);
   await contextTab.click();
   const result = await (await page.request.get(`/api/people/${person}/context`)).json();
-  expect(result.counts).toEqual({ coming_up: 25, guidance_preferences: 1 });
+  expect(result.counts).toEqual({ coming_up: 25, life_now: 5, interests: 5, goals: 5, guidance_preferences: 1 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
   await page.reload();
   if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: 'Synthetic context reader' }).click();
   await contextTab.click();
-  await expect(pane.getByRole('button', { name: 'View all (25, 23 more)' })).toBeVisible();
+  await expect(life.getByRole('button', { name: 'View all (30, 26 more)' })).toBeVisible();
   expect((await (await page.request.get('/api/personal-context-preference')).json()).enabled).toBe(false);
   if (viewport.width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();

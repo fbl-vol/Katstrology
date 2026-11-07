@@ -171,11 +171,11 @@ def _valid_read_arguments(name, serialized):
         arguments = json.loads(serialized)
     except (TypeError, ValueError):
         return False
-    if not isinstance(arguments, dict) or set(arguments) != set(schema['required']):
-        return False
-    for key, value in arguments.items():
-        field = schema['properties'][key]
+    def valid(value, field):
         allowed = field['type'] if isinstance(field['type'], list) else [field['type']]
+        if 'object' in allowed:
+            return (isinstance(value, dict) and set(value) == set(field['required']) and
+                    all(valid(item, field['properties'][key]) for key, item in value.items()))
         if not ((isinstance(value, str) and 'string' in allowed) or
                 (type(value) is int and 'integer' in allowed and
                  field.get('minimum', value) <= value <= field.get('maximum', value)) or
@@ -188,7 +188,8 @@ def _valid_read_arguments(name, serialized):
                 len(value) > field.get('maxLength', 2048) or
                 ('enum' in field and value not in field['enum'])):
             return False
-    return True
+        return True
+    return valid(arguments, schema)
 
 
 class ResponsesModel:

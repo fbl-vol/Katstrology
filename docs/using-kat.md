@@ -56,7 +56,8 @@ successfully saved chart.
 Person pages have sibling **Overview / Context / Charts / Saved** panes.
 Overview keeps optional personal details and directional links to existing people
 in your own workspace. Links do not share accounts or automatically select another
-person's records for chat. Unlinking leaves both people and their records intact.
+person's records for chat. Unlinking leaves both people and their records intact. The relationship picker
+searches and pages through all owned people; stable IDs distinguish duplicate names.
 The Quiet Overview also leads to conversations, Charts and Saved. Exact-time natal
 charts provide qualified planets/nodes, houses/angles, aspects, accessible tables
 and downloadable wheels. Unsupported houses remain visibly partial. Child's
@@ -69,15 +70,19 @@ Context keeps Life & plans and Interests & learning separate from charts, saved
 passages and private journals. Add any number of independent entries; dates and
 supporting details are optional. Click a row to edit only that entry. The compact
 view shows up to two entries per populated group with honest remaining counts;
-View all opens paged results, and search covers titles, notes and dates. Ordinary
+Each collection has its own View all, paged results and labeled search across all
+its groups' titles, notes and user date fields. Expanding one leaves the other
+collection available. Search does not match internal date-format metadata. Ordinary
 navigation retains the pane, search/disclosure and pending context edits within
 the signed-in workspace. Reload retrieves durable saved entries, not unsaved drafts.
 
 Use Settings → Personal context to explicitly enable automatic collection/use.
 It starts off even when a provider is connected. Selected relevant details may
-then be sent to that provider; no chart is required. The conservative collector
-requires explicit person attribution, for example `For Alex: I am considering a
-move`. It omits unsupported or ambiguous statements instead of inventing facts.
+then be sent to that provider; no chart is required. Speak naturally about an
+explicitly identified selected person, for example `Alex here. I'm considering a
+move next summer. What should I consider?` Selecting someone does not establish
+who “I” refers to. Ambiguous identities or statements are omitted or clarified,
+not invented.
 You still control birth details, people and relationships. Plans do not become
 completed events merely because a date passes. See the [provider contract](provider-and-context.md)
 for exact accepted statement and source-lifecycle boundaries.

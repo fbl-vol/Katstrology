@@ -10,7 +10,7 @@ import json
 import psycopg
 
 from m2.chat.prompting import SUMMARY, identity, summary_identity
-from m2.chat.recall import PromptBudgetError, dialogue_projection
+from m2.chat.recall import PromptBudgetError, dialogue_projection, consumed_personal_context
 from m2.provider.siwc import ProviderFailure
 from m2.provider.steps import ProviderStep
 
@@ -208,7 +208,10 @@ def prepare(store, session, conv_id, head_id, request, selected_context,
     checkpoint_id = checkpoint['id'] if checkpoint else None
 
     def project(tail, digest_text, source_ids):
-        return render([text for _, text in tail], digest_text, source_ids)
+        prompt, budget = render([text for _, text in tail], digest_text, source_ids)
+        budget['personal_context_dependencies'] = consumed_personal_context(
+            store, session, conv_id, list(source_ids) + [turn_id for turn_id, _ in tail])
+        return prompt, budget
 
     # No amount of compaction can make required chart facts and the new question
     # fit a genuinely undersized model; avoid a paid summary attempt first.

@@ -16,55 +16,88 @@ type Draft = { id: string; version: number; content: Content; source?: Entry['so
 const life: Group[] = ['coming_up', 'life_now', 'past_moments'];
 const learning: Group[] = ['interests', 'goals', 'astrology_knowledge', 'guidance_preferences'];
 
-export type ContextMemory = { expanded?: Group | null; query?: string; draft?: Draft | null;
+type CollectionMemory = { expanded?: boolean; query?: string };
+export type ContextMemory = { life?: CollectionMemory; learning?: CollectionMemory; draft?: Draft | null;
   attempt?: { key: string; operation: string } | null };
+
+function ContextCollection({ workspace, endpoint, active, revision, memory, section, keys, label, open }: {
+  workspace: Workspace; endpoint: string; active: boolean; revision: number; memory: CollectionMemory;
+  section: 'life' | 'learning'; keys: Group[]; label: string; open: (group: Group, entry?: Entry) => void;
+}) {
+  const [expanded, setExpanded] = useState(memory.expanded ?? false);
+  const [query, setQuery] = useState(memory.query ?? '');
+  const [page, setPage] = useState<Page | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const read = useRef(0);
+  const search = useRef<HTMLInputElement>(null);
+  const disclosure = useRef<HTMLButtonElement>(null);
+  memory.expanded = expanded; memory.query = query;
+  useEffect(() => { if (active) void load(); return () => { read.current++; }; }, [active, expanded, query, revision]);
+  async function load(offset = 0) {
+    const request = ++read.current;
+    setState('loading');
+    try {
+      const result = await api<Page>(`${endpoint}/search`, workspace.csrf, 'POST', { group: expanded ? section : null, query, offset });
+      if (request !== read.current) return;
+      setPage(old => offset && old ? { ...result, entries: [...old.entries, ...result.entries] } : result);
+      setState('ready');
+    } catch { if (request === read.current) setState('error'); }
+  }
+  function toggle() {
+    setExpanded(!expanded); setPage(null);
+    // Both controls stay mounted through loading/errors; no focus falls to BODY.
+    (expanded ? disclosure.current : search.current)?.focus({ preventScroll: true });
+  }
+  const total = keys.reduce((sum, group) => sum + (page?.counts[group] ?? 0), 0);
+  const shown = page?.entries.filter(entry => keys.includes(entry.content.group)).length ?? 0;
+  return <section className="context-collection" aria-label={label}>
+    <div className="profile-editor-heading"><h2>{label}</h2><button type="button" onClick={() => open(keys[0])}>Add</button></div>
+    <label className="field">Search {label}<input ref={search} type="search" value={query} onChange={event => { setPage(null); setQuery(event.target.value); }} /></label>
+    <button ref={disclosure} type="button" aria-expanded={expanded} onClick={toggle}>
+      {expanded ? 'Show less' : page ? `View all (${total}${total > shown ? `, ${total - shown} more` : ''})` : 'View all'}
+    </button>
+    {state === 'loading' && <p role="status">Opening context…</p>}
+    {state === 'error' && <p role="alert">Context could not be refreshed. This is not an empty collection. <button type="button" onClick={() => void load()}>Try again</button></p>}
+    {keys.map(group => {
+      const entries = page?.entries.filter(entry => entry.content.group === group) ?? [];
+      const count = page?.counts[group] ?? 0;
+      if (!count) return null;
+      return <section key={group} className="context-group" aria-label={groups[group]}>
+        <h3>{groups[group]}{expanded && ` (${entries.length} of ${count})`}</h3>
+        {entries.map(entry => <button type="button" key={entry.id} className="profile-quiet-row context-row" onClick={() => open(group, entry)}>
+          <span><strong>{entry.content.title}</strong>
+            {(entry.content.date.text || entry.content.date.start) && <small>{entry.content.date.text || entry.content.date.start}</small>}
+            {entry.content.notes && <small>{entry.content.notes}</small>}</span><span aria-hidden="true">›</span>
+        </button>)}
+      </section>;
+    })}
+    {state === 'ready' && !total && <p className="muted">{query ? 'No matching entries.' : 'Nothing here yet. Add what matters to you.'}</p>}
+    {expanded && page?.next_offset != null && <button type="button" disabled={state !== 'ready'} onClick={() => void load(page.next_offset!)}>More entries</button>}
+  </section>;
+}
 
 export function PersonalContextPane({ workspace, personId, active, memory }: {
   workspace: Workspace; personId: string; active: boolean; memory: ContextMemory;
 }) {
-  const [summary, setSummary] = useState<Page | null>(null);
-  const [expanded, setExpanded] = useState<Group | null>(memory.expanded ?? null);
-  const [query, setQuery] = useState(memory.query ?? '');
-  const [page, setPage] = useState<Page | null>(null);
-  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [revision, setRevision] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(memory.draft ?? null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const read = useRef(0);
   const attempt = useRef<{ key: string; operation: string } | null>(memory.attempt ?? null);
   const dialog = useRef<HTMLDialogElement>(null);
   const title = useRef<HTMLInputElement>(null);
   const id = useId();
   const endpoint = `people/${personId}/context`;
   // Workspace-owned memory survives navigation, but never a logout or account switch.
-  memory.expanded = expanded; memory.query = query; memory.draft = draft;
-  memory.attempt = attempt.current;
-
-  useEffect(() => {
-    if (active) void load();
-    return () => { read.current++; };
-  }, [active, expanded, query, personId]);
+  memory.draft = draft; memory.attempt = attempt.current;
+  memory.life ??= {}; memory.learning ??= {};
   useEffect(() => {
     if (active && draft && !dialog.current?.open) { dialog.current?.showModal(); title.current?.focus(); }
     if ((!active || !draft) && dialog.current?.open) dialog.current.close();
   }, [active, !!draft]);
 
-  async function load(offset = 0) {
-    const request = ++read.current;
-    setState('loading');
-    if (expanded) setPage(old => old ? { ...old, next_offset: null } : old);
-    try {
-      // Search text is private request content, not URL/access-log material.
-      const result = await api<Page>(`${endpoint}/search`, workspace.csrf, 'POST', {
-        group: expanded, query, offset,
-      });
-      if (read.current !== request) return;
-      if (expanded) setPage(old => offset && old ? { ...result, entries: [...old.entries, ...result.entries] } : result);
-      else setSummary(result);
-      setState('ready');
-    } catch { if (read.current === request) setState('error'); }
-  }
+  function refresh() { setRevision(value => value + 1); }
 
   function open(group: Group, entry?: Entry) {
     setError(''); attempt.current = null;
@@ -87,7 +120,7 @@ export function PersonalContextPane({ workspace, personId, active, memory }: {
     try {
       await api(endpoint, workspace.csrf, 'POST', { ...payload, operation_id: attempt.current.operation });
       setDraft(null); attempt.current = null; setNotice('Entry saved.');
-      await load();
+      refresh();
     } catch (failure) {
       setError(failure instanceof ApiError && failure.status === 409 ?
         'This entry changed or was removed. Your draft is still here. Close it and reopen the current entry before saving a new edit.' :
@@ -99,43 +132,15 @@ export function PersonalContextPane({ workspace, personId, active, memory }: {
     setBusy(true); setError('');
     try {
       await api(`${endpoint}/${draft.id}`, workspace.csrf, 'DELETE', { expected_version: draft.version });
-      setDraft(null); setNotice('Entry removed from personal context.'); await load();
+      setDraft(null); setNotice('Entry removed from personal context.'); refresh();
     } catch { setError('Removal was not confirmed. The entry may have changed. Close and reopen it to check; your draft is retained.'); }
     finally { setBusy(false); }
   }
-  const current = expanded ? page : summary;
-  function collection(keys: Group[], label: string) {
-    return <section className="context-collection" aria-label={label}>
-      <div className="profile-editor-heading"><h2>{label}</h2><button type="button" onClick={() => open(expanded ?? keys[0])}>Add</button></div>
-      {keys.map(group => {
-        if (expanded && expanded !== group) return null;
-        const entries = current?.entries.filter(entry => entry.content.group === group) || [];
-        const count = current?.counts[group] || 0;
-        if (!expanded && !count) return null;
-        return <section key={group} className="context-group" aria-label={groups[group]}>
-          <h3>{groups[group]}</h3>
-          {entries.map(entry => <button type="button" key={entry.id} className="profile-quiet-row context-row" onClick={() => open(group, entry)}>
-            <span><strong>{entry.content.title}</strong>
-              {(entry.content.date.text || entry.content.date.start) && <small>{entry.content.date.text || entry.content.date.start}</small>}
-              {entry.content.notes && <small>{entry.content.notes}</small>}</span><span aria-hidden="true">›</span>
-          </button>)}
-          {state === 'ready' && !count && <p className="muted">{query ? 'No matching entries.' : 'Nothing added yet.'}</p>}
-          {!expanded && count > 2 && <button type="button" onClick={() => { setPage(null); setExpanded(group); }}>View all ({count}, {count - 2} more)</button>}
-        </section>;
-      })}
-      {state === 'ready' && !expanded && !keys.some(group => current?.counts[group]) && <p className="muted">{query ? 'No matching entries.' : 'Nothing here yet. Add what matters to you.'}</p>}
-    </section>;
-  }
   return <div className="personal-context">
     <p>Details you choose to keep for more relevant conversations. No birth chart or chat connection is needed to edit them.</p>
-    <label className="field">Search context<input type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
-    {expanded && <button type="button" onClick={() => { setExpanded(null); setPage(null); }}>Show less</button>}
-    {state === 'loading' && <p role="status">Opening context…</p>}
-    {state === 'error' && <p role="alert">Context could not be refreshed. This is not an empty collection. <button type="button" onClick={() => void load()}>Try again</button></p>}
     {notice && <p role="status">{notice}</p>}
-    {(!expanded || life.includes(expanded)) && collection(life, 'Life & plans')}
-    {(!expanded || learning.includes(expanded)) && collection(learning, 'Interests & learning')}
-    {expanded && page?.next_offset != null && <button type="button" disabled={state === 'loading'} onClick={() => void load(page.next_offset!)}>More entries</button>}
+    <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.life} section="life" keys={life} label="Life & plans" open={open} />
+    <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.learning} section="learning" keys={learning} label="Interests & learning" open={open} />
     <p className="profile-overview-note">Removing an entry removes structured context, not its original conversation, past answers or information already sent to a provider.</p>
     <dialog ref={dialog} onCancel={event => { if (busy) event.preventDefault(); else setDraft(null); }} aria-label={draft?.version ? 'Edit entry' : 'Add context'}>
       {draft && <form className="dialog-body" onSubmit={event => void save(event)}>

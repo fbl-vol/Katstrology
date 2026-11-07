@@ -5,6 +5,29 @@ from tests.support.database import DatabaseCase
 
 
 class PersonalProfileTests(DatabaseCase):
+    def test_complete_picker_keeps_sidebar_bounded_and_owner_scope(self):
+        people = People(self.store)
+        people.charts.add_person(self.alice, 'z-old', 'Shared name')
+        for index in range(55):
+            people.charts.add_person(self.alice, f'a-{index:02}', 'Shared name')
+        people.charts.add_person(self.bob, 'private', 'Shared name')
+        self.assertEqual(len(people.list(self.alice)), 50)
+        self.assertNotIn('z-old', {row['id'] for row in people.list(self.alice)})
+        first = people.picker(self.alice, 'Shared')
+        self.assertEqual(first['total'], 56)
+        self.assertEqual(len(first['people']), 50)
+        second = people.picker(self.alice, 'Shared', first['next_after'])
+        self.assertEqual(len(second['people']), 6)
+        self.assertIsNone(second['next_after'])
+        self.assertIn('z-old', {row['id'] for row in second['people']})
+        self.assertNotIn('private', {row['id'] for row in first['people'] + second['people']})
+        with self.assertRaises(KeyError):
+            people.picker(self.alice, '', 'private')
+        profile = PersonalProfile(self.store)
+        profile.change(self.alice, 'a-00', 'link-old', {'kind': 'link', 'expected_version': 0,
+            'id': 'old', 'other_person_id': 'z-old', 'label': 'Friend', 'dates': ''})
+        self.assertEqual(profile.get(self.alice, 'a-00')['links'][0]['other_person_id'], 'z-old')
+
     def test_details_links_colliding_names_and_owner_boundaries(self):
         people = People(self.store)
         for owner, person in ((self.alice, 'one'), (self.alice, 'two'), (self.bob, 'private')):

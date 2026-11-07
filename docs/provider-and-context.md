@@ -89,17 +89,25 @@ statements are untrusted user-reported data, never calculated evidence or instru
 
 Existing `agent_reads` tools remain read-only. The separately advertised
 `stage_personal_context` capability is offered only for opted-in turns. Its closed
-schema accepts a selected person, an exact current user statement and an optional
-existing entry/version, not arbitrary content, owners, SQL, births or relationships.
-The initial conservative collector accepts standalone explicitly attributed lines
-such as `For Alex: I am considering a move` or `For Alex: I prefer short answers`.
-Multiple eligible lines remain separate entries. Updates require an explicit
-`Update <existing title>: For <name>: I ...` statement and a version actually
-supplied to that turn. Ambiguous identity, quoted/mixed-reference input and
-unsupported statements are omitted or require clarification. It does not infer
-that a selected person is the account holder, infer sensitive traits or normalize
-uncertain dates. Intentions remain tentative; time passing does not complete events.
-This deliberately limited collector is not a claim of general extraction accuracy.
+schema accepts a selected person, exact current-user statement and identity spans
+(Unicode character offsets plus matching text), an interpreted group/add-or-correct
+intent and an optional existing entry/version. It cannot supply arbitrary content,
+owners, SQL, births or relationships. The existing response model interprets ordinary
+conversation; no additional inference request is made. For example, `Alex here. I'm
+thinking of moving next summer. What should I consider?` supplies an attributable
+statement alongside a question. Multiple statements remain separate candidates;
+natural explicit corrections target a version actually supplied to that turn.
+
+The backend checks the closed schema, exact word-bounded source spans, local explicit
+identity evidence and unique selected-person name. Named-person assertions must name
+their subject; first-person assertions require an explicit local introduction, such
+as `Alex here` or `I'm Alex`, not mere selection or an incidental name mention.
+Ambiguous identity, quoted/referenced/instructional content and mixed named-person
+contexts are omitted or clarified. Stored text is the user's verbatim statement,
+not a model-written fact. Group/intent interpretation remains model work, not proven
+by deterministic validation. No sensitive traits or exact dates are inferred;
+future plans remain tentative and dates remain unnormalized. Synthetic tests prove
+these boundaries and lifecycle controls, not real-provider interpretation quality.
 
 Candidates are durable stages, explicitly **not saved context**. The existing
 serialized terminal-event transaction finalizes only successful turns whose
@@ -117,7 +125,13 @@ manual corrections retain their own attribution. Removed entry identities cannot
 be reused, including after backup restore. A later explicit statement is a distinct
 source, not replay of a removed source. Context version/consent changes invalidate
 cached continuity; subsequent recall/compaction omits assistant replies relying on
-superseded structured context while retaining eligible original user text. Original
+superseded structured context while retaining eligible original user text. Each new
+context event records effective assistant-turn dependencies actually consumed by the
+prompt, including summary sources. Those dependencies are checked transitively. A
+fresh generation after invalidation can regain eligibility without reviving old
+answers or descendants generated from stale material. Older archives without this
+record retain conservative ancestry checks. Automatic publication invalidates other
+conversations' cached continuity too, after the source head is durably established. Original
 archive replay remains unchanged. Removing context does **not** erase conversations,
 previous answers, exports or provider processing, and retained history can still
 contain the same information.

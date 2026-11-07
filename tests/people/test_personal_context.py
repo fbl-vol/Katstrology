@@ -51,6 +51,26 @@ class PersonalContextTests(DatabaseCase):
                     json={'group': None, 'query': 'move', 'offset': 0}).status_code, 403)
                 self.assertEqual(client.get('/api/people/one/context?query=private').status_code, 400)
 
+    def test_collection_paging_and_only_user_date_fields_are_searchable(self):
+        for group in ('coming_up', 'life_now', 'interests', 'goals'):
+            for index in range(23):
+                content = fact(group, f'{group} item {index}')
+                content['notes'] = 'orchard' if index == 0 else ''
+                content['date'] = {'text': 'Spring festival', 'precision': 'month', 'start': '2027-04', 'end': None}
+                self.context.save(self.alice, 'one', f'{group}-{index}', f'{group}-{index}', 0, content)
+        page = self.context.list(self.alice, 'one', 'life')
+        self.assertEqual(page['counts'], {'coming_up': 23, 'life_now': 23})
+        entries = page['entries']
+        while page['next_offset'] is not None:
+            page = self.context.list(self.alice, 'one', 'life', offset=page['next_offset'])
+            entries += page['entries']
+        self.assertEqual(len({item['id'] for item in entries}), 46)
+        self.assertEqual(self.context.list(self.alice, 'one', 'life', 'orchard')['counts'], {'coming_up': 1, 'life_now': 1})
+        for query in ('Spring festival', '2027-04'):
+            self.assertEqual(sum(self.context.list(self.alice, 'one', query=query)['counts'].values()), 92)
+        for query in ('precision', 'month', 'start', 'end', 'text', 'unknown'):
+            self.assertEqual(self.context.list(self.alice, 'one', query=query)['counts'], {}, query)
+
     def test_schema24_to31_preserves_existing_people_in_additive_lane(self):
         self.store.create_conversation(self.alice, 'retained')
         self.store.close()

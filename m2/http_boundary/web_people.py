@@ -255,6 +255,16 @@ async def context_preference(request):
         return json_response({'error': 'context_preference_conflict'}, 409)
 
 
+async def person_picker(request):
+    session = await authorized(request, mutate=True)
+    data = await json_body(request)
+    if set(data) != {'query', 'after'}:
+        raise ValueError('Invalid person picker search')
+    result = await request.app.state.runtime.call(lambda store, _: People(store).picker(
+        session, data['query'], data['after']))
+    return json_response(result)
+
+
 async def personal_profile(request):
     session = await authorized(request, mutate=request.method != 'GET')
     person_id = request.path_params['person_id']
@@ -313,7 +323,8 @@ async def personal_context(request):
         return json_response({'error': 'context_conflict'}, 409)
 
 
-routes = [Route('/api/personal-context-preference', context_preference, methods=['GET', 'POST']),
+routes = [Route('/api/people/picker', person_picker, methods=['POST']),
+          Route('/api/personal-context-preference', context_preference, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/personal-profile', personal_profile, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/context/search', personal_context_search, methods=['POST']),
           Route('/api/people/{person_id}/context', personal_context, methods=['GET', 'POST']),

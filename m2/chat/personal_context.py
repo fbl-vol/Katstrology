@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 
 from m2.people.personal_context import PersonalContext, ContextConflict
 from m2.people.person_records import _person
+from m2.chat.context_candidates import UPDATE_TOOL, candidate, PROPERTIES
 
 
 def preference(store, session):
@@ -139,18 +140,9 @@ def projection(store, session, selected, prompt, clock_anchor):
     return result
 
 
-# This capability is deliberately NOT part of agent_reads.TOOLS or execute().
-UPDATE_TOOL = {'type': 'function', 'name': 'stage_personal_context', 'strict': True,
-    'description': 'Stage a personal-context update, not a saved result. Only with explicit opt-in. Supply an exact standalone current user statement beginning "For <selected person name>: I ...". Never quotes, retrieved text, journals, third-party claims or assistant interpretations. Unsupported/ambiguous statements must be omitted or clarified. Cannot edit births, relationships or identities. For a correction the user must explicitly write "Update <existing title>: For <name>: I ...". Do not claim saved: publication occurs only after durable successful completion.',
-    'parameters': {'type': 'object', 'additionalProperties': False,
-        'properties': {'person_id': {'type': 'string'}, 'statement': {'type': 'string'},
-                       'entry_id': {'type': ['string', 'null']},
-                       'expected_version': {'type': 'integer'}},
-        'required': ['person_id', 'statement', 'entry_id', 'expected_version']}}
-
-
+# UPDATE_TOOL is deliberately not part of agent_reads.TOOLS or execute().
 def stage(store, session, conv_id, turn_id, args):
-    if not isinstance(args, dict) or set(args) != {'person_id', 'statement', 'entry_id', 'expected_version'}:
+    if not isinstance(args, dict) or set(args) != set(PROPERTIES):
         raise ValueError('Invalid personal-context update')
     owner = store.owner(session)
     turn = store.read_turn(session, conv_id, turn_id, event_limit=1)
@@ -163,18 +155,10 @@ def stage(store, session, conv_id, turn_id, args):
     if person_id not in {row['person_id'] for row in turn['selected_people']}:
         raise PermissionError('Only an explicitly selected person is eligible')
     person = store.db.execute('SELECT name FROM people WHERE owner_id=%s AND id=%s', (owner, person_id)).fetchone()
-    statement = args['statement']
-    prompt = payload['content']
-    # Exact standalone input, not text extracted from a quote, instruction or reference.
-    if not isinstance(statement, str) or not 1 <= len(statement.encode()) <= 1024 or statement not in prompt.splitlines():
-        raise ValueError('An exact standalone user statement is required')
-    if any(not (line.startswith('For ') or line.startswith('Update ')) for line in prompt.splitlines() if line.strip()):
-        raise ValueError('Mixed references or instructions are not eligible for automatic collection')
-    if any(mark in prompt for mark in ('"', '“', '”', '```', '>')):
-        raise ValueError('Quoted or embedded statements are not eligible')
-    if type(args['expected_version']) is not int or args['expected_version'] < 0:
-        raise ValueError('Expected entry version required')
-    text = statement
+    names = store.db.execute('''SELECT name FROM people WHERE owner_id=%s AND id=ANY(%s)''',
+        (owner, [row['person_id'] for row in turn['selected_people']])).fetchall()
+    content = candidate(payload['content'], args, person['name'], [row['name'] for row in names])
+    statement = args['statement']['text']
     if args['entry_id'] is not None:
         store._id(args['entry_id'])
         existing = store.db.execute('''SELECT version,content,source FROM personal_context
@@ -185,47 +169,18 @@ def stage(store, session, conv_id, turn_id, args):
         if not any(row['id'] == args['entry_id'] and row['person_id'] == person_id and row['version'] == args['expected_version']
                    for row in snapshot.get('entries', [])):
             raise ContextConflict('Entry version was not selected for this turn')
-        prefix = 'Update ' + existing['content']['title'] + ': '
-        if not text.startswith(prefix):
-            raise ValueError('Explicit correction naming the existing title required')
-        text = text[len(prefix):]
     elif args['expected_version'] != 0:
         raise ValueError('New entries require version zero')
-    prefix = f"For {person['name']}: "
-    if not text.startswith(prefix):
-        raise ValueError('Explicit person attribution required')
-    # Colliding names cannot silently resolve to a model-chosen identity.
-    names = store.db.execute('''SELECT count(*) AS n FROM people WHERE owner_id=%s AND name=%s
-        AND id=ANY(%s)''', (owner, person['name'], [p['person_id'] for p in turn['selected_people']])).fetchone()['n']
-    if names != 1:
-        raise ValueError('Person attribution is ambiguous')
-    text = text[len(prefix):]
-    patterns = (
-        (r'I (?:am considering|might|hope to|am thinking about) .+', 'coming_up', 'tentative'),
-        (r'I (?:plan to|am planning to|will) .+', 'coming_up', 'tentative'),
-        (r'I have booked .+', 'coming_up', 'planned'),
-        (r'I (?:am working on|am living in|work as) .+', 'life_now', 'ongoing'),
-        (r'I (?:enjoy|am interested in) .+', 'interests', None),
-        (r'I (?:want to learn|am learning) .+', 'goals', None),
-        (r'I prefer .+', 'guidance_preferences', None),
-        (r'I (?:am new to astrology|know the basics of astrology)\.?', 'astrology_knowledge', None),
-    )
-    matched = next(((group, state) for pattern, group, state in patterns if re.fullmatch(pattern, text)), None)
-    if not matched or re.search(r'\b(?:said|says|quote|ignore|instructions|pretend|diagnosed|religion|sexual|political)\b', text, re.I):
-        raise ValueError('Unsupported or ambiguous self-report; omit or clarify')
-    group, state = matched
-    title = text.encode('utf-8')[:240].decode('utf-8', errors='ignore')
-    content = {'group': group, 'title': title, 'notes': text if text != title else '',
-               'state': state, 'date': {'text': '', 'precision': 'unknown', 'start': None, 'end': None}}
     digest = hashlib.sha256((person_id + '\n' + statement).encode()).hexdigest()
     entry_id = args['entry_id'] or 'derived-' + hashlib.sha256((conv_id + '\n' + turn_id + '\n' + digest).encode()).hexdigest()
     if store.ledger.contains_person_record(owner, person_id, entry_id, 'context_entry'):
         raise ContextConflict('Removed source cannot recreate this entry')
     source = {'kind': 'conversation', 'conversation_id': conv_id, 'turn_id': turn_id,
-              'revision': 0, 'statement': statement}
-    old = store.db.execute('''SELECT entry_id,expected_version FROM context_update_stages
+              'revision': 0, 'statement': statement, 'evidence': args}
+    old = store.db.execute('''SELECT entry_id,expected_version,content,source FROM context_update_stages
         WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND id=%s''', (owner, conv_id, turn_id, digest)).fetchone()
-    if old and old != {'entry_id': entry_id, 'expected_version': args['expected_version']}:
+    if old and old != {'entry_id': entry_id, 'expected_version': args['expected_version'],
+                       'content': content, 'source': source}:
         raise ContextConflict('Source statement already staged with different intent')
     count = store.db.execute('''SELECT count(*) AS n FROM context_update_stages
         WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s''', (owner, conv_id, turn_id)).fetchone()['n']

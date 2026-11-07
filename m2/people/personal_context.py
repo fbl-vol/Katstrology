@@ -114,18 +114,22 @@ class PersonalContext:
     def list(self, session, person_id, group=None, query='', offset=0):
         store = self.store
         owner = _person(store, session, person_id)
-        if group is not None and group not in GROUPS:
+        collections = {'life': ('coming_up', 'life_now', 'past_moments'),
+                       'learning': ('interests', 'goals', 'astrology_knowledge', 'guidance_preferences')}
+        if group is not None and (not isinstance(group, str) or group not in GROUPS and group not in collections):
             raise ValueError('Invalid context group')
+        selected_groups = collections.get(group, (group,)) if group else None
         if type(offset) is not int or offset < 0 or offset > 100000:
             raise ValueError('Invalid context page')
         if not isinstance(query, str) or len(query) > 256:
             raise ValueError('Search is too long')
         # strpos treats user search literally, including SQL wildcard characters.
         where = '''owner_id=%s AND person_id=%s AND lifecycle='active'
-            AND (%s::text IS NULL OR content->>'group'=%s)
-            AND strpos(lower((content->>'title') || ' ' || (content->>'notes') || ' ' ||
-                (content->'date')::text),lower(%s))>0'''
-        args = (owner, person_id, group, group, query)
+            AND (%s::text[] IS NULL OR content->>'group'=ANY(%s))
+            AND strpos(lower(concat_ws(' ', content->>'title', content->>'notes',
+                content->'date'->>'text', content->'date'->>'start', content->'date'->>'end')),lower(%s))>0'''
+        args = (owner, person_id, list(selected_groups) if selected_groups else None,
+                list(selected_groups) if selected_groups else None, query)
         counts = store.db.execute(f'''SELECT content->>'group' AS group,count(*) AS total
             FROM personal_context WHERE {where} GROUP BY content->>'group' ''', args).fetchall()
         if group is None:

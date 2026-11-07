@@ -22,10 +22,28 @@ def stale_tool_evidence(store, session, conv_id, turn_id, chains=None, resolved=
 def personal_context_current(store, session, conv_id, turn_id):
     from m2.chat.personal_context import snapshot_current
     chain = store.ancestry(session, conv_id, turn_id)
-    snapshots = store.db.execute('''SELECT payload FROM events WHERE owner_id=%s
-        AND conversation_id=%s AND turn_id=ANY(%s) AND sequence=0''',
-        (store.owner(session), conv_id, chain)).fetchall()
-    return all(snapshot_current(store, session, item['payload']) for item in snapshots)
+    rows = store.db.execute('''SELECT turn_id,kind,sequence,payload FROM events WHERE owner_id=%s
+        AND conversation_id=%s AND turn_id=ANY(%s) AND (sequence=0 OR kind='context')
+        ORDER BY sequence''', (store.owner(session), conv_id, chain)).fetchall()
+    snapshots = {row['turn_id']: row['payload'] for row in rows if row['sequence'] == 0}
+    consumed = {row['turn_id']: row['payload']['personal_context_dependencies']
+                for row in rows if row['kind'] == 'context' and 'personal_context_dependencies' in row['payload']}
+    current = {}
+    for item in chain:
+        # Old archives lack an effective dependency record: retain the conservative
+        # ancestry fence. New turns depend only on assistant material actually used,
+        # including summary sources, and transitively retain its version fences.
+        dependencies = consumed.get(item, list(current))
+        current[item] = (snapshot_current(store, session, snapshots.get(item, {})) and
+                         all(current.get(source, False) for source in dependencies))
+    return current.get(turn_id, True)
+
+
+def consumed_personal_context(store, session, conv_id, turn_ids):
+    """Dependencies of the effective dialogue, not all immutable original ancestors."""
+    return [turn_id for turn_id in dict.fromkeys(turn_ids)
+            if (projected := dialogue_projection(store, session, conv_id, turn_id))
+            and projected['assistant_safe']]
 
 
 def current_text(store, session, conv_id, turn_id, chains=None, resolved=None, turn=None):
@@ -120,6 +138,11 @@ def dialogue_text(store, session, conv_id, turn_id, chains=None, resolved=None, 
     return projected['text'] if projected else None
 
 
+def summary_text(store, session, conv_id, covered, chains, resolved):
+    lines = [dialogue_text(store, session, conv_id, item, chains, resolved) for item in covered]
+    return '\n'.join(line[:240] for line in lines if line is not None)
+
+
 def refresh_summary(store, session, conv_id, head_id, expected_epoch):
     """Coverage links exact selected turn IDs; old caches cannot cross branches."""
     owner = store.owner(session)
@@ -128,9 +151,7 @@ def refresh_summary(store, session, conv_id, head_id, expected_epoch):
     covered = older[-SUMMARY_TURNS:]
     omitted = len(older) - len(covered)
     chains, resolved = {conv_id: set(chain)}, {}
-    lines = [dialogue_text(store, session, conv_id, item, chains, resolved)
-             for item in covered]
-    content = '\n'.join(line[:240] for line in lines if line is not None)
+    content = summary_text(store, session, conv_id, covered, chains, resolved)
     with store.db.transaction():
         current = store._conversation(owner, conv_id, lock=True)
         if current['epoch'] != expected_epoch or current['active_head'] != head_id:
@@ -288,9 +309,10 @@ def assemble_prompt(store, session, conv_id, head_id, request, tokenize,
     if recent_texts is not None:
         recent, summary, cached = list(recent_texts), summary_override, None
     else:
-        recent = [dialogue_text(store, session, conv_id, item, chains, resolved)
-                  for item in chain[-RECENT_TURNS:]]
-        recent = [text for text in recent if text is not None]
+        recent_pairs = [(item, dialogue_text(store, session, conv_id, item, chains, resolved))
+                        for item in chain[-RECENT_TURNS:]]
+        recent_ids = [item for item, text in recent_pairs if text is not None]
+        recent = [text for _, text in recent_pairs if text is not None]
         current = store._conversation(owner, conv_id)
         cached = store.db.execute('''
             SELECT covered_ids, omitted_older, content FROM summaries
@@ -298,7 +320,9 @@ def assemble_prompt(store, session, conv_id, head_id, request, tokenize,
         ''', (owner, conv_id, head_id, current['epoch'])).fetchone() if head_id else None
         older = chain[:-RECENT_TURNS]
         summary = None
-        if cached and cached['covered_ids'] == older[-SUMMARY_TURNS:] and cached['omitted_older'] == len(older) - len(cached['covered_ids']):
+        if (cached and cached['covered_ids'] == older[-SUMMARY_TURNS:] and
+                cached['omitted_older'] == len(older) - len(cached['covered_ids']) and
+                cached['content'] == summary_text(store, session, conv_id, cached['covered_ids'], chains, resolved)):
             summary = f"[extractive summary: {len(cached['covered_ids'])} covered; {cached['omitted_older']} older omitted]\n{cached['content']}"
 
     def render(items, digest):
@@ -322,7 +346,10 @@ def assemble_prompt(store, session, conv_id, head_id, request, tokenize,
     while True:
         prompt, tokens = render(recent, summary)
         if tokens + instruction_tokens + reply_reserve + additional_reserve <= context_limit:
-            return prompt, {'prompt_tokens': tokens, 'reply_reserve': reply_reserve,
+            used_ids = (list(summary_covered_ids) if strict else
+                        recent_ids + (cached['covered_ids'] if summary else []))
+            return prompt, {'personal_context_dependencies': consumed_personal_context(store, session, conv_id, used_ids),
+                            'prompt_tokens': tokens, 'reply_reserve': reply_reserve,
                             'tool_result_reserve': additional_reserve,
                             'context_limit': context_limit, 'instruction_tokens': instruction_tokens,
                             'recent_turns': len(recent),
@@ -337,5 +364,6 @@ def assemble_prompt(store, session, conv_id, head_id, request, tokenize,
             summary = None
         elif recent:
             recent.pop(0)
+            recent_ids.pop(0)
         else:
             raise PromptBudgetError('Current request or selected profiles exceed context budget')

@@ -73,6 +73,21 @@ class People:
             WHERE p.owner_id=%s ORDER BY p.created_at DESC,p.id DESC LIMIT %s
         ''', (owner, limit)).fetchall()
 
+    def picker(self, session, query='', after=None):
+        """Complete owned identity lookup, independently paged from sidebar lists."""
+        owner = self.store.owner(session)
+        if not isinstance(query, str) or len(query) > 256:
+            raise ValueError('Invalid person search')
+        if after is not None:
+            self._person(session, after)  # cursor cannot name another owner's person
+        rows = self.store.db.execute('''SELECT id,name FROM people WHERE owner_id=%s
+            AND (%s::text IS NULL OR id>%s) AND strpos(lower(name),lower(%s))>0
+            ORDER BY id LIMIT 51''', (owner, after, after, query)).fetchall()
+        count = self.store.db.execute('''SELECT count(*) AS total FROM people WHERE owner_id=%s
+            AND strpos(lower(name),lower(%s))>0''', (owner, query)).fetchone()['total']
+        return {'people': rows[:50], 'total': count,
+                'next_after': rows[49]['id'] if len(rows) > 50 else None}
+
     def add_draft(self, session, person_id, details):
         owner = self.store.owner(session)
         checked_draft(details)

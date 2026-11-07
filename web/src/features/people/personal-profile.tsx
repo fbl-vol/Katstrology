@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Workspace } from '../../shared/api';
 import { CreatePersonDialog, type Person } from './people';
+import { OwnedPersonPicker } from './owned-person-picker';
 
 type Details = { pronouns: string; home: string; occupation: string; about: string };
 type Link = { id: string; other_person_id: string; name: string; label: string; dates: string; version: number };
@@ -16,7 +17,6 @@ export function PersonalProfile({ workspace, personId, active, openPerson, memor
   const [busy, setBusy] = useState(false);
   const [details, setDetails] = useState<Details | null>(memory.details ?? null);
   const [link, setLink] = useState<Link | null>(memory.link ?? null);
-  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const attempt = useRef<{ key: string; id: string } | null>(memory.attempt ?? null);
@@ -32,9 +32,9 @@ export function PersonalProfile({ workspace, personId, active, openPerson, memor
   async function load() {
     const request = ++read.current;
     try {
-      const [result, choices] = await Promise.all([api<Profile>(path), api<{ people: { id: string; name: string }[] }>('people')]);
+      const result = await api<Profile>(path);
       if (read.current !== request) return;
-      setProfile(result); setPeople(choices.people); setLoaded(true); setError('');
+      setProfile(result); setLoaded(true); setError('');
     } catch { if (read.current === request) setError('Personal details could not be loaded. Your edits are retained.'); }
   }
   async function save(change: unknown) {
@@ -68,9 +68,8 @@ export function PersonalProfile({ workspace, personId, active, openPerson, memor
         <h2>{details ? 'Personal details' : 'Linked person'}</h2>
         {details && (Object.keys(details) as (keyof Details)[]).map(key => <label className="field" key={key}>{key === 'home' ? 'Based in' : key[0].toUpperCase() + key.slice(1)}<input maxLength={1024} value={details[key]} onChange={event => setDetails({ ...details, [key]: event.target.value })} /></label>)}
         {link && <>
-          <label className="field">Person<select required value={link.other_person_id} onChange={event => setLink({ ...link, other_person_id: event.target.value })}>
-            <option value="">Choose an existing person</option>{people.filter(person => person.id !== personId).map((person, index) => <option key={person.id} value={person.id}>{person.name}{people.filter(other => other.name === person.name).length > 1 ? ` (person ${index + 1})` : ''}</option>)}
-          </select></label>
+          <OwnedPersonPicker workspace={workspace} excludedId={personId} selected={{ id: link.other_person_id, name: link.name }}
+            onSelect={person => setLink({ ...link, other_person_id: person.id, name: person.name })} />
           <button type="button" onClick={() => setCreating(true)}>Create a new person</button>
           <label className="field">Their relationship to this person<input required maxLength={128} placeholder="For example, sibling" value={link.label} onChange={event => setLink({ ...link, label: event.target.value })} /></label>
           <label className="field">Dates (optional)<input maxLength={256} value={link.dates} onChange={event => setLink({ ...link, dates: event.target.value })} /></label>
@@ -81,6 +80,6 @@ export function PersonalProfile({ workspace, personId, active, openPerson, memor
           <button type="button" disabled={busy} onClick={() => { setDetails(null); setLink(null); }}>Cancel</button><button className="primary" disabled={busy}>Save</button></div>
       </form>
     </dialog>
-    <CreatePersonDialog open={creating} workspace={workspace} onClose={() => setCreating(false)} onCreated={(person: Person) => { setPeople(old => [...old, person]); setLink(old => old ? { ...old, other_person_id: person.id } : old); }} />
+    <CreatePersonDialog open={creating} workspace={workspace} onClose={() => setCreating(false)} onCreated={(person: Person) => { setLink(old => old ? { ...old, other_person_id: person.id, name: person.name } : old); }} />
   </section>;
 }
