@@ -6,6 +6,9 @@ import { InsightNotebook } from './insights';
 import { PersonTiming } from './person-timing';
 import { ChartLibrary } from '../charts/chart-library';
 import { PersonRecords } from './person-records';
+import { PersonalContextPane, type ContextMemory } from './personal-context';
+import { PersonalProfile, type ProfileMemory } from './personal-profile';
+export type PersonMemory = { tab?: 'overview' | 'context' | 'charts' | 'saved'; context: ContextMemory; profile: ProfileMemory };
 import { AstrologyHelp } from '../charts/astrology-help';
 import type { SelectedResult } from '../conversation/archive';
 
@@ -27,6 +30,7 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
+  const formId = useId();
   const completed = useRef(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -57,11 +61,11 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
     const created = completed.current;
     completed.current = false;
     reset(); onClose(created);
-  }} aria-labelledby="person-title">
+  }} aria-labelledby={`${formId}-title`}>
     <form className="dialog-body" onSubmit={submit}>
-      <div className="dialog-top"><h2 id="person-title">A space for someone new.</h2><button type="button" aria-label="Close new person form" onClick={() => dialog.current?.close()}>×</button></div>
-      <p>Create the person, then enter birth details to generate their chart.</p>
-      <div className="field"><label htmlFor="person-name">Name</label><input id="person-name" ref={nameInput} required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></div>
+      <div className="dialog-top"><h2 id={`${formId}-title`}>A space for someone new.</h2><button type="button" aria-label="Close new person form" onClick={() => dialog.current?.close()}>×</button></div>
+      <p>Birth details are optional. You can add them later to calculate a chart.</p>
+      <div className="field"><label htmlFor={`${formId}-name`}>Name</label><input id={`${formId}-name`} ref={nameInput} required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></div>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="dialog-footer"><button type="button" onClick={() => dialog.current?.close()}>Cancel</button><button type="submit" className="primary" disabled={busy}>{busy ? 'Saving…' : 'Create person'}</button></div>
     </form>
@@ -70,15 +74,16 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
   initialEditorOpen = false, initialTab = 'overview', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
-  discussSavedResult, createChart, libraryRevision = 0 }: {
-  workspace: Workspace; person: Person; refresh: () => Promise<void>;
+  discussSavedResult, createChart, openPerson, memory, libraryRevision = 0 }: {
+  workspace: Workspace; person: Person; refresh: () => Promise<void>; openPerson: (id: string) => void; memory: PersonMemory;
   startConversation: () => void; openConversation: (id: string) => void;
   discussSavedResult: (result: SelectedResult, label: string) => void;
-  onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'charts'; editorRequest?: number;
+  onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'context' | 'charts'; editorRequest?: number;
   libraryRevision?: number; childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
 }) {
   const tabsId = useId();
-  const [tab, setTab] = useState<'overview' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab);
+  const [tab, setTab] = useState<'overview' | 'context' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab === 'charts' ? 'charts' : memory.tab ?? initialTab);
+  memory.tab = tab;
   const [natalRequest, setNatalRequest] = useState(initialTab === 'charts' && !initialEditorOpen ? 1 : 0);
   const [savedSection, setSavedSection] = useState<'insights' | 'later' | 'journal'>('insights');
   const [savedOpenRequest, setSavedOpenRequest] = useState(0);
@@ -89,7 +94,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
   const [generated, setGenerated] = useState<{ result: Generation; draft: Draft } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([null, null, null]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([null, null, null, null]);
   const editorRef = useRef<HTMLDivElement>(null);
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const activeChart = (generated && generated.result.active_chart_id === generated.result.chart.id ? generated.result.chart : null) ||
@@ -119,12 +124,12 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
   }
 
   function switchTab(event: React.KeyboardEvent, index: number) {
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 :
-      event.key === 'ArrowRight' ? (index + 1) % 3 :
-      event.key === 'ArrowLeft' ? (index + 2) % 3 : null;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 :
+      event.key === 'ArrowRight' ? (index + 1) % 4 :
+      event.key === 'ArrowLeft' ? (index + 3) % 4 : null;
     if (next === null) return;
     event.preventDefault();
-    setTab((['overview', 'charts', 'saved'] as const)[next]);
+    setTab((['overview', 'context', 'charts', 'saved'] as const)[next]);
     tabRefs.current[next]?.focus();
   }
 
@@ -147,13 +152,14 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         {hasActive ? 'Edit birth details' : 'Add birth details'}</button>
     </div><button type="button" className={`${tab === 'charts' ? '' : 'primary '}profile-chat-action`} onClick={startConversation}>Start conversation</button></div>
     <div className="profile-tabs" role="tablist" aria-label="Person sections">
-      {(['overview', 'charts', 'saved'] as const).map((item, index) => <button key={item} type="button" role="tab"
+      {(['overview', 'context', 'charts', 'saved'] as const).map((item, index) => <button key={item} type="button" role="tab"
         id={`${tabsId}-${item}-tab`} aria-controls={`${tabsId}-${item}-panel`} aria-selected={tab === item}
         tabIndex={tab === item ? 0 : -1} ref={element => { tabRefs.current[index] = element; }}
         onKeyDown={event => switchTab(event, index)} onClick={() => setTab(item)}>
-        {item === 'overview' ? 'Overview' : item === 'charts' ? 'Charts' : 'Saved'}</button>)}
+        {item === 'overview' ? 'Overview' : item === 'context' ? 'Context' : item === 'charts' ? 'Charts' : 'Saved'}</button>)}
     </div>
     <section id={`${tabsId}-overview-panel`} role="tabpanel" aria-labelledby={`${tabsId}-overview-tab`} hidden={tab !== 'overview'} className="profile-panel">
+      <PersonalProfile workspace={workspace} personId={person.id} active={tab === 'overview'} openPerson={openPerson} memory={memory.profile} />
       <p className="profile-group-label">Explore</p>
       <div className="profile-quiet-group">
         <button type="button" className="profile-quiet-row" onClick={() => {
@@ -186,6 +192,9 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
           </button>)}
       </div>
       <p className="profile-overview-note">The chart, conversation and notes stay separate. Open what you want to explore.</p>
+    </section>
+    <section id={`${tabsId}-context-panel`} role="tabpanel" aria-labelledby={`${tabsId}-context-tab`} hidden={tab !== 'context'} className="profile-panel">
+      <PersonalContextPane workspace={workspace} personId={person.id} active={tab === 'context'} memory={memory.context} />
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
       {!editorOpen && <ChartLibrary key={person.id} workspace={workspace} personId={person.id} refreshRevision={libraryRevision} activeChartId={activeChart?.id || person.active_chart_id}

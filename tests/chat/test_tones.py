@@ -2,6 +2,8 @@
 
 from hashlib import sha256
 from pathlib import Path
+import shutil
+from tests.support.personal_context_schema import remove_personal_context_schema
 
 import psycopg
 
@@ -15,17 +17,23 @@ class ToneTests(DatabaseCase):
         self.store.create_conversation(self.alice, 'retained')
         self.store.close()
         with psycopg.connect(self.dsn) as db:
+            remove_personal_context_schema(db)
             db.execute('DROP TABLE account_tones')
             db.execute('DELETE FROM schema_migrations WHERE version=24')
         path = Path(__file__).resolve().parents[2] / 'm2/migrations' / '024_account_tones.sql'
         lane = {'from': 23, 'to': 24, 'migrations': {path.name: sha256(path.read_bytes()).hexdigest()},
                 'added_tables': ['account_tones'], 'added_columns': {}}
-        self.assertEqual(migrate(self.dsn, lane), {'schema': 24, 'status': 'migrated'})
+        history = Path(self.directory.name) / 'schema24-migrations'
+        history.mkdir()
+        for migration in path.parent.glob('*.sql'):
+            if int(migration.name.split('_')[0]) <= 24:
+                shutil.copy2(migration, history)
+        self.assertEqual(migrate(self.dsn, lane, history), {'schema': 24, 'status': 'migrated'})
         with psycopg.connect(self.dsn) as db:
             self.assertEqual(db.execute('SELECT id FROM conversations').fetchall(), [('retained',)])
             self.assertEqual(db.execute('SELECT count(*) FROM account_tones').fetchone(), (0,))
         with self.assertRaisesRegex(ValueError, 'no replay'):
-            migrate(self.dsn, lane)
+            migrate(self.dsn, lane, history)
 
     def test_catalogue_and_owner_scoped_revision_and_missing_row_default(self):
         self.assertEqual(len(catalogue()['profiles']), 5)

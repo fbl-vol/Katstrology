@@ -8,6 +8,8 @@ from m2.people.birth_flow import BirthFlow, BirthInputError
 from m2.people.chart_library import ChartLibrary
 from m2.people.insights import SavedInsights
 from m2.people.person_records import Watchlist, Journal
+from m2.people.personal_context import PersonalContext, ContextConflict
+from m2.people.personal_profile import PersonalProfile
 from m2.people.places import search as search_places
 from m2.people.people import People
 from m2.http_boundary.boundary import authorized, json_body, json_response
@@ -236,7 +238,87 @@ async def journal_entry(request):
     return json_response({'status': 'recorded'})
 
 
-routes = [Route('/api/charts/{chart_id}/exploration', chart_exploration, methods=['GET']),
+async def context_preference(request):
+    from m2.chat.personal_context import preference, set_preference
+    session = await authorized(request, mutate=request.method != 'GET')
+    try:
+        if request.method == 'GET':
+            result = await request.app.state.runtime.call(lambda store, _: preference(store, session))
+        else:
+            data = await json_body(request)
+            if set(data) != {'enabled', 'expected_version'}:
+                raise ValueError('Explicit context setting required')
+            result = await request.app.state.runtime.call(lambda store, _: set_preference(
+                store, session, data['enabled'], data['expected_version']))
+        return json_response(result)
+    except ContextConflict:
+        return json_response({'error': 'context_preference_conflict'}, 409)
+
+
+async def personal_profile(request):
+    session = await authorized(request, mutate=request.method != 'GET')
+    person_id = request.path_params['person_id']
+    try:
+        if request.method == 'GET':
+            result = await request.app.state.runtime.call(lambda store, _: PersonalProfile(store).get(session, person_id))
+        else:
+            data = await json_body(request)
+            if set(data) != {'operation_id', 'change'}:
+                raise ValueError('Invalid profile operation')
+            result = await request.app.state.runtime.call(lambda store, _: PersonalProfile(store).change(
+                session, person_id, data['operation_id'], data['change']))
+        return json_response(result)
+    except ContextConflict:
+        return json_response({'error': 'profile_conflict'}, 409)
+
+
+async def personal_context_search(request):
+    session = await authorized(request, mutate=True)
+    data = await json_body(request)
+    if set(data) != {'group', 'query', 'offset'}:
+        raise ValueError('Invalid context search')
+    result = await request.app.state.runtime.call(lambda store, _: PersonalContext(store).list(
+        session, request.path_params['person_id'], data['group'], data['query'], data['offset']))
+    return json_response(result)
+
+
+async def personal_context(request):
+    session = await authorized(request, mutate=request.method != 'GET')
+    person_id = request.path_params['person_id']
+    try:
+        if request.method == 'GET':
+            query = request.query_params
+            if set(query) - {'group', 'offset'} or any(len(query.getlist(k)) != 1 for k in query):
+                raise ValueError('Invalid context search')
+            offset = query.get('offset', '0')
+            if not offset.isdigit():
+                raise ValueError('Invalid context page')
+            result = await request.app.state.runtime.call(lambda store, _: PersonalContext(store).list(
+                session, person_id, query.get('group'), '', int(offset)))
+        else:
+            data = await json_body(request)
+            if request.method == 'DELETE':
+                if set(data) != {'expected_version'}:
+                    raise ValueError('Expected entry version required')
+                await request.app.state.runtime.call(lambda store, _: PersonalContext(store).remove(
+                    session, person_id, request.path_params['entry_id'], data['expected_version']))
+                result = {'status': 'removed'}
+            else:
+                if set(data) != {'id', 'operation_id', 'expected_version', 'content'}:
+                    raise ValueError('Invalid context change')
+                result = await request.app.state.runtime.call(lambda store, _: PersonalContext(store).save(
+                    session, person_id, data['id'], data['operation_id'], data['expected_version'], data['content']))
+        return json_response(result)
+    except ContextConflict:
+        return json_response({'error': 'context_conflict'}, 409)
+
+
+routes = [Route('/api/personal-context-preference', context_preference, methods=['GET', 'POST']),
+          Route('/api/people/{person_id}/personal-profile', personal_profile, methods=['GET', 'POST']),
+          Route('/api/people/{person_id}/context/search', personal_context_search, methods=['POST']),
+          Route('/api/people/{person_id}/context', personal_context, methods=['GET', 'POST']),
+          Route('/api/people/{person_id}/context/{entry_id}', personal_context, methods=['DELETE']),
+          Route('/api/charts/{chart_id}/exploration', chart_exploration, methods=['GET']),
           Route('/api/charts/{chart_id}', saved_chart, methods=['GET']),
           Route('/api/people/{person_id}/chart-library', chart_library, methods=['GET']),
           Route('/api/people/{person_id}/chart-library/{technique}', chart_library, methods=['GET']),

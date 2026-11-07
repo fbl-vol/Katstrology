@@ -206,6 +206,8 @@ class CorrectionContinuityTests(DatabaseCase):
                        'DROP COLUMN language')
             db.execute("ALTER TABLE reference_sources ADD CONSTRAINT reference_sources_rights_basis_check "
                        "CHECK (rights_basis='synthetic_fixture')")
+            from tests.support.personal_context_schema import remove_personal_context_schema
+            remove_personal_context_schema(db)
             db.execute('DROP TABLE account_tones')
             db.execute('DROP TABLE compaction_checkpoints')
             db.execute('ALTER TABLE conversations DROP COLUMN compaction_revision')
@@ -242,7 +244,7 @@ class CorrectionContinuityTests(DatabaseCase):
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertIsNone(restored.read_turn(alice, 'thread', 'legacy')['parent_revision'])
             self.assertEqual(restored.db.execute('SELECT max(version) AS version FROM '
-                                                  'schema_migrations').fetchone()['version'], 24)
+                                                  'schema_migrations').fetchone()['version'], 31)
             correct(restored, alice, 'thread', 'withdrawn', 'root', 'withdraw')
             self.assertIsNone(current_text(restored, alice, 'thread', 'legacy',
                                            {'thread': {'root', 'legacy'}}))

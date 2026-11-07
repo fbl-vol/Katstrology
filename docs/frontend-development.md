@@ -13,9 +13,9 @@ Paths in this table are relative to `web/`.
 | --- | --- |
 | `src/app/` | Session application, navigation and workspace composition |
 | `src/features/conversation/` | Discovery, drafts, archive/event rendering, composer and scroll behavior |
-| `src/features/people/` | Birth editor, people, saved passages, timing and private records |
+| `src/features/people/` | Birth editor, people, personal details/links, Context collections, saved passages, timing and private records |
 | `src/features/charts/` | Manual chart catalogue, technique forms, results, wheels and exports |
-| `src/features/settings/` | Appearance, provider and tone controls |
+| `src/features/settings/` | Appearance, provider, personal-context consent and tone controls |
 | `src/shared/` | API client, theme tokens/styles, brand assets and source notice |
 | `tests/` | Matching capability suites; `support/` holds common fixtures/assertions |
 
@@ -70,6 +70,14 @@ Public checks require no private mockup or historical Git object. The explicit
 the pinned private reference; absent/changed inputs fail rather than silently
 substituting a new baseline. Synthetic Chromium is not physical-phone,
 virtual-keyboard, screen-reader, real-provider or human visual acceptance.
+
+`tests/people/personal-context.spec.ts` exercises provider-free manual context,
+server paging/search, edit/removal, failure recovery, stable details, linking and
+consent at desktop, wide desktop, mobile, short mobile and tablet sizes. Its
+renders are under `.local/personal-context/renders/`. Personal-context drafts and
+navigation memory belong to the mounted workspace, not global/localStorage state.
+The separate typed update capability reuses the existing archive sender and
+continuation lifecycle; it must never be added to read-only `agent_reads` authority.
 
 ## Build or serve a separate instance
 

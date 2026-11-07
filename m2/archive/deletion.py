@@ -108,7 +108,10 @@ class Tombstones:
                           {'owner', 'person'}, {'owner', 'person', 'person_attachment'},
                           {'owner', 'reference'}, {'owner', 'reference_revoked'},
                           {'owner', 'person', 'watch_item'},
-                          {'owner', 'person', 'journal_entry'})
+                          {'owner', 'person', 'journal_entry'},
+                          {'owner', 'person', 'context_entry'},
+                          {'owner', 'person', 'person_link'},
+                          {'owner', 'context_consent_revoked'})
                 if not isinstance(record, dict) or (set(record) not in single and
                     (set(record) != {'owner', 'conversations'} or
                      not isinstance(record['conversations'], list) or
@@ -151,10 +154,26 @@ class Tombstones:
         for record in self._records():
             owner = store._id(record['owner'])
             with store.db.transaction():
-                if 'conversations' in record:
+                if 'context_consent_revoked' in record:
+                    version = record['context_consent_revoked']
+                    if not isinstance(version, str) or not version.isdigit() or not 1 <= int(version) <= 2147483647:
+                        raise RuntimeError('Invalid context consent revocation')
+                    store.db.execute('''INSERT INTO personal_context_consent VALUES (%s,false,%s)
+                        ON CONFLICT(owner_id) DO UPDATE SET enabled=false,version=excluded.version
+                        WHERE personal_context_consent.version < excluded.version''', (owner, int(version)))
+                elif 'conversations' in record:
                     ids = [store._id(item) for item in record['conversations']]
                     store.db.execute('DELETE FROM conversations WHERE owner_id=%s AND id=ANY(%s)',
                                      (owner, ids))
+                elif 'person_link' in record:
+                    store.db.execute('DELETE FROM person_links WHERE owner_id=%s AND person_id=%s AND id=%s',
+                                     (owner, store._id(record['person']), store._id(record['person_link'])))
+                elif 'context_entry' in record:
+                    store.db.execute('''
+                        DELETE FROM personal_context WHERE owner_id=%s AND person_id=%s AND id=%s
+                    ''', (owner, store._id(record['person']), store._id(record['context_entry'])))
+                    for conversation in store.db.execute('SELECT id FROM conversations WHERE owner_id=%s', (owner,)).fetchall():
+                        store._changed(owner, conversation['id'])
                 elif 'watch_item' in record:
                     store.db.execute('''
                         DELETE FROM watch_items WHERE owner_id=%s AND person_id=%s AND id=%s
@@ -207,6 +226,9 @@ class Tombstones:
                 else:
                     store.db.execute('DELETE FROM conversations WHERE owner_id=%s AND id=%s',
                                      (owner, store._id(record['conversation'])))
+        from m2.chat.personal_context import invalidate_sources
+        for source in store.db.execute("SELECT DISTINCT owner_id,source->>'conversation_id' AS conversation_id FROM personal_context WHERE source->>'kind'='conversation'").fetchall():
+            invalidate_sources(store, source['owner_id'], source['conversation_id'])
         files = Attachments(store)
         files.prune_unreferenced()
         files.verify_references()
@@ -265,13 +287,22 @@ class Tombstones:
         self._append({'owner': owner, 'person': person_id})
         self.reconcile(store)
 
+    def revoke_context_consent(self, store, session, version):
+        owner = store.owner(session)
+        if type(version) is not int or not 1 <= version <= 2147483647:
+            raise ValueError('Invalid consent version')
+        store._blocked = True
+        self._append({'owner': owner, 'context_consent_revoked': str(version)})
+        self.reconcile(store)
+
     def delete_person_record(self, store, session, person_id, record_id, kind):
         """Retain an independent deletion authority across older DB snapshots."""
-        if kind not in ('watch_item', 'journal_entry'):
+        if kind not in ('watch_item', 'journal_entry', 'context_entry', 'person_link'):
             raise ValueError('Unsupported person record')
         owner = store.owner(session)
         store._id(person_id); store._id(record_id)
-        table = 'watch_items' if kind == 'watch_item' else 'journal_entries'
+        table = {'watch_item': 'watch_items', 'journal_entry': 'journal_entries',
+                 'context_entry': 'personal_context', 'person_link': 'person_links'}[kind]
         if not store.db.execute(f'''
             SELECT 1 FROM {table} WHERE owner_id=%s AND person_id=%s AND id=%s
         ''', (owner, person_id, record_id)).fetchone():

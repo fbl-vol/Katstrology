@@ -9,7 +9,9 @@ from m2.operations.app_clock import utc_now
 from m2.chat.context import read_committed_context
 from m2.chat.evidence_links import (CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX,
                                read_command_evidence)
-from m2.chat.agent_reads import TOOLS, execute as execute_read
+from m2.chat.agent_reads import TOOLS as READ_TOOLS, execute as execute_read
+from m2.chat.personal_context import UPDATE_TOOL, stage as stage_context
+TOOLS = [*READ_TOOLS, UPDATE_TOOL]
 from m2.chat.tool_evidence import (MAX_MODEL_EVIDENCE_BYTES,
                               prepare as prepare_read_evidence)
 from m2.chat.compaction import CompactionFailure, prepare as prepare_compaction
@@ -118,7 +120,10 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         if prompt_mode == 'hosted' and hasattr(model, 'validate'):
             model.validate()  # Resolve catalog/docs capacity before budgeting, never on replay.
         # Hosted instructions travel separately; reserve their estimated context cost.
-        tool_definitions = json.dumps(TOOLS) if getattr(model, 'read_tools', False) else ''
+        updates_enabled = bool(payload.get('personal_context', {}).get('consent', {}).get('enabled'))
+        if hasattr(model, 'context_updates_enabled'):
+            model.context_updates_enabled = updates_enabled
+        tool_definitions = json.dumps(TOOLS if updates_enabled else READ_TOOLS) if getattr(model, 'read_tools', False) else ''
         tool_result_reserve = (min(4096, max(512, model.context_limit // 32))
                                if tool_definitions and getattr(model, 'context_limit', None) else 0)
         # Metadata discovery is not a passage read or an interpretation. Keep it
@@ -262,8 +267,11 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                                             'origin': 'model_requested',
                                             'arguments': args if isinstance(args, dict) else {}}
                         try:
-                            result = execute_read(store, session, call['name'], args,
-                                {row['chart_id'] for row in selected_versions if row['chart_id']})
+                            if call['name'] == 'stage_personal_context':
+                                result = stage_context(store, session, conversation_id, turn_id, args)
+                            else:
+                                result = execute_read(store, session, call['name'], args,
+                                    {row['chart_id'] for row in selected_versions if row['chart_id']})
                         except (KeyError, PermissionError, ValueError) as exc:
                             result = {'error': type(exc).__name__, 'reason': str(exc)[:120]}
                         archived_result, result_text = prepare_read_evidence(

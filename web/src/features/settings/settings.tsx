@@ -6,7 +6,9 @@ import { SourceNotice } from '../../shared/source-notice';
 import { themes, readTheme } from '../../shared/themes';
 import { ToneSettings, useTone } from './tone-settings';
 
-type Panel = 'appearance' | 'tone' | 'connection' | 'about';
+import { PersonalContextSettings } from './personal-context-settings';
+
+type Panel = 'appearance' | 'tone' | 'context' | 'connection' | 'about';
 
 function connectionSummary(provider: ReturnType<typeof useProvider>): string {
   const { status, error } = provider;
@@ -65,6 +67,7 @@ export function SettingsView({ workspace, provider, onClose }: {
         <span className="settings-value">{selectedTone?.voice_label || 'Choose'} <span aria-hidden="true">›</span></span>
       </button>
     </div>
+    <div className="settings-rows"><button type="button" className="settings-row" onClick={event => open('context', event.currentTarget)}><span className="settings-row-main"><strong>Personal context</strong><small>Choose whether chat may use and collect personal details</small></span><span aria-hidden="true">›</span></button></div>
     <h2 className="settings-caption">Your connection</h2>
     <div className="settings-rows">
       <button type="button" className="settings-row" onClick={event => open('connection', event.currentTarget)}>
@@ -85,11 +88,12 @@ export function SettingsView({ workspace, provider, onClose }: {
       }}>
       <div className="dialog-body">
         <div className="dialog-top"><h2 id="settings-dialog-title">{panel === 'appearance' ? 'Choose a palette' :
-          panel === 'tone' ? 'How should Kat sound?' :
+          panel === 'tone' ? 'How should Kat sound?' : panel === 'context' ? 'Personal context' :
           panel === 'connection' ? 'Chat connection' : 'About Kat'}</h2>
           <button type="button" aria-label="Close settings panel" onClick={close}>×</button></div>
         {panel === 'appearance' && <AppearanceSettings onChange={setPalette} />}
         {panel === 'tone' && <ToneSettings tone={tone} />}
+        {panel === 'context' && <PersonalContextSettings workspace={workspace} />}
         {panel === 'connection' && <ProviderSettings provider={provider} workspace={workspace} />}
         {panel === 'about' && <section aria-label="About and source"><p>Kat brings your charts, questions and conversations together.</p><SourceNotice /></section>}
       </div>

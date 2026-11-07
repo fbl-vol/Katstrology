@@ -160,6 +160,10 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
       {savedFile ? <span> To try again, reselect the file and give fresh consent.</span> :
         <button className="quiet-action" onClick={() => actions.current.onRetryFailed(turn)}>
           Try again as a new message with current selection</button>}</p>}
+    {turn.events.some(event => ['complete', 'interrupted', 'error'].includes(event.kind) &&
+      Array.isArray(event.payload.personal_context_updates) && event.payload.personal_context_updates.some(
+        (update: { outcome?: string }) => update.outcome !== 'saved')) &&
+      <p className="turn-warning" role="status">Some personal-context changes were not saved. Your conversation remains archived. Check Context before making a manual correction; no automatic retry will run.</p>}
     {turn.status === 'interrupted' && <p className="turn-warning">Interrupted. The committed prefix is preserved; continue in a new turn if needed.</p>}
     {eventFailure ? <p className="turn-warning" role="alert">{eventFailure}{' '}
       <button className="quiet-action" onClick={() => actions.current.onRetryEvents(turn)}>Retry loading saved reply</button></p> :

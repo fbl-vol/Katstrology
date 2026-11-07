@@ -67,6 +67,61 @@ provenance and honest omission labels; originals remain readable. If even an
 incomplete-result notice cannot fit, the bounded result stays archived and the
 turn stops with `tool_result_capacity` before another provider call.
 
+## Personal context: consent, evidence and staged updates
+
+Personal context is off by default. Settings has one explicit control for both
+collection and use. Manual Context editing and personal details/links work without
+a provider or birth chart. Opting in permits relevant selected-person details to
+leave the machine with the current conversation. Opting out affects subsequent
+turns, not already transmitted data or immutable archives. Revocation versions are
+also retained in the independent deletion journal so an older database backup
+cannot silently restore consent.
+
+Turn acknowledgement freezes the consent version and exact entry/detail versions
+in the original user event. Selection considers only explicitly selected people,
+never relationship neighbors or private journals. It ranks the newest 500 candidate
+entries per person by topic words, ongoing circumstances, guidance/learning and
+nearby dates, retaining at most eight entries within an 8,000-byte projection.
+This is selective context, not an exhaustive account summary. The server-owned
+reporting clock anchors date relevance. Approximate month/year, ranges and unknown
+dates remain distinct; they are not exact instants or countdowns. Context and source
+statements are untrusted user-reported data, never calculated evidence or instructions.
+
+Existing `agent_reads` tools remain read-only. The separately advertised
+`stage_personal_context` capability is offered only for opted-in turns. Its closed
+schema accepts a selected person, an exact current user statement and an optional
+existing entry/version, not arbitrary content, owners, SQL, births or relationships.
+The initial conservative collector accepts standalone explicitly attributed lines
+such as `For Alex: I am considering a move` or `For Alex: I prefer short answers`.
+Multiple eligible lines remain separate entries. Updates require an explicit
+`Update <existing title>: For <name>: I ...` statement and a version actually
+supplied to that turn. Ambiguous identity, quoted/mixed-reference input and
+unsupported statements are omitted or require clarification. It does not infer
+that a selected person is the account holder, infer sensitive traits or normalize
+uncertain dates. Intentions remain tentative; time passing does not complete events.
+This deliberately limited collector is not a claim of general extraction accuracy.
+
+Candidates are durable stages, explicitly **not saved context**. The existing
+serialized terminal-event transaction finalizes only successful turns whose
+source epoch and consent still match. Each update has a source-derived operation
+identity, expected-version check and deletion-ledger fence. Cancellation, failure,
+stale branches, consent changes and abandoned work publish nothing. Storage errors
+are recorded as failed outcomes without another inference request; restart marks
+unfinished stages abandoned. The terminal event records outcomes, and the UI warns
+when a proposed change was not saved. No scheduler, extra summarization request,
+background backfill or second archive sender is involved.
+
+Manual edits take precedence over older staged updates. Source corrections,
+withdrawals, branch abandonment and source deletion suppress derived projections;
+manual corrections retain their own attribution. Removed entry identities cannot
+be reused, including after backup restore. A later explicit statement is a distinct
+source, not replay of a removed source. Context version/consent changes invalidate
+cached continuity; subsequent recall/compaction omits assistant replies relying on
+superseded structured context while retaining eligible original user text. Original
+archive replay remains unchanged. Removing context does **not** erase conversations,
+previous answers, exports or provider processing, and retained history can still
+contain the same information.
+
 ## Derived continuity
 
 Before hosted dispatch approaches capacity, compaction may summarize older eligible

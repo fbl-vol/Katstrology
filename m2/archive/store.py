@@ -64,6 +64,7 @@ class Store:
             ledger.reconcile(self)
             from m2.chat.title_work import TitleWork
             TitleWork(self).recover_interrupted()
+            self.db.execute("UPDATE context_update_stages SET outcome='abandoned' WHERE outcome='staged'")
         except BaseException:
             self.close()
             raise
@@ -335,6 +336,9 @@ class Store:
                 source_status = ('current' if all(chart_owner.active_chart_id(session, person_id) == chart_id
                                                    for chart_id, person_id in sources) else 'historical')
             clock_anchor = snapshot(clock, reporting_zone) if clock is not None else None
+            from m2.chat.personal_context import projection
+            personal_context = projection(self, session, selection, prompt, clock_anchor)
+            personal_context['source_epoch'] = self._conversation(owner, conv_id)['epoch']
             tone = None
             if model_provider == 'chatgpt_plan':
                 from m2.chat.tone_profiles import instructions
@@ -356,6 +360,7 @@ class Store:
                                                    'chart_file': chart_file,
                                                    'selected_result': selected_result,
                                                    'clock_anchor': clock_anchor,
+                                                   'personal_context': personal_context,
                                                    'revision_kind': revision_kind,
                                                    'replaces_turn_id': replaces_turn_id})))
             if selected_row:
@@ -420,6 +425,15 @@ class Store:
                 SELECT COALESCE(MAX(sequence), -1)+1 AS value FROM events
                 WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s
             ''', (owner, conv_id, turn_id)).fetchone()['value']
+            if kind in TERMINAL:
+                from m2.chat.personal_context import finalize
+                initial = self.read_turn(session, conv_id, turn_id, event_limit=1)['events'][0]['payload']
+                source_epoch = initial.get('personal_context', {}).get('source_epoch')
+                current_epoch = self._conversation(owner, conv_id)['epoch']
+                outcomes = finalize(self, session, conv_id, turn_id,
+                                    kind == 'complete' and source_epoch == current_epoch)
+                if outcomes:
+                    payload = {**payload, 'personal_context_updates': outcomes}
             self.db.execute('''
                 INSERT INTO events(owner_id, conversation_id, turn_id, sequence, kind, payload)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -469,6 +483,8 @@ class Store:
                 WHERE owner_id=%s AND id=%s RETURNING epoch
             ''', (active_head, revision, owner, conv_id)).fetchone()
         epoch = row['epoch']
+        from m2.chat.personal_context import invalidate_sources
+        invalidate_sources(self, owner, conv_id)
         self.db.execute('DELETE FROM summaries WHERE owner_id=%s AND conversation_id=%s', (owner, conv_id))
         self.db.execute('DELETE FROM history_vectors WHERE owner_id=%s AND conversation_id=%s',
                         (owner, conv_id))

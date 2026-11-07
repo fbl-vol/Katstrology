@@ -6,7 +6,7 @@ import { ConversationBrowseList, ScopeChips, ScopePicker } from '../features/con
 import { ContextChart } from '../features/conversation/context-chart';
 import { ConversationMenu } from '../features/conversation/conversation-menu';
 import { TurnCard } from '../features/conversation/turns';
-import { CreatePersonDialog, PersonDetail, type Person } from '../features/people/people';
+import { CreatePersonDialog, PersonDetail, type Person, type PersonMemory } from '../features/people/people';
 import { useProvider } from '../features/settings/provider';
 import { SettingsView } from '../features/settings/settings';
 import { BrandKitten, ReadingKitten } from '../shared/kitten';
@@ -57,6 +57,11 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
   const closeButton = useRef<HTMLButtonElement>(null);
   const historyHeading = useRef<HTMLHeadingElement>(null);
   const focusProfile = navigation.focusProfile;
+  const personMemories = useRef(new Map<string, PersonMemory>());
+  function personMemory(id: string) {
+    if (!personMemories.current.has(id)) personMemories.current.set(id, { context: {}, profile: {} });
+    return personMemories.current.get(id)!;
+  }
   const personDialogOpener = useRef<HTMLElement | null>(null);
   const wasDrawerOpen = useRef(false);
   const setMessageInput = useCallback((element: HTMLTextAreaElement | null) => {
@@ -299,7 +304,13 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         returnLabel={skyFromHub ? 'Back to chart choices' : 'Return to conversation'}
         onClose={navigation.closeSky} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
-      {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople}
+      {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople} memory={personMemory(person.id)}
+        openPerson={id => {
+          const version = navigation.beginSidebarPerson(id);
+          void api<Person>(`people/${id}`).then(selected => {
+            if (navigation.isCurrent(version)) navigation.showSidebarPerson(selected);
+          }).catch(() => setNotice('Person could not be opened.'));
+        }}
         discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={() => openChartHub(person.id)} libraryRevision={navigation.libraryRevision}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'overview'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
@@ -308,6 +319,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         } : undefined}
         startConversation={() => newChat(person.id)} openConversation={id => void openConversation(id)} onDeleted={() => {
         peopleRequestVersion.current++;
+        personMemories.current.delete(person.id);
         navigation.personDeleted(person.id); setPeople(old => old.filter(item => item.id !== person.id));
         discovery.clearSearch();
       }} /> : <section className={conversation ? 'conversation' : 'home'}

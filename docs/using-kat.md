@@ -53,11 +53,39 @@ day without inventing houses or a full natal. Save/calculate is atomic and safe
 to retry after a lost response; a failed list refresh does not invalidate a
 successfully saved chart.
 
-The Quiet Overview leads to conversations, Charts and Saved. Exact-time natal
+Person pages have sibling **Overview / Context / Charts / Saved** panes.
+Overview keeps optional personal details and directional links to existing people
+in your own workspace. Links do not share accounts or automatically select another
+person's records for chat. Unlinking leaves both people and their records intact.
+The Quiet Overview also leads to conversations, Charts and Saved. Exact-time natal
 charts provide qualified planets/nodes, houses/angles, aspects, accessible tables
 and downloadable wheels. Unsupported houses remain visibly partial. Child's
 natal uses the same method with a family-focused explanation, not a distinct
 record, diagnosis or personality classification. See [natal conventions](natal-charts.md).
+
+## Personal context
+
+Context keeps Life & plans and Interests & learning separate from charts, saved
+passages and private journals. Add any number of independent entries; dates and
+supporting details are optional. Click a row to edit only that entry. The compact
+view shows up to two entries per populated group with honest remaining counts;
+View all opens paged results, and search covers titles, notes and dates. Ordinary
+navigation retains the pane, search/disclosure and pending context edits within
+the signed-in workspace. Reload retrieves durable saved entries, not unsaved drafts.
+
+Use Settings → Personal context to explicitly enable automatic collection/use.
+It starts off even when a provider is connected. Selected relevant details may
+then be sent to that provider; no chart is required. The conservative collector
+requires explicit person attribution, for example `For Alex: I am considering a
+move`. It omits unsupported or ambiguous statements instead of inventing facts.
+You still control birth details, people and relationships. Plans do not become
+completed events merely because a date passes. See the [provider contract](provider-and-context.md)
+for exact accepted statement and source-lifecycle boundaries.
+
+Source details are available inside the entry editor. Removing an entry removes
+structured context, not the original conversation, archived answers or information
+already sent to a provider. Conversation history may still contain the same facts.
+Turning the setting off changes subsequent turns without erasing archives.
 
 ## Manual charts and timing
 

@@ -29,6 +29,10 @@ for (const viewport of [
     await expect(page.getByRole('region', { name: 'Generate a chart' })).toBeHidden();
     await page.screenshot({ path: resolve(renders, `saved-basic-${viewport.name}.png`) });
     await overview.focus(); await overview.press('ArrowRight');
+    const context = page.getByRole('tab', { name: 'Context', exact: true });
+    await expect(context).toBeFocused();
+    await expect(context).toHaveAttribute('aria-selected', 'true');
+    await context.press('ArrowRight');
     await expect(charts).toBeFocused();
     await expect(charts).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();

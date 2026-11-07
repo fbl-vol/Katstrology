@@ -19,6 +19,15 @@ def stale_tool_evidence(store, session, conv_id, turn_id, chains=None, resolved=
     return not current_turn_usable(store, session, conv_id, turn_id, chains, resolved)
 
 
+def personal_context_current(store, session, conv_id, turn_id):
+    from m2.chat.personal_context import snapshot_current
+    chain = store.ancestry(session, conv_id, turn_id)
+    snapshots = store.db.execute('''SELECT payload FROM events WHERE owner_id=%s
+        AND conversation_id=%s AND turn_id=ANY(%s) AND sequence=0''',
+        (store.owner(session), conv_id, chain)).fetchall()
+    return all(snapshot_current(store, session, item['payload']) for item in snapshots)
+
+
 def current_text(store, session, conv_id, turn_id, chains=None, resolved=None, turn=None):
     """Corrections replace selected context, but originals remain in the archive."""
     if stale_tool_evidence(store, session, conv_id, turn_id, chains, resolved):
@@ -31,6 +40,8 @@ def current_text(store, session, conv_id, turn_id, chains=None, resolved=None, t
             return None
         return f"[correction {current['id']} of {turn_id}] {current['replacement']}"
     user = turn['events'][0]['payload']['content']
+    if not personal_context_current(store, session, conv_id, turn_id):
+        return f'[turn {turn_id}; historical user text only; prior personal context is no longer current] user: {user}'
     reply = ''.join(e['payload']['content'] for e in turn['events']
                     if e['kind'] == 'assistant_chunk')
     facts = []
@@ -63,7 +74,9 @@ def dialogue_projection(store, session, conv_id, turn_id, chains=None, resolved=
     resolved = {} if resolved is None else resolved
     if current_turn_usable(store, session, conv_id, turn_id, chains, resolved):
         text = current_text(store, session, conv_id, turn_id, chains, resolved, turn)
-        return {'text': text, 'full_evidence': True, 'assistant_safe': True} if text else None
+        personal_current = personal_context_current(store, session, conv_id, turn_id)
+        return {'text': text, 'full_evidence': personal_current,
+                'assistant_safe': personal_current} if text else None
     if not dialogue_turn_usable(store, session, conv_id, turn_id, chains, resolved):
         return None
     turn = turn if turn is not None else next(store.read_complete_turns(session, conv_id, [turn_id]))
@@ -91,6 +104,7 @@ def dialogue_projection(store, session, conv_id, turn_id, chains=None, resolved=
         assistant_safe = all(not p['chart_id'] or Charts(store).get_chart(
             session, p['chart_id'])['source_status'] == 'current'
             for p in turn['selected_people'])
+    assistant_safe = assistant_safe and personal_context_current(store, session, conv_id, turn_id)
     reply = ''.join(e['payload']['content'] for e in turn['events']
                     if e['kind'] == 'assistant_chunk') if assistant_safe else ''
     label = ('refreshed selected-version dialogue' if assistant_safe else

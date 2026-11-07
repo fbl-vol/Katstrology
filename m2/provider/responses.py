@@ -2,7 +2,9 @@
 
 import json
 import math
-from m2.chat.agent_reads import TOOLS
+from m2.chat.agent_reads import TOOLS as READ_TOOLS
+from m2.chat.personal_context import UPDATE_TOOL
+TOOLS = [*READ_TOOLS, UPDATE_TOOL]
 from m2.provider.model_capacity import resolve_capacity
 from m2.chat.prompting import HOSTED
 from m2.provider.siwc import ProviderFailure
@@ -192,6 +194,11 @@ def _valid_read_arguments(name, serialized):
 class ResponsesModel:
     count_method = 'conservative_utf8_byte_estimate'
     read_tools = True
+    context_updates_enabled = False
+
+    @property
+    def tools(self):
+        return TOOLS if self.context_updates_enabled else READ_TOOLS
 
     def __init__(self, bridge, owner, slug, admission=None):
         if admission and (admission.owner != owner or admission.slug != slug):
@@ -248,7 +255,7 @@ class ResponsesModel:
         if summary:
             body['max_output_tokens'] = max_output_tokens
         if not summary:
-            body['tools'] = TOOLS
+            body['tools'] = self.tools
             body['parallel_tool_calls'] = False
             self._continuation_input = list(body['input'])
             self._instructions = instructions
@@ -261,7 +268,7 @@ class ResponsesModel:
         serialized = json.dumps(self._continuation_input + outputs,
                                 ensure_ascii=False, separators=(',', ':')).encode('utf-8')
         return (len(self.tokenize(serialized)) +
-                len(self.tokenize((self._instructions + json.dumps(TOOLS)).encode())))
+                len(self.tokenize((self._instructions + json.dumps(self.tools)).encode())))
 
     def continue_completion(self, outputs):
         """Stateless provider continuation; outputs must already be durably archived."""
@@ -269,7 +276,7 @@ class ResponsesModel:
             raise ValueError('No pending function-call round')
         self._continuation_input.extend(outputs)
         body = {'model': self.slug, 'instructions': self._instructions,
-                'input': self._continuation_input, 'tools': TOOLS,
+                'input': self._continuation_input, 'tools': self.tools,
                 'parallel_tool_calls': False, 'store': False, 'stream': True}
         yield from self._events(self._token(), body, False)
 
