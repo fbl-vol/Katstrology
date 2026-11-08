@@ -2,6 +2,7 @@
 from psycopg.types.json import Jsonb
 from m2.people.person_records import _person
 from m2.people.personal_context import ContextConflict
+from m2.people.picker_labels import OWNED_CHOICES_CTE, picker_label
 
 FIELDS = ('pronouns', 'home', 'occupation', 'about')
 
@@ -15,9 +16,15 @@ class PersonalProfile:
         owner = _person(store, session, person_id)
         details = store.db.execute('SELECT version,details FROM personal_details WHERE owner_id=%s AND person_id=%s',
                                    (owner, person_id)).fetchone()
-        links = store.db.execute('''SELECT l.id,l.other_person_id,l.label,l.dates,l.version,p.name
-            FROM person_links l JOIN people p ON p.owner_id=l.owner_id AND p.id=l.other_person_id
-            WHERE l.owner_id=%s AND l.person_id=%s ORDER BY p.name,l.id''', (owner, person_id)).fetchall()
+        rows = store.db.execute(OWNED_CHOICES_CTE + '''
+            SELECT l.id,l.other_person_id,l.label,l.dates,l.version,
+                p.name,p.created_at,p.details,p.name_count,p.name_number
+            FROM person_links l JOIN person_choices p ON p.id=l.other_person_id
+            WHERE l.owner_id=%s AND l.person_id=%s ORDER BY p.name,l.id''',
+            (owner, owner, person_id)).fetchall()
+        links = [{'id': row['id'], 'other_person_id': row['other_person_id'],
+                  'label': row['label'], 'dates': row['dates'], 'version': row['version'],
+                  'name': row['name'], 'picker_label': picker_label(row)} for row in rows]
         return {**(details or {'version': 0, 'details': dict.fromkeys(FIELDS, '')}), 'links': links}
 
     def change(self, session, person_id, operation_id, request):

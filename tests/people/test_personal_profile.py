@@ -34,6 +34,39 @@ class PersonalProfileTests(DatabaseCase):
             'id': 'old', 'other_person_id': 'z-old', 'label': 'Friend', 'dates': ''})
         self.assertEqual(profile.get(self.alice, 'a-00')['links'][0]['other_person_id'], 'z-old')
 
+    def test_existing_off_page_link_has_same_owned_picker_descriptor(self):
+        people = People(self.store)
+        people.charts.add_person(self.bob, 'foreign', 'Shared name')
+        people.charts.add_person(self.bob, 'foreign-parent', 'Unique parent')
+        people.charts.add_person(self.alice, 'z-target', 'Shared name')
+        for index in range(52):
+            people.charts.add_person(self.alice, f'a-{index:02}', 'Shared name')
+        people.charts.add_person(self.alice, 'parent', 'Unique parent')
+        profile = PersonalProfile(self.store)
+        profile.change(self.alice, 'z-target', 'describe', {'kind': 'details', 'expected_version': 0,
+            'details': {'pronouns': '', 'home': 'Northport', 'occupation': 'Teacher', 'about': ''}})
+        profile.change(self.alice, 'parent', 'link', {'kind': 'link', 'expected_version': 0,
+            'id': 'existing', 'other_person_id': 'z-target', 'label': 'Friend', 'dates': ''})
+        first = people.picker(self.alice)
+        self.assertEqual(len(first['people']), 50)
+        self.assertNotIn('z-target', {row['id'] for row in first['people']})
+        second = people.picker(self.alice, after=first['next_after'])
+        target = next(row for row in second['people'] if row['id'] == 'z-target')
+        link = profile.get(self.alice, 'parent')['links'][0]
+        self.assertEqual(link['other_person_id'], 'z-target')
+        self.assertEqual(link.get('picker_label'), 'Shared name · Teacher, Northport (profile 1)')
+        self.assertEqual(link['picker_label'], target['picker_label'])
+        self.assertNotIn('z-target', link['picker_label'])
+        self.assertNotIn('foreign', {row['id'] for row in first['people'] + second['people']})
+        with self.assertRaises(KeyError):
+            profile.get(self.bob, 'parent')
+        with self.assertRaises(KeyError):
+            profile.change(self.alice, 'parent', 'foreign-link', {'kind': 'link', 'expected_version': 0,
+                'id': 'invalid', 'other_person_id': 'foreign', 'label': 'Friend', 'dates': ''})
+        profile.change(self.alice, 'z-target', 'unique-link', {'kind': 'link', 'expected_version': 0,
+            'id': 'unique', 'other_person_id': 'parent', 'label': 'Friend', 'dates': ''})
+        self.assertEqual(profile.get(self.alice, 'z-target')['links'][0]['picker_label'], 'Unique parent')
+
     def test_details_links_colliding_names_and_owner_boundaries(self):
         people = People(self.store)
         for owner, person in ((self.alice, 'one'), (self.alice, 'two'), (self.bob, 'private')):

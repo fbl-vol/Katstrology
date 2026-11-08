@@ -9,6 +9,7 @@ import psycopg
 
 from m2.calculation.charts import Charts
 from m2.calculation.natal import DEFAULT_ORBS
+from m2.people.picker_labels import OWNED_CHOICES_CTE, picker_label
 
 
 DEFAULT_SETTINGS = {'zodiac': 'tropical', 'house_system': 'none',
@@ -80,28 +81,12 @@ class People:
             raise ValueError('Invalid person search')
         if after is not None:
             self._person(session, after)  # cursor cannot name another owner's person
-        rows = self.store.db.execute('''WITH choices AS (
-            SELECT p.id,p.name,p.created_at,d.details,
-                count(*) OVER (PARTITION BY lower(p.name)) AS name_count,
-                row_number() OVER (PARTITION BY lower(p.name) ORDER BY p.created_at,p.id) AS name_number
-            FROM people p LEFT JOIN personal_details d
-                ON d.owner_id=p.owner_id AND d.person_id=p.id
-            WHERE p.owner_id=%s)
-            SELECT * FROM choices WHERE (%s::text IS NULL OR id>%s)
+        rows = self.store.db.execute(OWNED_CHOICES_CTE + '''
+            SELECT * FROM person_choices WHERE (%s::text IS NULL OR id>%s)
                 AND strpos(lower(name),lower(%s))>0 ORDER BY id LIMIT 51''',
             (owner, after, after, query)).fetchall()
-        choices = []
-        for row in rows[:50]:
-            label = row['name']
-            if row['name_count'] > 1:
-                details = row['details'] or {}
-                description = ', '.join(details.get(key, '').strip() for key in ('occupation', 'home')
-                                        if details.get(key, '').strip())
-                # Local ordinal is a recognition aid, never identity authority.
-                # It is computed across the owner, not the current page/search.
-                preview = description[:80] or 'added ' + row['created_at'].strftime('%d %b %Y')
-                label += f" · {preview} (profile {row['name_number']})"
-            choices.append({'id': row['id'], 'name': row['name'], 'picker_label': label})
+        choices = [{'id': row['id'], 'name': row['name'], 'picker_label': picker_label(row)}
+                   for row in rows[:50]]
         count = self.store.db.execute('''SELECT count(*) AS total FROM people WHERE owner_id=%s
             AND strpos(lower(name),lower(%s))>0''', (owner, query)).fetchone()['total']
         return {'people': choices, 'total': count,

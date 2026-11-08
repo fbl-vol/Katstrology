@@ -81,6 +81,7 @@ async def main():
                     store.register_local(owner, 'synthetic-browser-password')
                 for view in ('desktop', 'wide', 'mobile', 'short-mobile', 'tablet'):
                     store.register_local('reader-context-' + view, 'synthetic-browser-password')
+                    store.register_local('reader-link-label-' + view, 'synthetic-browser-password')
                 store.register_local('reader-escaped-boundary', 'synthetic-browser-password')
                 from m2.people.people import People
                 from tests.support.database import seed_legacy_person_file
