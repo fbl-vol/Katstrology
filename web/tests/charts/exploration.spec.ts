@@ -112,6 +112,29 @@ async function openChart(page: Page, name: string, syntheticPatterns: boolean | 
   return { chart, chartId, saved };
 }
 
+test('late pattern availability does not refocus an already opened body reader', async ({ page }) => {
+  const { chart, chartId, saved } = await openChart(page, 'Late pattern focus', 'expanded');
+  await expect(chart.locator('[data-pattern-ring-hit]').first()).toBeVisible();
+  await page.getByRole('button', { name: '← Back to chart library' }).click();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const record = saved.charts.find((item: Chart) => item.id === chartId);
+  await page.route(`**/api/charts/${chartId}/exploration`, async route => {
+    await gate; await route.fulfill({ json: expandedPatternFixture(record) });
+  });
+  try {
+    await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
+    const sun = chart.locator('[data-wheel-entry="sun"]');
+    await sun.focus(); await sun.press('Enter');
+    await expect(chart.getByRole('heading', { name: 'Sun', exact: true })).toBeFocused();
+    const next = chart.getByRole('button', { name: 'Next → position' });
+    await next.focus();
+    release();
+    await expect(chart.locator('[data-pattern-ring-hit]').first()).toBeVisible();
+    await expect(next).toBeFocused();
+  } finally { release(); }
+});
+
 for (const size of [{ width: 1440, height: 1024 }, { width: 390, height: 844 }, { width: 390, height: 560 }]) {
   test(`saved natal explorer catalogue and focus ${size.width}x${size.height}`, async ({ page }) => {
     await page.setViewportSize(size);
@@ -384,10 +407,11 @@ async function patternPoint(wheel: import('@playwright/test').Locator, overlap: 
 
 test.describe('direct natal exploration', () => {
   test.use({ hasTouch: true });
-  for (const input of ['mouse', 'touch'] as const) {
+  for (const input of ['mouse', 'touch', 'enlarged-touch'] as const) {
     test(`expanded distribution ring pointer ${input}`, async ({ page }) => {
-      await page.setViewportSize(input === 'touch' ? { width: 390, height: 844 } : { width: 1440, height: 1024 });
+      await page.setViewportSize(input === 'enlarged-touch' ? { width: 320, height: 560 } : input === 'touch' ? { width: 390, height: 844 } : { width: 1440, height: 1024 });
       const { chart } = await openChart(page, `Distribution pointer ${input}`, 'expanded');
+      if (input === 'enlarged-touch') await page.evaluate(() => document.documentElement.style.fontSize = '200%');
       const wheel = chart.locator('svg.natal-wheel');
       const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
       await expect(wheel.locator('[data-pattern-ring-hit]')).not.toHaveCount(0);
@@ -408,11 +432,26 @@ test.describe('direct natal exploration', () => {
         }
         throw new Error('No exposed distribution ring target');
       });
-      if (input === 'touch') await page.touchscreen.tap(cursor.x, cursor.y);
+      const before = await page.evaluate(() => scrollY);
+      if (input !== 'mouse') await page.touchscreen.tap(cursor.x, cursor.y);
       else await page.mouse.click(cursor.x, cursor.y);
       if (await panel.getByRole('heading', { name: 'Patterns at this point', exact: true }).isVisible())
         await panel.getByRole('button', { name: /^Seesaw / }).click();
-      if (input === 'touch') await readPhoneSelection(page, /^Seesaw/);
+      if (input !== 'mouse') {
+        const preview = chart.getByRole('region', { name: 'Selected chart feature' });
+        await expect(preview).toBeVisible();
+        expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+        if (input === 'enlarged-touch') {
+          if (await preview.getByRole('combobox').count()) {
+            const label = (await preview.locator('option').allTextContents()).find(text => /^Seesaw/.test(text))!;
+            await preview.getByRole('combobox').selectOption({ label });
+            await preview.getByRole('button', { name: 'Select detail' }).click();
+          }
+          mkdirSync('../.local/phone-first/renders', { recursive: true });
+          await page.screenshot({ path: '../.local/phone-first/renders/enlarged-formation-preview.png' });
+        }
+        await readPhoneSelection(page, /^Seesaw/);
+      }
       await expect(panel.getByRole('heading', { name: 'Seesaw', exact: true })).toBeFocused();
       await expect(wheel.locator('[data-highlight-distribution]')).toHaveCount(1);
     });

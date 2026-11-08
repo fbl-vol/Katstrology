@@ -33,6 +33,8 @@ export function useArchiveChat(workspace: Workspace | null,
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [resumeError, setResumeError] = useState('');
+  const reconciling = useRef<number | null>(null);
   const [hasPending, setHasPending] = useState(false);
   const [localPending, setLocalPending] = useState<Pending | null>(null);
   const [eventFailures, setEventFailures] = useState<Record<string, string>>({});
@@ -59,9 +61,10 @@ export function useArchiveChat(workspace: Workspace | null,
   }
   function reset() {
     navigationVersion.current++;
+    reconciling.current = null;
     openedConversation.current = '';
     disconnect(); pending.current = null; retryInFlight.current = null;
-    setHasPending(false); setLocalPending(null); setSendError('');
+    setHasPending(false); setLocalPending(null); setSendError(''); setResumeError('');
     setEventFailures({}); setTurns([]); setNextOffset(null);
   }
   useEffect(() => () => connection.current?.close(), []);
@@ -77,6 +80,8 @@ export function useArchiveChat(workspace: Workspace | null,
 
   function connect(conversationId: string, turnId: string, after = -1) {
     disconnect(); current.current = conversationId;
+    openedConversation.current = conversationId;
+    routeVersion.current = viewRef.current.navigation.current;
     setBusy(true); setSendError('');
     const source = new EventSource(`/api/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events?after=${after}`);
     connection.current = source;
@@ -167,6 +172,7 @@ export function useArchiveChat(workspace: Workspace | null,
   }
 
   useEffect(() => {
+    const becameVisible = view.visible && !lastView.current.visible;
     const returned = view.visible && (!lastView.current.visible ||
       lastView.current.conversationId !== view.conversationId);
     lastView.current = { visible: view.visible, conversationId: view.conversationId };
@@ -174,10 +180,50 @@ export function useArchiveChat(workspace: Workspace | null,
     routeVersion.current = view.navigation.current;
     const version = navigationVersion.current;
     const owner = identityRef.current;
+    if (becameVisible) void reconcile();
     for (const turn of turns)
       if (turn.next_event_offset !== null && !eventFailures[turn.id])
         void loadRemaining(view.conversationId, turn, version, owner);
   }, [view.visible, view.conversationId, turns, identity]);
+
+  async function reconcile() {
+    const id = openedConversation.current;
+    if (!id || !viewRef.current.visible || viewRef.current.conversationId !== id ||
+        pending.current || retryInFlight.current || reconciling.current !== null) return;
+    reconciling.current = navigationVersion.current;
+    routeVersion.current = viewRef.current.navigation.current;
+    const version = navigationVersion.current, owner = identityRef.current;
+    try {
+      let offset = 0;
+      let next: number | null = null;
+      const refreshed: Turn[] = [];
+      do {
+        const page = await api<TurnPage>(`conversations/${encodeURIComponent(id)}/turns?offset=${offset}`);
+        if (!sameView(id, version, owner) || pending.current || retryInFlight.current) return;
+        for (const turn of page.turns) checkEventPage(turn, turn.id, 0);
+        refreshed.push(...page.turns); next = page.next_offset;
+        if (next !== null && (!Number.isSafeInteger(next) || next <= offset)) throw new Error('Invalid saved page cursor');
+        offset = next ?? 0;
+      } while (next !== null && refreshed.length < turns.length);
+      setNextOffset(next);
+      setTurns(existing => {
+        const updated = new Map(refreshed.map(turn => [turn.id, turn]));
+        const merged = existing.map(turn => {
+          const fresh = updated.get(turn.id); updated.delete(turn.id);
+          return fresh ? { ...fresh, status: fresh.status === 'open' ? turn.status : fresh.status,
+            event_count: Math.max(turn.event_count, fresh.event_count), events: completeEvents([...turn.events, ...fresh.events]) } : turn;
+        });
+        return [...merged, ...updated.values()];
+      });
+      for (const turn of refreshed) void loadRemaining(id, turn, version, owner);
+      const openTurn = refreshed.find(turn => turn.status === 'open');
+      if (openTurn) connect(id, openTurn.id, openTurn.events.at(-1)?.sequence ?? -1);
+      else disconnect();
+      setResumeError('');
+    } catch {
+      if (sameView(id, version, owner)) setResumeError('Saved replies could not be refreshed. Existing content remains here; no message was resent.');
+    } finally { if (reconciling.current === version) reconciling.current = null; }
+  }
 
   function retryEvents(conversationId: string, turn: Turn) {
     if (openedConversation.current !== conversationId) return;
@@ -253,6 +299,6 @@ export function useArchiveChat(workspace: Workspace | null,
     }
   }
 
-  return { turns, nextOffset, busy, sendError, hasPending, localPending, eventFailures,
-    reset, disconnect, open, retryEvents, queue, submit, retry, failPending };
+  return { turns, nextOffset, busy, sendError, resumeError, hasPending, localPending, eventFailures,
+    reconcile, reset, disconnect, open, retryEvents, queue, submit, retry, failPending };
 }

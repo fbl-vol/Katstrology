@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Workspace } from '../../shared/api';
+import { useNestedNavigation } from '../../shared/nested-navigation';
+
 import type { SelectedResult } from '../conversation/archive';
 import { ChartLibraryPreview } from './chart-library-preview';
 import { ChartLibraryReader } from './chart-library-reader';
 import { libraryDate, libraryPlace, libraryTitles, libraryVariant,
   type LibrarySummary, type LibraryHistory, type LibraryResult, type LibraryTechnique } from './chart-library-data';
 import './chart-library.css';
+
+export type LibraryMemory = { results: Record<string, LibraryResult> };
 
 const preferenceKey = 'kat-chart-library-layout-v1';
 function preferredLayout(): 'list' | 'gallery' {
@@ -63,8 +67,8 @@ function ChartLibraryHistory({ personId, technique, onOpen, onBack }: {
   </section>;
 }
 
-export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, natalRequest = 0, refreshRevision = 0 }: {
-  workspace: Workspace; personId: string; activeChartId: string | null; enabled: boolean;
+export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, natalRequest = 0, refreshRevision = 0, memory }: {
+  workspace: Workspace; personId: string; activeChartId: string | null; enabled: boolean; memory: LibraryMemory;
   onCreate: () => void; onCreateNatal: () => void; onDiscuss: (result: SelectedResult, label: string) => void; natalRequest?: number; refreshRevision?: number;
 }) {
   const [layout, setLayout] = useState(preferredLayout);
@@ -73,8 +77,17 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [visited, setVisited] = useState(enabled);
-  const [selected, setSelected] = useState<LibraryResult | null>(null);
-  const [history, setHistory] = useState<LibraryTechnique | null>(null);
+  const resultNavigation = useNestedNavigation(`library:${personId}`);
+  const historyNavigation = useNestedNavigation(`library-history:${personId}`);
+  const [, refreshSelection] = useState(0);
+  const selected = resultNavigation.value ? memory.results[resultNavigation.value] ?? null : null;
+  const history = historyNavigation.value as LibraryTechnique | null;
+  function setSelected(result: LibraryResult | null) {
+    if (result) memory.results[result.id] = result;
+    resultNavigation.change(result?.id ?? null);
+    refreshSelection(value => value + 1);
+  }
+  function setHistory(value: LibraryTechnique | null) { historyNavigation.change(value); }
   const collectionHeading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const historyOpener = useRef<HTMLElement | null>(null);

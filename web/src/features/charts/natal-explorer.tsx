@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../shared/api';
+import { useNestedNavigation } from '../../shared/nested-navigation';
 import type { Chart, NatalResult } from './natal';
 import { catalogue, categories, patternExplanation, type Category, type Entry, type Exploration } from './exploration-data';
 import { Highlight, type WheelOverlay } from './exploration-geometry';
@@ -25,7 +26,15 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
   const [category, setCategory] = useState<Category>('positions');
   const [queries, setQueries] = useState<Record<Category, string>>({ positions: '', houses: '', aspects: '', patterns: '' });
   const [selected, setSelected] = useState<Entry | null>(null);
-  const [detail, setDetail] = useState(false);
+  const reader = useNestedNavigation(`natal:${chart.id}`);
+  const [localDetail, setLocalDetail] = useState(false);
+  const detail = reader.available ? reader.value !== null : localDetail;
+  const focusReader = useRef(true);
+  const wheelReaderChange = useRef<string | null>(null);
+  function setDetail(open: boolean, entry = selected) {
+    if (reader.available) reader.change(open && entry ? entry.id : null, open && reader.value !== null);
+    else setLocalDetail(open);
+  }
   const [choices, setChoices] = useState<WheelChoice | null>(null);
   const [compact, setCompact] = useState(() => matchMedia(compactExplorerQuery).matches);
   useEffect(() => {
@@ -58,9 +67,6 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
     return () => { current = false; };
   }, [chart.id, chart.source_status, attempt, opened]);
   useEffect(() => {
-    if (detail) focusHeading(heading.current);
-  }, [detail, selected]);
-  useEffect(() => {
     if (!focusList) return;
     const buttons = panel.current?.querySelectorAll<HTMLButtonElement>('[data-entry]');
     const previous = Array.from(buttons ?? []).find(b => b.dataset.entry === listFocus.current);
@@ -68,13 +74,42 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
   }, [focusList]);
 
   const entries = catalogue(chart, natal, projection?.status === 'supported' ? projection.patterns : []);
+  useEffect(() => {
+    if (!reader.value) return;
+    focusReader.current = wheelReaderChange.current !== reader.value;
+    wheelReaderChange.current = null;
+    const entry = Object.values(entries).flat().find(item => item.id === reader.value);
+    if (entry) {
+      if (selected?.id !== entry.id) setSelected(entry);
+      setCategory(entry.category);
+    }
+  }, [reader.value, projection, chart]);
+  useEffect(() => {
+    if (detail && focusReader.current && (!reader.available || reader.value === selected?.id)) focusHeading(heading.current);
+  }, [detail, selected, reader.value]);
+  const wasReading = useRef(detail);
+  useEffect(() => {
+    const returned = wasReading.current && !detail;
+    wasReading.current = detail;
+    if (!returned || !readingOrigin.current) return;
+    const origin = readingOrigin.current;
+    const frame = requestAnimationFrame(() => {
+      window.scrollTo(origin.x, origin.y); readButton.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [detail]);
   const query = queries[category].trim().toLowerCase();
   const visible = entries[category].filter(e => `${e.title} ${e.subtitle} ${e.facts.flat().join(' ')}`.toLowerCase().includes(query));
   const index = selected ? entries[selected.category].findIndex(e => e.id === selected.id) : -1;
   function choose(entry: Entry, point?: WheelPoint) {
     setChoices(null); setCategory(entry.category); setSelected(entry); listFocus.current = entry.id;
     const preview = compact && point;
-    setPreviewPoint(preview || (detail && readingOrigin.current ? previewPoint : null)); setDetail(!preview);
+    focusReader.current = !preview;
+    wheelReaderChange.current = preview && detail ? entry.id : null;
+    setPreviewPoint(preview || (detail && readingOrigin.current ? previewPoint : null));
+    // Replacing an already-open reader must not turn a wheel tap into Back or
+    // focus its off-screen heading. Only an explicit reading action does that.
+    setDetail(!preview || detail, entry);
     if (!preview && !detail) readingOrigin.current = null;
   }
   function overlap(choice: WheelChoice) {
@@ -84,15 +119,11 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
   }
   function readDetails() {
     readingOrigin.current = { x: scrollX, y: scrollY };
+    focusReader.current = true;
+    if (detail) focusHeading(heading.current);
     setDetail(true);
   }
-  function returnToChart() {
-    setDetail(false);
-    const origin = readingOrigin.current;
-    requestAnimationFrame(() => {
-      if (origin) { window.scrollTo(origin.x, origin.y); readButton.current?.focus({ preventScroll: true }); }
-    });
-  }
+  function returnToChart() { setDetail(false); }
   function browse() { readingOrigin.current = null; setChoices(null); setDetail(false); setFocusList(n => n + 1); }
   function entryButton(entry: Entry) {
     return <button type="button" className="explorer-entry" key={entry.id} data-entry={entry.id} onClick={() => choose(entry)}>
@@ -115,7 +146,7 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
     projection?.reason === 'historical_source' ? 'Patterns are unavailable for a historical source.' :
     'Patterns need established natal positions and aspects from an exact birth time.';
 
-  const preview = compact && previewPoint && (!detail || choices) ? <WheelPreview point={previewPoint}>
+  const preview = compact && previewPoint ? <WheelPreview point={previewPoint}>
     {choices ? <>
       <strong>Details at this point</strong>
       <label className="sr-only" htmlFor={`${chart.id}-overlap`}>Choose an overlapping detail</label>

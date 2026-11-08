@@ -51,6 +51,33 @@ it. Manual rename and owner/revision checks fence late results. Legacy titles
 remain legacy. Historical backfill requires explicit per-ID selection and scoped
 provider permission; there is no automatic historical batch in the browser.
 
+## On a phone
+
+Tap a natal wheel feature to highlight it and see its name without jumping down
+the page. If features overlap, choose one in the compact chooser. **Read details**
+opens the complete reader deliberately; **Back to chart** returns to your chart
+position. Keyboard controls and the directory still open details directly.
+
+Browser/Android Back and Forward follow the visited workspace, chart choices,
+person tabs, saved charts and detail reader. Back can close navigation/settings
+before leaving the underlying view. At the initial workspace, normal browser/PWA
+Back behavior is left intact; Kat does not force-close the app or intercept the
+keyboard's Back handling.
+
+If the browser keeps the page alive while you switch apps, drafts and view state
+stay in memory. On return Kat checks the session and refreshes saved reply status
+without resending a message. If saving was not confirmed, the existing **Retry
+this message** action still checks the same message ID; returning to the app is
+not an automatic retry. The composer adapts to the visible viewport while the
+page remains the scroll owner.
+
+Reloading, closing the page or the OS discarding it is different: unsent drafts
+and the navigation journey are not persistently saved. Sign in and reopen saved
+conversations from the archive; do not assume an unsent draft was archived. Private
+offline caching and background delivery are not provided. Actual Android
+installed-app/keyboard behavior still needs device verification; synthetic browser
+checks do not guarantee background execution or protection against OS eviction.
+
 ## People and birth details
 
 A person may have only a name and no calculable chart. Generate chart explicitly

@@ -55,6 +55,54 @@ or failure text. Do not add menu roles requiring arrow-key behavior to a disclos
 Keep the existing SVG sanitization, palette policies, embedded fonts and captured
 result provenance. A single CSV or JSON export stays a direct action.
 
+## Phone navigation and retained-page continuity
+
+`workspace-navigation.ts` is still the view authority. `browser-history.ts` journals
+its visited routes for native Back/Forward; `NestedNavigation` lets person tabs,
+library results and the existing natal reader participate in that same journey.
+There is one popstate listener, not a second reader/router stack. Transient request
+states, data refreshes and wheel highlights do not add visits. Explicit closing
+can return to a matching ancestor; ordinary tab selection remains forward
+navigation so a delayed pop cannot steal keyboard focus. Selecting a destination
+from the mobile drawer replaces the drawer visit. No dummy root entries, global
+Back/keyboard interception or programmatic PWA exit are added.
+
+Browser history state contains only two opaque session/entry tokens. Resource IDs,
+reading positions, source-return drafts and return intents stay in a session-local
+RAM journal; no private draft/content/credential is placed in a URL, history state
+or persistent store. Every native restoration validates the current authenticated
+session. Changed destinations re-resolve people/conversations; library readers
+fetch their immutable result again and do not display cached birth metadata before
+that read succeeds. Deleted/unauthorized destinations fail closed; newer user
+navigation supersedes an outstanding restoration. Logout/session change discards
+the entire journal and component memory. Explicit sidebar person visits retain
+existing fresh-reader behavior; native restoration can restore a visited reader.
+
+Phone pointer/touch selection uses a non-modal `WheelPreview`, immediately after
+the SVG and before notation/export. It reserves its measured layout space, uses
+SVG coordinates and visual-viewport/header bounds, and never scrolls on selection.
+At enlarged text sizes optional preview degree/member text yields to the complete
+name and Read details action; complete facts remain in the existing reader.
+Overlaps use a native select plus explicit selection. Keyboard/directory activation
+still enters the reader directly. The preview is outside the exported SVG.
+
+On retained-page foreground/BFCache return, verify the session, then reconcile
+saved conversation metadata and already loaded archive pages. Reconnect only the
+existing archived turn/event cursor, never POST a message or start inference.
+Uncertain/pending acknowledgements remain under the existing explicit same-ID
+retry contract. Preserve loaded pages, drafts and older-message position. The
+composer uses visualViewport height/offset for its sticky inset and tall-editor
+flow threshold, with safe-area padding; the document remains the scroll owner.
+
+Focused checks live in `tests/navigation/pwa.spec.ts`,
+`tests/continuity/pwa.spec.ts` and `tests/charts/exploration.spec.ts`. Keep existing
+private-record, chart-return, archive paging, uncertain-ACK and provider-continuation
+regressions in combined acceptance. Chromium visibility/viewport simulation is
+not Android hardware Back, installed-PWA lifecycle or a real soft keyboard.
+Actual device acceptance requires a separately permitted device path. Reload or
+OS discard starts a fresh navigation/draft lifetime: no private offline cache,
+service worker, automatic resend or persistent draft recovery is promised.
+
 ## Validate without touching a running app
 
 From the repository root, with existing Python/Node/Chromium dependencies and

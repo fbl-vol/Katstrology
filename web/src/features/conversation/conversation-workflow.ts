@@ -56,22 +56,41 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
     setSelection((personIds ? (Array.isArray(personIds) ? personIds : [personIds]) : []).map(person_id => ({ person_id })));
   }
 
+  async function resumeConversation(): Promise<void> {
+    if (!conversation || person || skyOpen || chartHub || settingsOpen || archive.hasPending || preparingSend) return;
+    const route = navigation.version.current;
+    const thread = await api<Conversation>(`conversations/${encodeURIComponent(conversation.id)}`);
+    if (!navigation.isCurrent(route)) return;
+    navigation.updateConversation(current => current?.id === thread.id ? thread : current);
+    await archive.reconcile();
+  }
+
+  async function restoreConversation(thread: Conversation | null, route: number): Promise<void> {
+    invalidateSubmission();
+    if (!thread) {
+      archive.reset(); setSelection([]); setDiscuss(null); setEditing(null); pendingConversationId.current = '';
+      return;
+    }
+    await archive.open(thread.id);
+    if (!navigation.isCurrent(route)) return;
+    let selected: Selection[] = thread.people.map(item => ({ person_id: item.person_id || item.id! }));
+    if (thread.active_head) {
+      const active = await api<Turn>(`conversations/${thread.id}/turns/${thread.active_head}`);
+      selected = active.selected_people.map(item => ({ person_id: item.person_id }));
+    }
+    if (!navigation.isCurrent(route)) return;
+    setSelection(selected); setDiscuss(null); setEditing(null);
+  }
+
   async function openConversation(id: string) {
     const version = navigation.beginConversation();
     try {
       setNotice('');
       const thread = await api<Conversation>(`conversations/${id}`);
       if (!navigation.isCurrent(version)) return;
-      await archive.open(id);
+      await restoreConversation(thread, version);
       if (!navigation.isCurrent(version)) return;
-      invalidateSubmission();
-      let selected: Selection[] = thread.people.map(item => ({ person_id: item.person_id || item.id! }));
-      if (thread.active_head) {
-        const active = await api<Turn>(`conversations/${id}/turns/${thread.active_head}`);
-        selected = active.selected_people.map(item => ({ person_id: item.person_id }));
-      }
-      if (!navigation.isCurrent(version)) return;
-      navigation.showConversation(thread); setSelection(selected); setDiscuss(null); setEditing(null);
+      navigation.showConversation(thread);
     } catch { if (navigation.isCurrent(version)) setNotice('Conversation could not be opened. Your current draft remains here.'); }
   }
 
@@ -266,6 +285,6 @@ export function useConversationWorkflow({ workspace, navigation, discovery, conn
   return { archive, message, setMessage, selection, setSelection, discuss, setDiscuss, editing,
     cancelEdit: () => { setEditing(null); setMessage(''); }, pendingConversationId, preparingSend,
     headNotLoaded, turnActions, invalidateSubmission, resetDraft, allConversations, newChat,
-    openConversation, discussSavedResult, sendText, retryPending, renameConversation,
+    openConversation, restoreConversation, resumeConversation, discussSavedResult, sendText, retryPending, renameConversation,
     deleteConversation, exportConversation, stopResponse };
 }

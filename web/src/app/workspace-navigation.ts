@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type SetStateAction } from 'react';
+import { api } from '../shared/api';
+import { useBrowserHistory } from './browser-history';
 import type { Conversation } from '../features/conversation/conversation';
 import type { Person } from '../features/people/people';
 import type { ChartChoice } from '../features/charts/chart-hub';
@@ -17,6 +19,7 @@ type Navigation = {
   profileChildFocus: boolean; profileEditorPersonId: string | null; profileEditorRequest: number;
   advancedDraft: AdvancedDraft | null; planetaryDraft: PlanetaryReturnDraft | null;
   chartOriginId: string | null; libraryRevision: number;
+  nested: Record<string, string>;
 };
 
 const initial: Navigation = {
@@ -24,12 +27,34 @@ const initial: Navigation = {
   settingsOpen: false, drawer: false, filterPersonId: null, profileFromHub: false,
   profileChartFocus: false, profileChildFocus: false, profileEditorPersonId: null,
   profileEditorRequest: 0, advancedDraft: null, planetaryDraft: null,
-  chartOriginId: null, libraryRevision: 0,
+  chartOriginId: null, libraryRevision: 0, nested: {},
 };
 
+function routeOf(view: Navigation, memory?: { intent: ReturnIntent | null; previousPersonId: string | null; previousFilter: string | null }) {
+  const { person, conversation, libraryRevision: _library, profileEditorRequest: _editor, ...route } = view;
+  // Drafts/return intents stay in this mounted session's RAM journal, never in
+  // window.history.state, a URL or persistent storage. People are re-resolved.
+  return { ...route, nested: Object.fromEntries(Object.entries(route.nested).sort(([a], [b]) => a.localeCompare(b))),
+    personId: person?.id ?? null, conversationId: conversation?.id ?? null,
+    returnIntent: memory?.intent ?? null, previousPersonId: memory?.previousPersonId ?? null,
+    previousFilter: memory?.previousFilter ?? null };
+}
+type Route = ReturnType<typeof routeOf>;
+function destination(route: Route) {
+  return JSON.stringify([route.personId, route.conversationId, route.chartHub, route.skyOpen]);
+}
+
 /** Owns view/overlay transitions and return intents, not chat transport or thread creation. */
-export function useWorkspaceNavigation(effects: { resetArchive: () => void; invalidateSubmission: () => void }) {
-  const [view, setView] = useState<Navigation>(initial);
+export function useWorkspaceNavigation(effects: { resetArchive: () => void; invalidateSubmission: () => void;
+  restoreConversation: (conversation: Conversation | null, version: number) => Promise<void>;
+  validateSession: () => Promise<void>;
+  unavailable: (error: unknown) => void;
+}) {
+  const [view, setViewState] = useState<Navigation>(initial);
+  const [restoring, setRestoring] = useState(false);
+  const viewRef = useRef(view); viewRef.current = view;
+  const pendingRoute = useRef<number | null>(null);
+  const restorationVersion = useRef(0);
   const effectsRef = useRef(effects);
   effectsRef.current = effects;
   const version = useRef(0);
@@ -37,6 +62,66 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
   const previousFilter = useRef<string | null>(null);
   const returnIntent = useRef<ReturnIntent | null>(null);
   const focusProfile = useRef<{ id: string; navigation: number } | null>(null);
+
+  function snapshot(view: Navigation) {
+    return routeOf(view, { intent: returnIntent.current, previousPersonId: previousPerson.current?.id ?? null,
+      previousFilter: previousFilter.current });
+  }
+
+  async function restore(route: Route): Promise<Route> {
+    const current = viewRef.current;
+    const restoration = ++restorationVersion.current;
+    const live = () => restoration === restorationVersion.current && isCurrent(request);
+    const sameDestination = destination(route) === destination(routeOf(current));
+    const request = sameDestination && pendingRoute.current !== version.current ? version.current : ++version.current;
+    pendingRoute.current = null;
+    setRestoring(true);
+    try {
+      await effectsRef.current.validateSession();
+      if (!live()) return routeOf(viewRef.current);
+      let person = current.person, conversation = current.conversation;
+      if (!sameDestination) {
+        person = route.personId ? await api<Person>(`people/${encodeURIComponent(route.personId)}`) : null;
+        conversation = route.conversationId ? await api<Conversation>(`conversations/${encodeURIComponent(route.conversationId)}`) : null;
+        for (const id of new Set([route.chartOriginId, route.filterPersonId]))
+          if (id && id !== route.personId) await api<Person>(`people/${encodeURIComponent(id)}`);
+      }
+      let priorPerson = previousPerson.current;
+      if (priorPerson?.id !== route.previousPersonId)
+        priorPerson = route.previousPersonId ? await api<Person>(`people/${encodeURIComponent(route.previousPersonId)}`) : null;
+      if (!live()) return snapshot(viewRef.current);
+      previousPerson.current = priorPerson; previousFilter.current = route.previousFilter;
+      returnIntent.current = route.returnIntent;
+      const next: Navigation = { ...current, ...route, person, conversation,
+        profileEditorRequest: current.profileEditorRequest + (route.profileEditorPersonId !== current.profileEditorPersonId ? 1 : 0) };
+      setViewState(next);
+      if (conversation?.id !== current.conversation?.id) await effectsRef.current.restoreConversation(conversation, request);
+      if (!live()) return routeOf(viewRef.current);
+      return snapshot(next);
+    } catch (error) {
+      if (!live()) return routeOf(viewRef.current);
+      leaveChat(); returnIntent.current = null; previousPerson.current = null; previousFilter.current = null;
+      setViewState(initial); effectsRef.current.unavailable(error);
+      return routeOf(initial);
+    } finally { if (restoration === restorationVersion.current) setRestoring(false); }
+  }
+  const journey = useBrowserHistory(snapshot(view), routeOf(initial), pendingRoute.current === version.current,
+    restore, (previous, next) => (previous.drawer && !next.drawer) ||
+      (!!previous.nested['create-person'] && !next.nested['create-person'] && destination(previous) !== destination(next)));
+  function setView(update: SetStateAction<Navigation>) {
+    restorationVersion.current++; setRestoring(false);
+    journey.cancelRestoration(); journey.remember(); setViewState(update);
+  }
+  function changeNested(key: string, value: string | null, replace = false) {
+    if ((view.nested[key] ?? null) === value) return;
+    if (replace) journey.replaceNext();
+    if (value === null && !key.startsWith('person-tab:')) journey.backNext();
+    setView(current => {
+      const nested = { ...current.nested };
+      if (value === null) delete nested[key]; else nested[key] = value;
+      return { ...current, nested };
+    });
+  }
 
   function leaveChat() {
     effectsRef.current.resetArchive();
@@ -70,6 +155,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
 
   function beginConversation() {
     const request = ++version.current;
+    pendingRoute.current = request;
     returnIntent.current = null;
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, chartHub: null, chartOriginId: null }));
     return request;
@@ -78,6 +164,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
   function isCurrent(request: number) { return request === version.current; }
 
   function showConversation(thread: Conversation) {
+    pendingRoute.current = null;
     setView(current => ({ ...current, conversation: thread, person: null, drawer: false }));
   }
 
@@ -96,16 +183,19 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     } else setView(current => ({ ...current, chartHub: choice }));
   }
 
-  function backToChartChoices() { setView(current => ({ ...current, chartHub: 'hub' })); }
+  function backToChartChoices() { journey.backNext(); setView(current => ({ ...current, chartHub: 'hub' })); }
   function closeChartHub() {
+    journey.backNext();
     returnIntent.current = null;
     setView(current => ({ ...current, chartHub: null, chartOriginId: null,
       libraryRevision: current.libraryRevision + 1 }));
   }
   function closeTechnique() {
+    journey.backNext();
     setView(current => ({ ...current, chartHub: 'hub', advancedDraft: null, planetaryDraft: null }));
   }
   function closeSky() {
+    journey.backNext();
     setView(current => ({ ...current, skyOpen: false, skyFromHub: false,
       chartHub: current.skyFromHub ? 'hub' : current.chartHub }));
   }
@@ -121,11 +211,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
 
   function beginHubPerson() {
     const request = ++version.current;
+    pendingRoute.current = request;
     setView(current => ({ ...current, settingsOpen: false }));
     return request;
   }
 
   function showHubPerson(person: Person, child: boolean) {
+    pendingRoute.current = null;
     setView(current => ({ ...current, person, profileEditorPersonId: person.id,
       profileEditorRequest: current.profileEditorRequest + 1, profileChildFocus: child,
       profileFromHub: true, profileChartFocus: false, filterPersonId: person.id,
@@ -137,13 +229,16 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     returnIntent.current = { kind: 'chart', choice };
   }
   function createNatalFromAdvanced(choice: 'solar_return' | 'lunar_return', draft: AdvancedDraft) {
+    journey.remember({ ...snapshot(view), advancedDraft: draft });
     returnIntent.current = { kind: 'advanced', choice, draft };
   }
   function createNatalFromPlanetary(draft: PlanetaryReturnDraft) {
+    journey.remember({ ...snapshot(view), planetaryDraft: draft });
     returnIntent.current = { kind: 'planetary', draft };
   }
 
   function returnFromPerson() {
+    journey.backNext();
     version.current++;
     const resume = returnIntent.current;
     returnIntent.current = null;
@@ -160,17 +255,21 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
 
   function beginSidebarPerson(id: string) {
     const request = ++version.current;
+    pendingRoute.current = request;
     returnIntent.current = null;
     focusProfile.current = { id, navigation: request };
     effectsRef.current.resetArchive();
     setView(current => ({ ...current, settingsOpen: false, skyOpen: false, skyFromHub: false,
       chartHub: null, chartOriginId: null, person: null, profileEditorPersonId: null, profileFromHub: false,
       profileChartFocus: false, profileChildFocus: false, filterPersonId: id,
-      conversation: null, drawer: false }));
+      conversation: null, drawer: false,
+      nested: Object.fromEntries(Object.entries(current.nested).filter(([key]) =>
+        !key.startsWith('natal:') && !key.startsWith('library:') && !key.startsWith('library-history:'))) }));
     return request;
   }
 
   function showSidebarPerson(person: Person) {
+    pendingRoute.current = null;
     setView(current => ({ ...current, person }));
   }
 
@@ -198,20 +297,20 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
       person: null, conversation: null, drawer: false, chartOriginId: null }));
   }
 
-  return { ...view, version, focusProfile, isCurrent, signOut, allConversations, newConversation,
+  return { ...view, restoring, nestedNavigation: { state: view.nested, change: changeNested }, version, focusProfile, isCurrent, signOut, allConversations, newConversation,
     beginConversation, showConversation, openChartHub, selectChart, backToChartChoices,
     closeChartHub, closeTechnique, closeSky, openContextChart, beginHubPerson, showHubPerson,
     abandonReturn, createNatalForTechnique, createNatalFromAdvanced, createNatalFromPlanetary, returnFromPerson,
     beginSidebarPerson, showSidebarPerson, createdPerson, personDeleted, discussResult,
     openDrawer: () => setView(current => ({ ...current, drawer: true })),
-    closeDrawer: () => setView(current => ({ ...current, drawer: false })),
+    closeDrawer: () => { journey.backNext(); setView(current => ({ ...current, drawer: false })); },
     openSettings: () => setView(current => ({ ...current, settingsOpen: true, drawer: false })),
-    closeSettings: () => setView(current => ({ ...current, settingsOpen: false })),
+    closeSettings: () => { journey.backNext(); setView(current => ({ ...current, settingsOpen: false })); },
     openPersonDialog: () => setView(current => ({ ...current, settingsOpen: false, drawer: false })),
     clearPersonFilter: () => setView(current => ({ ...current, filterPersonId: null })),
     updatePerson: (update: (current: Person | null) => Person | null) =>
-      setView(current => ({ ...current, person: update(current.person) })),
+      setViewState(current => ({ ...current, person: update(current.person) })),
     updateConversation: (update: (current: Conversation | null) => Conversation | null) =>
-      setView(current => ({ ...current, conversation: update(current.conversation) })),
+      setViewState(current => ({ ...current, conversation: update(current.conversation) })),
   };
 }

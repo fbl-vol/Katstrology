@@ -4,11 +4,12 @@ import { BirthWorkflow, type Generation } from './birth-workflow';
 import { NatalChart, type Chart } from '../charts/natal';
 import { InsightNotebook } from './insights';
 import { PersonTiming } from './person-timing';
-import { ChartLibrary } from '../charts/chart-library';
+import { ChartLibrary, type LibraryMemory } from '../charts/chart-library';
+import { useNestedNavigation } from '../../shared/nested-navigation';
 import { PersonRecords } from './person-records';
 import { PersonalContextPane, type ContextMemory } from './personal-context';
 import { PersonalProfile, type ProfileMemory } from './personal-profile';
-export type PersonMemory = { tab?: 'overview' | 'context' | 'charts' | 'saved'; context: ContextMemory; profile: ProfileMemory };
+export type PersonMemory = { tab?: 'overview' | 'context' | 'charts' | 'saved'; context: ContextMemory; profile: ProfileMemory; charts?: LibraryMemory };
 import { AstrologyHelp } from '../charts/astrology-help';
 import type { SelectedResult } from '../conversation/archive';
 
@@ -82,7 +83,11 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
   libraryRevision?: number; childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
 }) {
   const tabsId = useId();
-  const [tab, setTab] = useState<'overview' | 'context' | 'charts' | 'saved'>(initialEditorOpen ? 'charts' : initialTab === 'charts' ? 'charts' : memory.tab ?? initialTab);
+  const tabNavigation = useNestedNavigation(`person-tab:${person.id}`);
+  const defaultTab = initialEditorOpen || initialTab === 'charts' ? 'charts' : initialTab;
+  const tab = (tabNavigation.value ?? defaultTab) as 'overview' | 'context' | 'charts' | 'saved';
+  function setTab(value: typeof tab) { if (value !== tab) tabNavigation.change(value === defaultTab ? null : value); }
+  memory.charts ??= { results: {} };
   memory.tab = tab;
   const [natalRequest, setNatalRequest] = useState(initialTab === 'charts' && !initialEditorOpen ? 1 : 0);
   const [savedSection, setSavedSection] = useState<'insights' | 'later' | 'journal'>('insights');
@@ -197,7 +202,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       <PersonalContextPane workspace={workspace} personId={person.id} active={tab === 'context'} memory={memory.context} />
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
-      {!editorOpen && <ChartLibrary key={person.id} workspace={workspace} personId={person.id} refreshRevision={libraryRevision} activeChartId={activeChart?.id || person.active_chart_id}
+      {!editorOpen && <ChartLibrary key={person.id} memory={memory.charts} workspace={workspace} personId={person.id} refreshRevision={libraryRevision} activeChartId={activeChart?.id || person.active_chart_id}
         enabled={tab === 'charts'} natalRequest={natalRequest} onCreate={createChart || openEditor} onCreateNatal={openEditor} onDiscuss={discussSavedResult} />}
       {editorOpen && <>
       <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>

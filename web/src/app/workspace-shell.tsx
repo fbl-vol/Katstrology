@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api, type Workspace } from '../shared/api';
+import { api, ApiError, type Workspace } from '../shared/api';
+import { NestedNavigation } from '../shared/nested-navigation';
 import { useConversationWorkflow } from '../features/conversation/conversation-workflow';
 import { LocalPendingMessage } from '../features/conversation/local-pending';
 import { ConversationBrowseList, ScopeChips, ScopePicker } from '../features/conversation/conversation';
@@ -28,14 +29,25 @@ import { useConversationDiscovery } from '../features/conversation/conversation-
 export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspace; onSignedOut: () => void }) {
   const [notice, setNotice] = useState('');
   const [people, setPeople] = useState<Person[]>([]);
+  async function validateSession() {
+    const session = await api<Workspace>('session');
+    if (session.owner !== workspace.owner || session.csrf !== workspace.csrf) throw new ApiError(401, 'session_changed');
+  }
   const navigation = useWorkspaceNavigation({ resetArchive: () => workflow.archive.reset(),
-    invalidateSubmission: () => workflow.invalidateSubmission() });
+    invalidateSubmission: () => workflow.invalidateSubmission(),
+    restoreConversation: (thread, version): Promise<void> => workflow.restoreConversation(thread, version), validateSession,
+    unavailable: error => {
+      if (error instanceof ApiError && error.status === 401) onSignedOut();
+      else setNotice('That saved view is no longer available. Your unsent draft remains here.');
+    } });
   const { drawer, person, skyOpen, skyFromHub, chartHub, profileChildFocus, profileFromHub,
     profileChartFocus, profileEditorRequest, profileEditorPersonId, settingsOpen,
     filterPersonId, conversation } = navigation;
   const navigationVersion = navigation.version;
-  const [personDialog, setPersonDialog] = useState(false);
-  const [scopePicker, setScopePicker] = useState(false);
+  const personDialog = navigation.nested['create-person'] === 'open';
+  const scopePicker = navigation.nested['scope-picker'] === 'open';
+  const setPersonDialog = (open: boolean) => navigation.nestedNavigation.change('create-person', open ? 'open' : null);
+  const setScopePicker = (open: boolean) => navigation.nestedNavigation.change('scope-picker', open ? 'open' : null);
   const discovery = useConversationDiscovery(workspace, navigation);
   const { conversations, searchQuery, setSearchQuery, searched, nextConversationOffset,
     listStatus } = discovery;
@@ -48,6 +60,27 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
     pendingConversationId, preparingSend, headNotLoaded, turnActions, newChat, openConversation,
     discussSavedResult, sendText, retryPending, renameConversation, deleteConversation,
     exportConversation } = workflow;
+  const workflowRef = useRef(workflow); workflowRef.current = workflow;
+  useEffect(() => {
+    let live = true, checking = false;
+    async function resume() {
+      if (document.visibilityState !== 'visible' || checking) return;
+      checking = true;
+      try {
+        await validateSession();
+        if (!live) return;
+        await workflowRef.current.resumeConversation();
+      } catch (error) {
+        if (!live) return;
+        if (error instanceof ApiError && error.status === 401) onSignedOut();
+        else setNotice('Your workspace could not be checked after returning. Your draft is still here; no message was resent.');
+      } finally { checking = false; }
+    }
+    const visibility = () => { void resume(); };
+    const pageShow = (event: PageTransitionEvent) => { if (event.persisted) void resume(); };
+    document.addEventListener('visibilitychange', visibility); window.addEventListener('pageshow', pageShow);
+    return () => { live = false; document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pageshow', pageShow); };
+  }, [workspace.owner, workspace.csrf]);
   const chatComposer = useGrowingComposer(message);
   const menuButton = useRef<HTMLButtonElement>(null);
   const chartNavButton = useRef<HTMLButtonElement>(null);
@@ -202,7 +235,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
   const needsNatal = chartOrigin && !chartOrigin.active_chart_id && chartHub &&
     !['hub', 'natal', 'child'].includes(chartHub);
 
-  return <div className="app">
+  return <NestedNavigation.Provider value={navigation.nestedNavigation}><div className="app">
     {drawer && <button className="drawer-scrim" aria-label="Close navigation" onClick={closeDrawer} />}
     <aside className={`sidebar${drawer ? ' open' : ''}`} aria-label="Workspace navigation" onKeyDown={drawerKeys}>
       <div className="brand-row"><button className="brand" type="button" aria-label="katstrology. — New conversation" onClick={() => newChat()}><BrandKitten /><span>katstrology.</span></button><button className="side-close" ref={closeButton} aria-label="Close navigation" onClick={closeDrawer}>×</button></div>
@@ -240,6 +273,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
           provider.status.registration === 'offline' ?
             provider.status.connected ? 'ChatGPT account saved' : 'Chat not connected' :
             provider.status.connected ? 'ChatGPT connected' : 'Connect ChatGPT plan to send'}</span></header>
+      {navigation.restoring && <p className="navigation-status" role="status">Opening saved view…</p>}
       {settingsOpen && <SettingsView workspace={workspace} provider={provider} onClose={closeSettings} />}
       <div className={settingsOpen ? 'settings-hidden' : 'settings-visible'} inert={settingsOpen}>
       {needsNatal ? <section className="chart-hub" aria-label="Natal required">
@@ -368,6 +402,8 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
         {provider.error && <p className="error" role="alert">{provider.error}</p>}
         {archive.busy && archive.turns.some(turn => turn.status === 'open') && conversation && <button className="quiet-action" onClick={workflow.stopResponse}>Stop response</button>}
         {archive.sendError && <p className="error" role="alert">{archive.sendError}</p>}
+        {archive.resumeError && <p className="error" role="status">{archive.resumeError} <button type="button"
+          onClick={() => void archive.reconcile()}>Retry loading saved replies</button></p>}
         {notice && <p className="error" role="alert">{notice}</p>}</div>
       </section>}
       </div>
@@ -388,6 +424,6 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
     }} />
     {scopePicker && <ScopePicker people={people} selected={selection} onClose={() => setScopePicker(false)}
       onApply={setSelection} />}
-  </div>;
+  </div></NestedNavigation.Provider>;
 }
 

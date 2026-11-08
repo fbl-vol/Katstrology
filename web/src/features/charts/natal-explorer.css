@@ -33,7 +33,7 @@
 .explorer-panel .explorer-entry { border-radius: 0; border-inline: 0; border-top: 0; background: transparent; }
 .explorer-panel h3 { font-family: Georgia, serif; font-weight: normal; }
 .natal-explorer .natal-wheel { min-width: 0; width: 100%; }
-.exploration-target { cursor: pointer; }
+.exploration-target { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .exploration-target:focus-visible { outline: none; }
 .exploration-target:focus-visible > :last-child { stroke: var(--wheel-angle, #304f3b); stroke-dasharray: 3 3; stroke-width: 2; }
 .exploration-target:focus-visible > polygon { fill: var(--wheel-aspect-cool, #487b72); fill-opacity: .12; }
@@ -49,6 +49,7 @@
 .wheel-preview-selection > div { flex: 1 1 10rem; min-width: 0; }
 .natal-wheel-frame .wheel-preview button { min-height: 44px; font-size: var(--text-support); margin: 0; }
 .wheel-preview-selection button { max-width: 8em; }
+.wheel-preview-compact .wheel-preview-selection small { display: none; }
 .wheel-preview :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1050px) { .natal-explorer { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .explorer-panel { padding: 16px; } .natal-explorer { gap: 16px; } }

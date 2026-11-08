@@ -42,8 +42,8 @@ export function ChartLibraryReader({ workspace, selected, onBack, onDiscuss, isA
   return <section className="library-reader" aria-label="Saved chart reader" data-result-id={selected.id}>
     <button type="button" onClick={onBack}>← Back to chart library</button>
     <div className={selected.technique === 'natal' ? 'profile-chart-heading' : undefined}><div>
-      <h2 ref={heading} tabIndex={-1}>{selected.technique === 'natal' ? isActiveNatal ? 'Current birth chart' : 'Saved birth chart' : libraryTitles[selected.technique]}</h2>
-      {selected.technique === 'natal' && <p>{libraryDate(selected)} · {selected.date ? `saved birth time ${selected.date.slice(11, 16)}` : 'birth time unknown'}.</p>}
+      <h2 ref={heading} tabIndex={-1}>{!chart && !saved ? 'Saved chart' : selected.technique === 'natal' ? isActiveNatal ? 'Current birth chart' : 'Saved birth chart' : libraryTitles[selected.technique]}</h2>
+      {chart && selected.technique === 'natal' && <p>{libraryDate(selected)} · {selected.date ? `saved birth time ${selected.date.slice(11, 16)}` : 'birth time unknown'}.</p>}
     </div></div>
     {error ? <div role="alert"><p>This saved result could not be loaded. Nothing was recalculated.</p>
       <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry saved result</button></div> :
