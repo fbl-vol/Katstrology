@@ -111,7 +111,7 @@ class Tombstones:
                           {'owner', 'person', 'journal_entry'},
                           {'owner', 'person', 'context_entry'},
                           {'owner', 'person', 'person_link'},
-                          {'owner', 'context_consent_revoked'})
+                          {'owner', 'context_consent_revoked'}, {'owner', 'context_self_revoked'})
                 if not isinstance(record, dict) or (set(record) not in single and
                     (set(record) != {'owner', 'conversations'} or
                      not isinstance(record['conversations'], list) or
@@ -154,7 +154,14 @@ class Tombstones:
         for record in self._records():
             owner = store._id(record['owner'])
             with store.db.transaction():
-                if 'context_consent_revoked' in record:
+                if 'context_self_revoked' in record:
+                    version = record['context_self_revoked']
+                    if not isinstance(version, str) or not version.isdigit() or not 1 <= int(version) <= 2147483647:
+                        raise RuntimeError('Invalid self-association revocation')
+                    store.db.execute('''INSERT INTO personal_context_self VALUES (%s,NULL,%s)
+                        ON CONFLICT(owner_id) DO UPDATE SET person_id=NULL,version=excluded.version
+                        WHERE personal_context_self.version < excluded.version''', (owner, int(version)))
+                elif 'context_consent_revoked' in record:
                     version = record['context_consent_revoked']
                     if not isinstance(version, str) or not version.isdigit() or not 1 <= int(version) <= 2147483647:
                         raise RuntimeError('Invalid context consent revocation')
@@ -285,6 +292,14 @@ class Tombstones:
             raise ValueError('Delete conversations containing this person selection or evidence first')
         store._blocked = True
         self._append({'owner': owner, 'person': person_id})
+        self.reconcile(store)
+
+    def revoke_context_self(self, store, session, version):
+        owner = store.owner(session)
+        if type(version) is not int or not 1 <= version <= 2147483647:
+            raise ValueError('Invalid self-association version')
+        store._blocked = True
+        self._append({'owner': owner, 'context_self_revoked': str(version)})
         self.reconcile(store)
 
     def revoke_context_consent(self, store, session, version):

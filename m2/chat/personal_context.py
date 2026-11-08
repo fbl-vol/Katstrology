@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 
 from m2.people.personal_context import PersonalContext, ContextConflict
 from m2.people.person_records import _person
+from m2.people.self_association import association
 from m2.chat.context_candidates import UPDATE_TOOL, candidate, correction_target, PROPERTIES
 
 
@@ -79,6 +80,10 @@ def snapshot_current(store, session, payload):
         return True
     if preference(store, session) != personal['consent']:
         return False
+    speaker = personal.get('self_association', {})
+    if speaker.get('status') == 'eligible' and association(store, session) != {
+            key: speaker.get(key) for key in ('person_id', 'version')}:
+        return False
     owner = store.owner(session)
     for entry in personal['entries']:
         row = store.db.execute('''SELECT version,lifecycle,source FROM personal_context
@@ -100,6 +105,10 @@ def projection(store, session, selected, prompt, clock_anchor):
               'selection': 'Selected people only; newest 500 candidates per person ranked by topic words, ongoing circumstances and nearby dates; maximum 8 entries / 8000 bytes'}
     if not consent['enabled']:
         return result
+    speaker = association(store, session)
+    eligible = speaker['person_id'] in {person_id for person_id, _ in selected}
+    result['self_association'] = {**speaker, 'person_id': speaker['person_id'] if eligible else None,
+                                  'status': 'eligible' if eligible else 'unselected' if speaker['person_id'] else 'not_associated'}
     owner = store.owner(session)
     words = set(re.findall(r'\w{3,}', prompt.lower()))
     today = date.fromisoformat(clock_anchor['reporting']['date']) if clock_anchor else None
@@ -157,7 +166,13 @@ def stage(store, session, conv_id, turn_id, args):
     person = store.db.execute('SELECT name FROM people WHERE owner_id=%s AND id=%s', (owner, person_id)).fetchone()
     names = store.db.execute('''SELECT name FROM people WHERE owner_id=%s AND id=ANY(%s)''',
         (owner, [row['person_id'] for row in turn['selected_people']])).fetchall()
-    content = candidate(payload['content'], args, person['name'], [row['name'] for row in names])
+    speaker = snapshot.get('self_association', {})
+    associated = args['attribution'] == 'associated_self'
+    if associated and (speaker.get('status') != 'eligible' or speaker.get('person_id') != person_id
+                       or association(store, session) != {key: speaker.get(key) for key in ('person_id', 'version')}):
+        raise PermissionError('Current explicit self association required; choose it in Personal context settings')
+    content = candidate(payload['content'], args, person['name'], [row['name'] for row in names],
+                        associated_self=associated)
     statement = args['statement']['text']
     if args['entry_id'] is not None:
         store._id(args['entry_id'])
@@ -176,6 +191,8 @@ def stage(store, session, conv_id, turn_id, args):
         raise ContextConflict('Removed source cannot recreate this entry')
     source = {'kind': 'conversation', 'conversation_id': conv_id, 'turn_id': turn_id,
               'revision': 0, 'statement': statement, 'evidence': args}
+    if associated:
+        source['self_association'] = {key: speaker[key] for key in ('person_id', 'version')}
     old = store.db.execute('''SELECT entry_id,expected_version,content,source FROM context_update_stages
         WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND id=%s''', (owner, conv_id, turn_id, digest)).fetchone()
     if old and old != {'entry_id': entry_id, 'expected_version': args['expected_version'],
@@ -203,7 +220,9 @@ def finalize(store, session, conv_id, turn_id, successful):
     consent = preference(store, session)
     for row in rows:
         outcome = 'discarded'
-        if successful and consent == {'enabled': True, 'version': row['consent_version']}:
+        speaker = row['source'].get('self_association')
+        identity_current = speaker is None or association(store, session) == speaker
+        if successful and identity_current and consent == {'enabled': True, 'version': row['consent_version']}:
             try:
                 with store.db.transaction():
                     PersonalContext(store).save(session, row['person_id'], row['entry_id'],
@@ -217,5 +236,5 @@ def finalize(store, session, conv_id, turn_id, successful):
         store.db.execute('''UPDATE context_update_stages SET outcome=%s
             WHERE owner_id=%s AND conversation_id=%s AND turn_id=%s AND id=%s''',
             (outcome, owner, conv_id, turn_id, row['id']))
-        outcomes.append({'entry_id': row['entry_id'], 'outcome': outcome})
+        outcomes.append({'entry_id': row['entry_id'], 'person_id': row['person_id'], 'outcome': outcome})
     return outcomes

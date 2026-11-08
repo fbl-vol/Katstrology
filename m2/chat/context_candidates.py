@@ -16,7 +16,7 @@ PROPERTIES = {
     'identity': SPAN,
     'context': SPAN,
     'assessment': {'type': 'string', 'enum': ['asserted', 'uncertain', 'non_asserted']},
-    'attribution': {'type': 'string', 'enum': ['self_identification', 'named_person']},
+    'attribution': {'type': 'string', 'enum': ['self_identification', 'named_person', 'associated_self']},
     'intent': {'type': 'string', 'enum': ['add', 'correct']},
     # Empty for additions. Corrections require both a source discourse cue and
     # a source phrase identifying exactly one supplied old record in this group.
@@ -32,8 +32,18 @@ UPDATE_TOOL = {'type': 'function', 'name': 'stage_personal_context', 'strict': T
         'user message, exact Unicode offsets and text. Read ALL of it before assessing assertion force, '
         'identity and intent, including later retractions, negation, fiction, quotes and hypotheticals. '
         'Use asserted only for a direct unretracted user assertion, never a reference, sensitive inference '
-        'or instruction. Omit/clarify uncertainty. Statement and identity must be COMPLETE containing '
-        'sentences, preserving every qualifier. Multiple facts use separate candidates. '
+        'or instruction. Omit/clarify uncertainty. For associated_self only, the snapshot must contain an '
+        'eligible explicit self_association for this selected person. Selection or names never substitute. '
+        'An unambiguous ordinary omitted subject (Got married, joined a company) can refer to this speaker; '
+        'mixed/ambiguous speakers, hypothetical premises and sensitive inferences must not be attributed. '
+        'For associated_self, identity is the COMPLETE sentence envelope containing statement, including '
+        'any question. Statement is a complete asserted clause or adjacent clauses, delimited by commas, '
+        'semicolons, and/then/but, a following what/how/why/when/where/which question, or sentence boundaries. '
+        'Never trim a negation, condition, qualification '
+        'or retraction to manufacture a positive fact. Assess force against the ENTIRE message, not only '
+        'the proposed span. Preserve all relevant qualifiers and date wording. A chart question can follow '
+        'facts without making those facts questions. Multiple facts use separate candidates. '
+        'For legacy self_identification/named_person, statement and identity remain COMPLETE sentences. '
         'Self-identification must be an explicit opening introduction (Alex here or I am Alex); selection '
         'alone never establishes self. Named-person statements must start with that unique selected name. '
         'Only bounded locally attributed conversation is eligible; unsupported context must clarify. '
@@ -86,17 +96,53 @@ def source_units(prompt):
     return units
 
 
-def candidate(prompt, args, name, selected_names):
+def associated_statement(units, args):
+    """Bound source trimming, not semantic truth: the model assesses the full input.
+
+    A fact cannot start inside an arbitrary substring (e.g. after 'not' or
+    'reference says'). The original containing envelope and entire message stay
+    in evidence. Clause punctuation is not itself evidence of assertion force.
+    """
+    envelope = args['identity']
+    statement = args['statement']
+    if envelope not in units or not envelope['start'] <= statement['start'] < statement['end'] <= envelope['end']:
+        raise ValueError('Complete containing identity envelope required')
+    text = envelope['text']
+    separator = r'[,;]\s*|\s+\b(?:and|then|but)\b\s+'
+    if text.endswith('?'):
+        separator += r'|\s+(?=(?:what|how|why|when|where|which)\b)'
+    boundaries = list(re.finditer(separator, text, re.I))
+    starts = {envelope['start']}
+    ends = {envelope['end']}
+    for boundary in boundaries:
+        start = boundary.end()
+        # A comma followed by a conjunction is one boundary, not a new fact.
+        conjunction = re.match(r'(?:and|then|but)\s+', text[start:], re.I)
+        if conjunction:
+            start += conjunction.end()
+        starts.add(envelope['start'] + start)
+        ends.add(envelope['start'] + len(text[:boundary.start()].rstrip()))
+    if statement['start'] not in starts or statement['end'] not in ends or '?' in statement['text']:
+        raise ValueError('Complete assertion clause boundaries required')
+    # Unrelated framing outside the containing envelope is not discardable.
+    for unit in units:
+        if unit == envelope or unit['text'].endswith('?'):
+            continue
+        if not re.match(r'(?:I\b|I[\'’]m\b|My\b)', unit['text'], re.I) and not CORRECTION_CUE.match(unit['text']):
+            raise ValueError('Unattributed containing context requires clarification')
+
+
+def candidate(prompt, args, name, selected_names, associated_self=False):
     if not isinstance(args, dict) or set(args) != set(PROPERTIES):
         raise ValueError('Invalid typed personal-context candidate')
     statement = source_span(prompt, args['statement'])
-    identity = source_span(prompt, args['identity'])
+    identity = source_span(prompt, args['identity'], 4096 if associated_self else 1024)
     context = source_span(prompt, args['context'], 4096)
     if args['context']['start'] != 0 or args['context']['end'] != len(prompt) or context != prompt:
         raise ValueError('Complete current-user context required')
     if args['assessment'] != 'asserted':
         raise ValueError('Uncertain, retracted or non-asserted context requires clarification')
-    if args['attribution'] not in ('self_identification', 'named_person') or args['intent'] not in ('add', 'correct'):
+    if args['attribution'] not in ('self_identification', 'named_person', 'associated_self') or args['intent'] not in ('add', 'correct'):
         raise ValueError('Explicit attribution and intent required')
     if args['group'] not in GROUPS:
         raise ValueError('Invalid context group')
@@ -104,29 +150,35 @@ def candidate(prompt, args, name, selected_names):
         raise ValueError('Expected entry version required')
     if (args['intent'] == 'correct') != (args['entry_id'] is not None):
         raise ValueError('Corrections require an existing entry')
-    if sum(other.casefold() == name.casefold() for other in selected_names) != 1:
+    if not associated_self and sum(other.casefold() == name.casefold() for other in selected_names) != 1:
         raise ValueError('Person attribution is ambiguous')
     mentions = lambda text, value: re.search(r'(?<!\w)' + re.escape(value) + r'(?!\w)', text, re.I)
     if any(other.casefold() != name.casefold() and mentions(context, other) for other in selected_names):
         raise ValueError('Mixed person attribution requires clarification')
     units = source_units(context)
-    if args['statement'] not in units or args['identity'] not in units:
+    if args['attribution'] == 'associated_self':
+        if any(re.match(re.escape(other) + r'(?!\w)', statement, re.I) for other in selected_names):
+            raise ValueError('Explicit named subjects require named-person attribution, not self association')
+        if not associated_self:
+            raise ValueError('Explicit server-verified self association required')
+        associated_statement(units, args)
+    elif args['statement'] not in units or args['identity'] not in units:
         raise ValueError('Complete containing statement and identity sentences required')
-    if '?' in statement or '?' in identity:
+    if '?' in statement or (not associated_self and '?' in identity):
         raise ValueError('A question cannot establish identity or a fact')
     if args['attribution'] == 'self_identification':
         introduction = r'(?:' + re.escape(name) + r'\s+here|(?:I am|I\'m|I’m|My name is)\s+' + re.escape(name) + r')[.!\s]*'
         if args['identity'] != units[0] or not re.fullmatch(introduction, identity, re.I):
             raise ValueError('An explicit opening speaker introduction is required')
         subject = r'(?:I\b|I[\'’]m\b|My\b)'
-    else:
+    elif args['attribution'] == 'named_person':
         subject = re.escape(name) + r'\b'
         if args['identity'] != args['statement'] or not re.match(subject, statement, re.I):
             raise ValueError('Named-person statement must identify its subject')
     # Unattributed declarative framing cannot be silently dropped from the source
     # (e.g. a fictional preamble or a later "That last sentence is false"). This
     # is an eligibility bound, not proof that every first-person sentence is true.
-    for unit in units:
+    for unit in ([] if associated_self else units):
         text = unit['text']
         if unit == args['identity'] or text.endswith('?'):
             continue

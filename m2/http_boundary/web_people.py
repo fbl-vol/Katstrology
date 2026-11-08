@@ -255,6 +255,23 @@ async def context_preference(request):
         return json_response({'error': 'context_preference_conflict'}, 409)
 
 
+async def context_self(request):
+    from m2.people.self_association import association, set_association
+    session = await authorized(request, mutate=request.method != 'GET')
+    try:
+        if request.method == 'GET':
+            result = await request.app.state.runtime.call(lambda store, _: association(store, session))
+        else:
+            data = await json_body(request)
+            if set(data) != {'person_id', 'expected_version'}:
+                raise ValueError('Explicit self association required')
+            result = await request.app.state.runtime.call(lambda store, _: set_association(
+                store, session, data['person_id'], data['expected_version']))
+        return json_response(result)
+    except ContextConflict:
+        return json_response({'error': 'context_self_conflict'}, 409)
+
+
 async def person_picker(request):
     session = await authorized(request, mutate=True)
     data = await json_body(request)
@@ -325,6 +342,7 @@ async def personal_context(request):
 
 routes = [Route('/api/people/picker', person_picker, methods=['POST']),
           Route('/api/personal-context-preference', context_preference, methods=['GET', 'POST']),
+          Route('/api/personal-context-self', context_self, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/personal-profile', personal_profile, methods=['GET', 'POST']),
           Route('/api/people/{person_id}/context/search', personal_context_search, methods=['POST']),
           Route('/api/people/{person_id}/context', personal_context, methods=['GET', 'POST']),
