@@ -2,6 +2,9 @@
 from copy import deepcopy
 import json
 import os
+import glob
+import shutil
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -11,6 +14,7 @@ from deploy import qualification_evidence as evidence, qualify, release_ci
 from deploy.qualification_inventory import read_json
 from tests.deploy.test_qualification_inventory import discovery
 from tests.deploy.test_release_pipeline import synthetic_package
+from tests.deploy.test_workflow_contract import workflow
 
 
 class QualificationJoinTests(unittest.TestCase):
@@ -77,6 +81,59 @@ class QualificationJoinTests(unittest.TestCase):
         manifest = release_ci.prepare(self.receipt_path, {'project': 'kat-synthetic',
             'origin': 'https://example.invalid', 'loopback_port': 28765, 'target_sha256': 'a' * 64}, 12345)
         self.assertEqual(manifest['plan']['artifact']['image_archive_sha256'], self.receipt['image_archive_sha256'])
+
+    def test_workflow_native_upload_download_join_preserves_portable_package(self):
+        package = self.root / '.local/fresh-production/package' / self.identity['commit'][:12]
+        package.mkdir(parents=True)
+        portable = dict(self.receipt)
+        for key, filename in [('image_archive', 'kat-production-amd64.tar'), ('source_offer', 'kat-public-source.tar')]:
+            shutil.copyfile(portable[key], package / filename)
+            portable[key] = filename
+        receipt = package / 'receipt.json'
+        receipt.write_text(json.dumps(portable))
+        self.receipt_path = receipt
+        self.store('native', self.native)
+        output = self.root / 'github-output'
+        with patch.object(qualify, 'ROOT', self.root), patch.dict(os.environ, {'GITHUB_OUTPUT': str(output)}):
+            qualify.emit_native_package(receipt, self.identity)
+            with self.assertRaisesRegex(ValueError, 'differs from qualified source'):
+                qualify.emit_native_package(receipt, self.identity | {'commit': 'a' * 40})
+        self.assertEqual(output.read_text().splitlines(), [f'path={package.relative_to(self.root)}'])
+        package_output = output.read_text().strip().removeprefix('path=')
+        jobs = workflow('qualify.yml')['jobs']
+        build = next(step for step in jobs['native']['steps'] if step.get('id') == 'package')
+        self.assertEqual(build['run'], '.venv-swiss/bin/python -m deploy.qualify --lane native --execute')
+        upload = next(step for step in jobs['native']['steps'] if step.get('id') == 'native')
+        patterns = [line.replace('${{ steps.package.outputs.path }}', package_output)
+                    for line in upload['with']['path'].splitlines()]
+        # Pinned upload-artifact roots at the first wildcard, or the common
+        # parent of explicit files. The ZIP then downloads relative to that root.
+        search_roots = []
+        members = []
+        for pattern in patterns:
+            parts = Path(pattern).parts
+            wildcard = next((i for i, part in enumerate(parts) if glob.has_magic(part)), None)
+            search_roots.append(self.root / (Path(*parts[:wildcard]) if wildcard is not None else Path(pattern).parent))
+            members.extend(Path(path) for path in glob.glob(str(self.root / pattern)))
+        upload_root = Path(os.path.commonpath(search_roots))
+        transport = self.root / 'native.zip'
+        with zipfile.ZipFile(transport, 'w') as archive:
+            for member in members:
+                archive.write(member, member.relative_to(upload_root))
+        candidate = jobs['candidate']['steps']
+        download = next(step for step in candidate if step.get('with', {}).get('name', '').startswith('native-'))
+        destination = self.root / download['with']['path']
+        with zipfile.ZipFile(transport) as archive:
+            archive.extractall(destination)
+        join = next(step['run'] for step in candidate if '--join' in step.get('run', ''))
+        joined_receipt = self.root / join.split('--receipt ', 1)[1].split()[0]
+        self.assertTrue(joined_receipt.is_file(), 'Native upload root must match the actual join receipt path')
+        before = {member.name: evidence.digest(member) for member in members}
+        witness = evidence.assemble(self.paths, self.identity, self.full, joined_receipt, self.root / 'joined')
+        self.assertEqual(before, {name: evidence.digest(destination / name) for name in before})
+        final = next(step for step in candidate if step.get('id') == 'upload')
+        self.assertTrue(all((self.root / name).is_file() for name in final['with']['path'].splitlines()))
+        self.assertEqual(len(witness), 7)
 
     def test_missing_duplicate_and_foreign_lane_or_attempt_fail_closed(self):
         with self.assertRaises(ValueError):

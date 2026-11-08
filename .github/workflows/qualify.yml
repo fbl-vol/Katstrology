@@ -61,6 +61,7 @@ jobs:
         with:
           lane: native
       - name: Build once and qualify the exact native archive
+        id: package
         env:
           KAT_HOSTED_DOCKER_SOCKET: ${{ steps.setup.outputs.docker-socket }}
         run: .venv-swiss/bin/python -m deploy.qualify --lane native --execute
@@ -77,9 +78,9 @@ jobs:
         with:
           name: native-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            .local/fresh-production/package/*/receipt.json
-            .local/fresh-production/package/*/kat-production-amd64.tar
-            .local/fresh-production/package/*/kat-public-source.tar
+            ${{ steps.package.outputs.path }}/receipt.json
+            ${{ steps.package.outputs.path }}/kat-production-amd64.tar
+            ${{ steps.package.outputs.path }}/kat-public-source.tar
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0

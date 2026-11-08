@@ -11,7 +11,7 @@ import subprocess
 import sys
 from time import perf_counter
 
-from deploy.release_pipeline import ROOT
+from deploy.release_pipeline import ROOT, artifact
 from deploy.qualification_evidence import LANES, PROFILES, assemble, write_lane
 from deploy.qualification_inventory import read_json
 
@@ -70,6 +70,20 @@ def run_lane(lane, source):
     return folder / 'evidence.json', receipt_path
 
 
+def emit_native_package(receipt_path, source):
+    receipt, _, _, _ = artifact(receipt_path)
+    if any(receipt[key] != source[key] for key in ('commit', 'tree')):
+        raise ValueError('Native output differs from qualified source')
+    for key, name in [('image_archive', 'kat-production-amd64.tar'), ('source_offer', 'kat-public-source.tar')]:
+        if Path(receipt[key]) != receipt_path.resolve().parent / name:
+            raise ValueError('Native upload requires exact sibling package members')
+    package = str(receipt_path.parent.relative_to(ROOT))
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'path={package}\n')
+    print(json.dumps({'status': 'qualified-native', 'package': package, 'commit': source['commit']}))
+
+
 def qualify():
     source = identity()
     synthetic, _ = run_lane('all', source)
@@ -111,7 +125,10 @@ def main():
     if not args.execute:
         print('Plan: isolated lanes or sequential all; exact native archive; complete hash-bound evidence join.')
     elif args.lane:
-        run_lane(args.lane, identity())
+        source = identity()
+        _, receipt = run_lane(args.lane, source)
+        if args.lane == 'native':
+            emit_native_package(receipt, source)
     elif args.join:
         join(args.join, args.receipt)
     else:
