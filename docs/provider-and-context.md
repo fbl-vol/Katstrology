@@ -82,8 +82,11 @@ It neither enables consent nor adds anyone to conversation selection. Names, log
 selected charts and model output never establish this authority. Migration032 stores
 only the owner-scoped person ID/version. Each change journals its revocation generation
 without the replacement identity; restoring an older generation clears the association
-rather than reviving the former speaker. Person/account deletion uses existing foreign
-keys and deletion replay. Old facts and archives are never retagged.
+rather than reviving the former speaker. A backup may predate a later account's enrollment:
+self/consent revocations apply only to accounts present in that restored database, without
+creating ghost accounts or removing journal records. The same retained revocations still
+apply when restoring another backup that contains the account. Person/account deletion
+uses existing foreign keys and deletion replay. Old facts and archives are never retagged.
 
 Turn acknowledgement freezes the consent version and exact entry/detail versions
 in the original user event. Selection considers only explicitly selected people,

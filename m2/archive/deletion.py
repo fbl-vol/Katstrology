@@ -158,16 +158,20 @@ class Tombstones:
                     version = record['context_self_revoked']
                     if not isinstance(version, str) or not version.isdigit() or not 1 <= int(version) <= 2147483647:
                         raise RuntimeError('Invalid self-association revocation')
-                    store.db.execute('''INSERT INTO personal_context_self VALUES (%s,NULL,%s)
+                    # A valid older backup can predate this owner's enrollment.
+                    # Keep the journal authority, but never manufacture its account.
+                    store.db.execute('''INSERT INTO personal_context_self
+                        SELECT id,NULL,%s FROM accounts WHERE id=%s
                         ON CONFLICT(owner_id) DO UPDATE SET person_id=NULL,version=excluded.version
-                        WHERE personal_context_self.version < excluded.version''', (owner, int(version)))
+                        WHERE personal_context_self.version < excluded.version''', (int(version), owner))
                 elif 'context_consent_revoked' in record:
                     version = record['context_consent_revoked']
                     if not isinstance(version, str) or not version.isdigit() or not 1 <= int(version) <= 2147483647:
                         raise RuntimeError('Invalid context consent revocation')
-                    store.db.execute('''INSERT INTO personal_context_consent VALUES (%s,false,%s)
+                    store.db.execute('''INSERT INTO personal_context_consent
+                        SELECT id,false,%s FROM accounts WHERE id=%s
                         ON CONFLICT(owner_id) DO UPDATE SET enabled=false,version=excluded.version
-                        WHERE personal_context_consent.version < excluded.version''', (owner, int(version)))
+                        WHERE personal_context_consent.version < excluded.version''', (int(version), owner))
                 elif 'conversations' in record:
                     ids = [store._id(item) for item in record['conversations']]
                     store.db.execute('DELETE FROM conversations WHERE owner_id=%s AND id=ANY(%s)',
