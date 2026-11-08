@@ -23,9 +23,9 @@ export type Chart = { id: string; person_id: string; birth_id: string; profile_i
     natal?: NatalResult; houses: string; engine: { method: string; version: string };
     profile: { settings: { house_system: string; node_type: string; orbs?: Record<string, number>; include_chiron?: boolean; include_lilith?: 'mean' | 'osculating' } }; } };
 
-function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProvenance = {}, overlay, selected = false }: {
+function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProvenance = {}, overlay, selected = false, preview }: {
   chart: Chart; natal: NatalResult; compact?: boolean; label?: string;
-  additionalProvenance?: Record<string, unknown>; overlay?: WheelOverlay; selected?: boolean;
+  additionalProvenance?: Record<string, unknown>; overlay?: WheelOverlay; selected?: boolean; preview?: React.ReactNode;
 }) {
   const svg = useRef<SVGSVGElement>(null);
   const ascendant = natal.houses.angles.find(angle => angle.id === 'ascendant')!.longitude_degrees;
@@ -82,6 +82,7 @@ function Wheel({ chart, natal, compact = false, label = 'Natal', additionalProve
       {overlay && <g data-exploration-overlay="true">{overlay({ ascendant, tracks, locations })}</g>}
 
     </svg></div>
+    {preview}
     {!compact && <><p className="wheel-scroll-hint">Scroll sideways for the full wheel. Open Symbols for the glyph key; tables give full names and degrees.</p>
     <ChartNotation ids={natal.positions.map(body => body.id)} rings="The outer labels mark this chart’s positions; rays show house cusps when available." />
     <WheelExportActions svgRef={svg} stem={`kat-${chart.id}`}
@@ -165,7 +166,7 @@ export function NatalChart({ chart, allowMotion = false, explorationEnabled = tr
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
         <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled} hasWheel={hasWheel}
-          wheel={(overlay, selected) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} /> :
+          wheel={(overlay, selected, preview) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} preview={preview} /> :
             <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects remain available.</p>} />
         {chartData}
         {allowMotion && <TransitMotion chart={chart} />}

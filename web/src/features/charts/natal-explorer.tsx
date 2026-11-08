@@ -3,9 +3,12 @@ import { api } from '../../shared/api';
 import type { Chart, NatalResult } from './natal';
 import { catalogue, categories, patternExplanation, type Category, type Entry, type Exploration } from './exploration-data';
 import { Highlight, type WheelOverlay } from './exploration-geometry';
-import { ExplorationTargets, type WheelChoice } from './exploration-targets';
+import { ExplorationTargets, type WheelChoice, type WheelPoint } from './exploration-targets';
+import { WheelPreview } from './wheel-preview';
 import { PatternConnections, PatternScope } from './pattern-scope';
 import './natal-explorer.css';
+
+const compactExplorerQuery = '(max-width:700px), (pointer:coarse) and (max-width:1050px)';
 
 function focusHeading(heading: HTMLHeadingElement | null) {
   if (!heading) return;
@@ -16,7 +19,7 @@ function focusHeading(heading: HTMLHeadingElement | null) {
 }
 
 export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { chart: Chart; natal: NatalResult; enabled: boolean; hasWheel: boolean;
-  wheel: (overlay: WheelOverlay, selected: boolean) => ReactNode }) {
+  wheel: (overlay: WheelOverlay, selected: boolean, preview?: ReactNode) => ReactNode }) {
   const [opened, setOpened] = useState(enabled);
   useEffect(() => { if (enabled) setOpened(true); }, [enabled]);
   const [category, setCategory] = useState<Category>('positions');
@@ -24,8 +27,20 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
   const [selected, setSelected] = useState<Entry | null>(null);
   const [detail, setDetail] = useState(false);
   const [choices, setChoices] = useState<WheelChoice | null>(null);
+  const [compact, setCompact] = useState(() => matchMedia(compactExplorerQuery).matches);
+  useEffect(() => {
+    const query = matchMedia(compactExplorerQuery);
+    const update = () => setCompact(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  const [previewPoint, setPreviewPoint] = useState<WheelPoint | null>(null);
+  const [choiceId, setChoiceId] = useState('');
+  const previewBeforeChoices = useRef<WheelPoint | null>(null);
+  const readButton = useRef<HTMLButtonElement>(null);
+  const readingOrigin = useRef<{ x: number; y: number } | null>(null);
   const choiceHeading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { if (choices) focusHeading(choiceHeading.current); }, [choices]);
+  useEffect(() => { if (choices && !compact) focusHeading(choiceHeading.current); }, [choices, compact]);
   const [projection, setProjection] = useState<Exploration | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -56,10 +71,29 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
   const query = queries[category].trim().toLowerCase();
   const visible = entries[category].filter(e => `${e.title} ${e.subtitle} ${e.facts.flat().join(' ')}`.toLowerCase().includes(query));
   const index = selected ? entries[selected.category].findIndex(e => e.id === selected.id) : -1;
-  function choose(entry: Entry) {
-    setChoices(null); setCategory(entry.category); setSelected(entry); setDetail(true); listFocus.current = entry.id;
+  function choose(entry: Entry, point?: WheelPoint) {
+    setChoices(null); setCategory(entry.category); setSelected(entry); listFocus.current = entry.id;
+    const preview = compact && point;
+    setPreviewPoint(preview || (detail && readingOrigin.current ? previewPoint : null)); setDetail(!preview);
+    if (!preview && !detail) readingOrigin.current = null;
   }
-  function browse() { setChoices(null); setDetail(false); setFocusList(n => n + 1); }
+  function overlap(choice: WheelChoice) {
+    if (!choices) previewBeforeChoices.current = previewPoint;
+    setChoices(choice); setChoiceId('');
+    if (compact) setPreviewPoint(choice);
+  }
+  function readDetails() {
+    readingOrigin.current = { x: scrollX, y: scrollY };
+    setDetail(true);
+  }
+  function returnToChart() {
+    setDetail(false);
+    const origin = readingOrigin.current;
+    requestAnimationFrame(() => {
+      if (origin) { window.scrollTo(origin.x, origin.y); readButton.current?.focus({ preventScroll: true }); }
+    });
+  }
+  function browse() { readingOrigin.current = null; setChoices(null); setDetail(false); setFocusList(n => n + 1); }
   function entryButton(entry: Entry) {
     return <button type="button" className="explorer-entry" key={entry.id} data-entry={entry.id} onClick={() => choose(entry)}>
       <span><strong>{entry.title}</strong><small>{entry.subtitle}</small></span><span aria-hidden="true">›</span>
@@ -81,20 +115,40 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
     projection?.reason === 'historical_source' ? 'Patterns are unavailable for a historical source.' :
     'Patterns need established natal positions and aspects from an exact birth time.';
 
+  const preview = compact && previewPoint && (!detail || choices) ? <WheelPreview point={previewPoint}>
+    {choices ? <>
+      <strong>Details at this point</strong>
+      <label className="sr-only" htmlFor={`${chart.id}-overlap`}>Choose an overlapping detail</label>
+      <select id={`${chart.id}-overlap`} value={choiceId} onChange={event => setChoiceId(event.target.value)}>
+        <option value="">Choose from {choices.entries.length} details</option>
+        {choices.entries.map(entry => <option key={entry.id} value={entry.id}>{entry.title} · {entry.subtitle}</option>)}
+      </select>
+      <div className="wheel-preview-actions"><button type="button" disabled={!choiceId} onClick={() => {
+        const entry = choices.entries.find(item => item.id === choiceId);
+        if (entry) { choose(entry, choices); requestAnimationFrame(() => readButton.current?.focus({ preventScroll: true })); }
+      }}>Select detail</button><button type="button" onClick={() => {
+        const origin = choices.origin; setChoices(null); setPreviewPoint(previewBeforeChoices.current); origin.focus({ preventScroll: true });
+      }}>Cancel</button></div>
+    </> : selected && <div className="wheel-preview-selection">
+      <div><strong aria-live="polite" aria-atomic="true">{selected.title}</strong><small>{selected.subtitle}</small></div>
+      <button ref={readButton} type="button" onClick={readDetails}>Read details</button>
+    </div>}
+  </WheelPreview> : undefined;
+
   return <div className="natal-explorer">
     <div className="explorer-chart">
       {wheel(geometry => <>
         <Highlight natal={natal} geometry={geometry} entry={choices ? null : selected} />
-        <ExplorationTargets natal={natal} geometry={geometry} entries={entries} choose={choose} overlap={setChoices} />
+        <ExplorationTargets natal={natal} geometry={geometry} entries={entries} choose={choose} overlap={overlap} />
         {choices && <circle className="exploration-marker" cx={choices.location.x} cy={choices.location.y} r="5"
           fill="var(--wheel-paper, #fffef9)" stroke="var(--wheel-angle, #304f3b)" strokeWidth="2" pointerEvents="none" />}
-      </>, !!selected && !choices)}
+      </>, !!selected && !choices, preview)}
       {hasWheel && <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. Concentrations and whole-chart shapes use the inner ring, not polygons. The directory offers the same details without precise pointing.</p>}
       <div className="explorer-selection"><span>{choices ? 'Choose at this point' : selected?.title ?? 'Nothing selected'}<small>{choices ? 'Several details share this location.' : selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
         <button type="button" onClick={browse}>Browse all</button></div>
     </div>
     <section ref={panel} className="explorer-panel" aria-label="Chart browser and selected detail">
-      {choices ? <>
+      {choices && !compact ? <>
         <h3 ref={choiceHeading} tabIndex={-1}>{choices.entries[0].category === 'patterns' ? 'Patterns' : 'Details'} at this point</h3>
         <p>These overlap. Choose which one to explore.</p>
         <p className="explorer-note">{choices.entries.length} matching {choices.entries[0].category}</p>
@@ -104,6 +158,7 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
           requestAnimationFrame(() => { origin.scrollIntoView({ block: 'center' }); origin.focus({ preventScroll: true }); });
         }}>Back without choosing</button>
       </> : detail && selected ? <>
+        {readingOrigin.current && <button type="button" onClick={returnToChart}>← Back to chart</button>}
         <div className="explorer-back"><button type="button" onClick={browse}>← All {category}</button>
           <small>{index + 1} / {entries[category].length} {category}</small></div>
         <h3 tabIndex={-1} ref={heading}>{selected.title}</h3><p>{selected.subtitle}</p>

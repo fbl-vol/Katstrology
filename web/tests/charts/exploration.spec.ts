@@ -7,6 +7,62 @@ import type { Chart } from '../../src/features/charts/natal';
 
 test.beforeEach(async ({ page }) => page.setViewportSize({ width: 1440, height: 1024 }));
 
+test.describe('contextual phone selection', () => {
+  test.use({ hasTouch: true });
+  for (const [width, height, textScale] of [[390, 844, 100], [390, 560, 100], [844, 390, 100], [320, 560, 200]])
+    test(`deliberate reader ${width}x${height} text ${textScale}`, async ({ page }) => {
+  await page.setViewportSize({ width, height });
+  const { chart } = await openChart(page, `Context preview ${width} ${height} ${textScale}`, 'expanded');
+  if (textScale !== 100) await page.evaluate(scale => document.documentElement.style.setProperty('font-size', `${scale}%`, 'important'), textScale);
+  if (textScale === 200) await expect(page.locator('html')).toHaveCSS('font-size', '32px');
+  const wheel = chart.locator('svg.natal-wheel');
+  await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+  await wheel.locator('[data-wheel-entry="sun"]').evaluate(element => {
+    const target = element.getBoundingClientRect();
+    if (target.top < 100) window.scrollBy(0, target.top - 100);
+  });
+  const before = await page.evaluate(() => scrollY);
+  const target = await wheel.locator('[data-wheel-entry="sun"]').boundingBox();
+  await page.touchscreen.tap(target!.x + target!.width / 2, target!.y + target!.height / 2);
+  const preview = chart.getByRole('region', { name: 'Selected chart feature' });
+  await expect(preview).toBeVisible();
+  if (await preview.getByRole('combobox').count()) {
+    await preview.getByRole('combobox').selectOption('sun');
+    await preview.getByRole('button', { name: 'Select detail' }).click();
+  }
+  await expect(preview).toContainText('Sun');
+  expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+  const box = await preview.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(height);
+  await expect(chart.locator('[data-highlight-body="sun"]')).toHaveCount(1);
+  mkdirSync('.local/phone-first/renders', { recursive: true });
+  await page.screenshot({ path: `.local/phone-first/renders/preview-${width}-${height}-${textScale}.png` });
+  await preview.getByRole('button', { name: 'Read details' }).click();
+  await expect(chart.getByRole('heading', { name: 'Sun', exact: true })).toBeFocused();
+  await chart.getByRole('button', { name: '← Back to chart' }).click();
+  await expect(preview.getByRole('button', { name: 'Read details' })).toBeFocused();
+  expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+});
+
+async function readPhoneSelection(page: Page, label?: RegExp) {
+  const preview = page.getByRole('region', { name: 'Selected chart feature' });
+  await expect(preview).toBeVisible();
+  if (await preview.getByRole('combobox').count()) {
+    const options = await preview.locator('option').allTextContents();
+    const choice = options.slice(1).find(text => label?.test(text));
+    expect(choice, 'expected target remains in the native overlap chooser').toBeTruthy();
+    await preview.getByRole('combobox').selectOption({ label: choice! });
+    await preview.getByRole('button', { name: 'Select detail' }).click();
+  }
+  const box = await preview.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await preview.getByRole('button', { name: 'Read details' }).click();
+}
+
 async function openChart(page: Page, name: string, syntheticPatterns: boolean | 'multi' | 'exact' | 'trine' | 'expanded' = false) {
   await page.goto('/');
   await page.getByLabel('Username').fill('reader-natal');
@@ -356,6 +412,7 @@ test.describe('direct natal exploration', () => {
       else await page.mouse.click(cursor.x, cursor.y);
       if (await panel.getByRole('heading', { name: 'Patterns at this point', exact: true }).isVisible())
         await panel.getByRole('button', { name: /^Seesaw / }).click();
+      if (input === 'touch') await readPhoneSelection(page, /^Seesaw/);
       await expect(panel.getByRole('heading', { name: 'Seesaw', exact: true })).toBeFocused();
       await expect(wheel.locator('[data-highlight-distribution]')).toHaveCount(1);
     });
@@ -401,9 +458,16 @@ test.describe('direct natal exploration', () => {
         }, { offset, endpointIndex });
         await press(p);
         if (offset === 'center') {
-          await expect(panel.getByRole('heading', { name: 'Details at this point' })).toBeFocused();
-          expect((await panel.locator('[data-entry]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-entry')))).sort())
-            .toEqual(['conjunction:mercury:sun', 'trine:jupiter:sun', 'trine:moon:sun']);
+          if (input === 'touch') {
+            const chooser = chart.getByRole('combobox', { name: 'Choose an overlapping detail' });
+            await expect(chooser).toBeVisible();
+            expect((await chooser.locator('option:not([value=""])').evaluateAll(nodes => nodes.map(n => (n as HTMLOptionElement).value))).sort())
+              .toEqual(['conjunction:mercury:sun', 'trine:jupiter:sun', 'trine:moon:sun']);
+          } else {
+            await expect(panel.getByRole('heading', { name: 'Details at this point' })).toBeFocused();
+            expect((await panel.locator('[data-entry]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-entry')))).sort())
+              .toEqual(['conjunction:mercury:sun', 'trine:jupiter:sun', 'trine:moon:sun']);
+          }
         }
         // Soft failure preserves evidence for all physical presses on old behavior.
         const choices = panel.getByRole('heading', { name: 'Details at this point' });
@@ -412,6 +476,7 @@ test.describe('direct natal exploration', () => {
           await panel.getByRole('button', { name: /^Sun conjunction Mercury/ }).click();
         }
         const expected = offset === 'house-overlap' ? 'House 1' : 'Sun conjunction Mercury';
+        if (input === 'touch') await readPhoneSelection(page, /^Sun conjunction Mercury/);
         await expect.soft(panel.getByRole('heading', { name: expected, exact: true }), offset).toBeFocused();
         mkdirSync('../.local/explorable-charts/renders', { recursive: true });
         await page.screenshot({ path: `../.local/explorable-charts/renders/conjunction-${exact}-${input}-${endpointIndex}-${offset}.png` });
@@ -428,6 +493,7 @@ test.describe('direct natal exploration', () => {
     expect(p.margin).toBe(10);
     if (width === 390) await page.touchscreen.tap(p.x, p.y);
     else await page.mouse.click(p.x, p.y);
+    if (width === 390) await readPhoneSelection(page);
     await expect(chart.getByRole('heading', { name: 'Grand Trine', exact: true })).toBeFocused();
   });
   test('mobile aspect six CSS pixel offset retains direct line selection', async ({ page }) => {
@@ -468,6 +534,7 @@ test.describe('direct natal exploration', () => {
     const actual = JSON.parse((await wheel.getAttribute('data-test-press'))!);
     expect(Math.hypot(actual.x - location.x, actual.y - location.y)).toBeLessThan(1.5);
     await test.info().attach('six-css-pixel-press', { body: JSON.stringify({ requested: location, delivered: actual }), contentType: 'application/json' });
+    await readPhoneSelection(page);
     await expect(panel.getByRole('heading', { name: 'Venus square Mars', exact: true })).toBeFocused();
     mkdirSync('../.local/explorable-charts/renders', { recursive: true });
     await page.screenshot({ path: '../.local/explorable-charts/renders/mobile-six-pixel-offset.png' });
@@ -480,11 +547,17 @@ test.describe('direct natal exploration', () => {
       const { chart } = await openChart(page, `Spatial ${size.width} ${size.height}`, true);
       const wheel = chart.getByRole('group', { name: /Tropical natal wheel/ });
       const panel = chart.getByRole('region', { name: 'Chart browser and selected detail' });
-      const press = (p: { x: number; y: number }) => size.width < 700 ? page.touchscreen.tap(p.x, p.y) : page.mouse.click(p.x, p.y);
+      const press = async (p: { x: number; y: number }) => {
+        if (size.width >= 700) { await page.mouse.click(p.x, p.y); return; }
+        const before = await page.evaluate(() => scrollY);
+        await page.touchscreen.tap(p.x, p.y);
+        await expect(chart.getByRole('region', { name: 'Selected chart feature' })).toBeVisible();
+        expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+      };
       await expect(wheel.locator('.exploration-target polygon')).toHaveCount(6);
       // Cancellation without a previous selection restores the directory.
       await press(await patternPoint(wheel, true));
-      await panel.getByRole('button', { name: 'Back without choosing' }).click();
+      await chart.getByRole('button', { name: size.width < 700 ? 'Cancel' : 'Back without choosing', exact: true }).click();
       await expect(panel.getByRole('heading', { name: 'Browse this chart' })).toBeVisible();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(0);
       // Wider mobile line targets cover the tiny trine-only sliver in this dense
@@ -493,7 +566,8 @@ test.describe('direct natal exploration', () => {
       expect(trinePoint.margin).toBeGreaterThanOrEqual(3);
       await test.info().attach('exposed-shared-interior', { body: JSON.stringify(trinePoint), contentType: 'application/json' });
       await press(trinePoint);
-      await panel.getByRole('button', { name: /^Grand Trine / }).click();
+      if (size.width < 700) await readPhoneSelection(page, /^Grand Trine/);
+      else await panel.getByRole('button', { name: /^Grand Trine / }).click();
       await expect(panel.getByRole('heading', { name: 'Grand Trine', exact: true })).toBeFocused();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(3);
       await expect(wheel.locator('[data-highlight-body]')).toHaveCount(3);
@@ -501,19 +575,25 @@ test.describe('direct natal exploration', () => {
       await page.screenshot({ path: `../.local/explorable-charts/renders/trine-detail-${size.width}-${size.height}.png` });
       const overlap = await patternPoint(wheel, true);
       await press(overlap);
-      await expect(panel.getByRole('heading', { name: 'Patterns at this point' })).toBeFocused();
+      const chooser = chart.getByRole('region', { name: 'Selected chart feature' });
+      if (size.width < 700) await expect(chooser.getByRole('combobox')).toBeVisible();
+      else await expect(panel.getByRole('heading', { name: 'Patterns at this point' })).toBeFocused();
       await expect(wheel.locator('.exploration-marker')).toHaveCount(1);
       mkdirSync('../.local/explorable-charts/renders', { recursive: true });
-      await panel.screenshot({ path: `../.local/explorable-charts/renders/overlap-${size.width}-${size.height}.png` });
-      const actual = await panel.locator('[data-entry]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-entry')));
+      await (size.width < 700 ? chooser : panel).screenshot({ path: `../.local/explorable-charts/renders/overlap-${size.width}-${size.height}.png` });
+      const actual = size.width < 700 ? await chooser.locator('option:not([value=""])').evaluateAll(nodes => nodes.map(n => (n as HTMLOptionElement).value)) :
+        await panel.locator('[data-entry]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-entry')));
       expect(actual.sort()).toEqual(overlap.ids.sort());
-      await panel.getByRole('button', { name: 'Back without choosing' }).click();
+      await chart.getByRole('button', { name: size.width < 700 ? 'Cancel' : 'Back without choosing', exact: true }).click();
       await expect(panel.getByRole('heading', { name: 'Grand Trine', exact: true })).toBeVisible();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(3);
       await press(await patternPoint(wheel, true));
-      const contained = panel.locator('.explorer-contained');
-      await contained.locator('summary').click();
-      await contained.getByRole('button').first().click();
+      if (size.width < 700) await readPhoneSelection(page, /^T-square/);
+      else {
+        const contained = panel.locator('.explorer-contained');
+        await contained.locator('summary').click();
+        await contained.getByRole('button').first().click();
+      }
       await expect(panel.getByRole('heading', { name: /T-square/ })).toBeFocused();
       await expect(wheel.locator('[data-highlight-edge]')).toHaveCount(3);
       await page.screenshot({ path: `../.local/explorable-charts/renders/t-square-detail-${size.width}-${size.height}.png` });
@@ -568,12 +648,14 @@ test.describe('direct natal exploration', () => {
       await press(center);
       if (await panel.getByRole('heading', { name: 'Details at this point' }).isVisible())
         await panel.getByRole('button', { name: /^Venus square Mars/ }).click();
+      if (size.width < 700) await readPhoneSelection(page, /^Venus square Mars/);
       await expect(panel.getByRole('heading', { name: 'Venus square Mars', exact: true })).toBeVisible();
       // Actual pointer target on a glyph and a house number.
       for (const target of [wheel.getByRole('button', { name: /^Explore Jupiter:/ }), wheel.getByRole('button', { name: /^Explore House 12:/ })]) {
         await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
         const box = await target.boundingBox();
         await press({ x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 });
+        if (size.width < 700) await readPhoneSelection(page, /^(Jupiter|House 12)/);
         await expect(panel.getByRole('heading', { name: /^(Jupiter|House 12)$/ })).toBeVisible();
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

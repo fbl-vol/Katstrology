@@ -38,5 +38,17 @@
 .exploration-target:focus-visible > :last-child { stroke: var(--wheel-angle, #304f3b); stroke-dasharray: 3 3; stroke-width: 2; }
 .exploration-target:focus-visible > polygon { fill: var(--wheel-aspect-cool, #487b72); fill-opacity: .12; }
 .explorer-cancel { margin-top: 18px; }
+.wheel-preview-slot { margin-block: 8px; }
+.wheel-preview { position: relative; z-index: 12; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--white); box-shadow: 0 3px 14px color-mix(in srgb, var(--ink) 12%, transparent); overflow-wrap: anywhere; }
+.wheel-preview strong, .wheel-preview small { display: block; }
+.wheel-preview strong { font-size: var(--text-reading); }
+.wheel-preview small { color: var(--muted); font-size: var(--text-support); margin-block: 3px; }
+.wheel-preview select { display: block; width: 100%; min-width: 0; min-height: 44px; margin-top: 6px; font: inherit; }
+.wheel-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.wheel-preview-selection { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.wheel-preview-selection > div { flex: 1 1 10rem; min-width: 0; }
+.natal-wheel-frame .wheel-preview button { min-height: 44px; font-size: var(--text-support); margin: 0; }
+.wheel-preview-selection button { max-width: 8em; }
+.wheel-preview :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1050px) { .natal-explorer { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .explorer-panel { padding: 16px; } .natal-explorer { gap: 16px; } }

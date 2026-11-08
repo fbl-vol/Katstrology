@@ -5,7 +5,8 @@ import { aspectPath, patternRing, type WheelGeometry } from './exploration-geome
 import { edgeId, type Category, type Entry } from './exploration-data';
 
 type Location = { x: number; y: number };
-export type WheelChoice = { entries: Entry[]; location: Location; origin: SVGElement };
+export type WheelPoint = { location: Location; origin: SVGElement };
+export type WheelChoice = WheelPoint & { entries: Entry[] };
 
 function inside(p: Location, vertices: Location[]) {
   let found = false;
@@ -31,7 +32,7 @@ function aspectCandidates(svg: SVGSVGElement, cursor: DOMPoint, entries: Entry[]
 
 export function ExplorationTargets({ natal, geometry, entries, choose, overlap }: {
   natal: NatalResult; geometry: WheelGeometry; entries: Record<Category, Entry[]>;
-  choose: (entry: Entry) => void; overlap: (choice: WheelChoice) => void;
+  choose: (entry: Entry, point?: WheelPoint) => void; overlap: (choice: WheelChoice) => void;
 }) {
   const { ascendant, locations, tracks } = geometry;
   const bodies = entries.positions.map(entry => ({ entry,
@@ -69,7 +70,7 @@ export function ExplorationTargets({ natal, geometry, entries, choose, overlap }
       candidates = patterns.filter(p => p.entry.pattern?.geometry && p.entry.pattern.geometry !== 'aspects'
         ? ringHits.has(p.entry.id) : inside(cursor, p.vertices)).map(p => p.entry);
     }
-    if (candidates.length === 1) choose(candidates[0]);
+    if (candidates.length === 1) choose(candidates[0], { location: cursor, origin: event.currentTarget });
     else if (candidates.length > 1) overlap({ entries: candidates, location: cursor, origin: event.currentTarget });
   }
   function control(entry: Entry) {
