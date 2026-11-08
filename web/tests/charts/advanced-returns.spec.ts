@@ -33,6 +33,7 @@ test('normal return workflows save trusted charts without sending a message', as
   await view.getByRole('button', { name: /Open saved solar return/ }).click();
   await expect(view.locator('.natal-wheel')).toContainText('Solar return · tropical');
   const download = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const svg = await readFile(await (await download).path(), 'utf8');
   expect(svg).toContain('kat-chart-provenance');

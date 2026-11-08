@@ -41,6 +41,7 @@ test('opt-in mean lunar apogee survives archive and export; default and sky-only
   await expect(charts.getByRole('row', { name: /Black Moon Lilith \(mean lunar apogee\)/ }).first()).toBeVisible();
   await expect(charts.getByText('Swiss mean lunar apogee').first()).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
+  await charts.getByText('Download chart', { exact: true }).first().click();
   await charts.getByRole('button', { name: 'Download safe SVG wheel' }).first().click();
   const xml = await readFile(await (await downloadPromise).path(), 'utf8');
   expect(xml).toContain('lilith_mean');

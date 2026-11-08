@@ -30,6 +30,7 @@ test('composite and uncorrected Davison keep two owner source versions and expor
   await expect(view.getByRole('region', { name: 'Derived chart result' })).not.toContainText('not independently verified');
   await expect(view.getByRole('region', { name: 'Derived chart result' }).getByText('Chiron in this chart')).toBeVisible();
   const exported = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const svg = await readFile(await (await exported).path(), 'utf8');
   expect(svg).toContain(`"chart_a_id":"${composite.chart_a_id}"`);
@@ -53,6 +54,7 @@ test('composite and uncorrected Davison keep two owner source versions and expor
   expect(davison.derived_natal.instant_utc).toBe(davison.derived_instant_utc);
   await expect(view.getByRole('region', { name: 'Derived chart result' })).toContainText('not a spherical midpoint');
   const derivedExport = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const derivedSvg = await readFile(await (await derivedExport).path(), 'utf8');
   expect(derivedSvg).toContain(`"chart_b_id":"${davison.chart_b_id}"`);

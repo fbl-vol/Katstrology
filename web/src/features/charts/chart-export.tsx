@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useRef, useState, type RefObject } from 'react';
 import { embeddedGlyphFontsStyle } from './chart-symbols';
 
 const paletteNames = ['paper', 'frame', 'ring', 'ink', 'muted', 'angle', 'cusp', 'glyph', 'leader',
@@ -68,26 +68,41 @@ export function WheelExportActions({ svgRef, stem, provenance }: {
   svgRef: RefObject<SVGSVGElement | null>; stem: string; provenance: object;
 }) {
   const [error, setError] = useState('');
-  function downloadSvg(mode: 'existing' | 'print') {
-    if (!svgRef.current) return;
-    setError('');
-    const markup = wheelMarkup(svgRef.current, mode, provenance);
-    save(new Blob([markup], { type: 'image/svg+xml' }), `${stem}${mode === 'print' ? '-print' : ''}.svg`);
+  const [preparing, setPreparing] = useState(false);
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const trigger = useRef<HTMLElement>(null);
+  const choices = useRef<HTMLDivElement>(null);
+
+  function close() {
+    if (disclosure.current) disclosure.current.open = false;
+    trigger.current?.focus({ preventScroll: true });
   }
-  async function downloadPng() {
-    if (!svgRef.current) return;
-    setError('');
+  async function download(format: 'svg' | 'png' | 'print') {
+    if (preparing || !svgRef.current) return;
+    setError(''); setPreparing(true); close();
     try {
-      const markup = wheelMarkup(svgRef.current, 'screen', provenance);
-      save(await rasterize(markup), `${stem}.png`);
+      // Capture the exact selected result before asynchronous PNG preparation.
+      const markup = wheelMarkup(svgRef.current, format === 'png' ? 'screen' : format === 'print' ? 'print' : 'existing', provenance);
+      if (format === 'png') save(await rasterize(markup), `${stem}.png`);
+      else save(new Blob([markup], { type: 'image/svg+xml' }), `${stem}${format === 'print' ? '-print' : ''}.svg`);
     } catch {
-      setError('PNG could not be prepared in this browser. The standalone SVG is still available.');
-    }
+      setError(format === 'png' ? 'PNG could not be prepared in this browser. The standalone SVG is still available.' :
+        'SVG could not be prepared in this browser. Your chart is unchanged; try another format.');
+    } finally { setPreparing(false); }
   }
-  return <><div className="wheel-export-actions">
-    <button type="button" onClick={() => downloadSvg('existing')}>Download safe SVG wheel</button>
-    <button type="button" onClick={() => void downloadPng()}>Download PNG wheel</button>
-    <button type="button" onClick={() => downloadSvg('print')}>Download print-ready SVG</button>
-  </div><p className="wheel-export-note">PNG follows this reading palette; print-ready SVG uses white paper. Original SVG keeps its light fallback.</p>
+  return <><details className="wheel-export-actions" ref={disclosure}
+    onToggle={event => { if (event.currentTarget.open) choices.current?.scrollIntoView({ block: 'nearest', behavior: 'instant' }); }}
+    onKeyDown={event => { if (event.key === 'Escape' && disclosure.current?.open) { event.preventDefault(); event.stopPropagation(); close(); } }}>
+    <summary ref={trigger} aria-disabled={preparing} onClick={event => { if (preparing) event.preventDefault(); }}>Download chart</summary>
+    <div ref={choices} className="wheel-export-menu" role="group" aria-label="Chart download formats">
+      <button type="button" disabled={preparing} onClick={() => void download('png')} aria-label="Download PNG wheel">
+        PNG image<small>Uses your current reading palette</small></button>
+      <button type="button" disabled={preparing} onClick={() => void download('svg')} aria-label="Download safe SVG wheel">
+        SVG image<small>Scalable image with its original light palette</small></button>
+      <button type="button" disabled={preparing} onClick={() => void download('print')} aria-label="Download print-ready SVG">
+        Print-ready SVG<small>White background for printing</small></button>
+    </div>
+  </details>
+  {preparing && <p role="status" className="wheel-export-note">Preparing chart…</p>}
   {error && <p role="alert" className="error">{error}</p>}</>;
 }

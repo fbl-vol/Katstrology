@@ -146,6 +146,7 @@ for (const size of [{ width: 1440, height: 1024 }, { width: 1920, height: 1080 }
     await expect(panel).toContainText('Shared sign');
     if (size.width === 1440) {
       const pending = page.waitForEvent('download');
+      await chart.getByText('Download chart', { exact: true }).click();
       await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
       const markup = await readFile(await (await pending).path(), 'utf8');
       expect(markup).not.toMatch(/data-pattern-ring-hit|data-highlight-distribution|natal-patterns-v2|quincunx/);
@@ -526,6 +527,7 @@ test.describe('direct natal exploration', () => {
       await expect(panel.getByRole('heading', { name: 'Grand Cross', exact: true })).toBeFocused();
       if (size.width === 1440) {
         const pending = page.waitForEvent('download');
+        await chart.getByText('Download chart', { exact: true }).click();
         await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
         const markup = await readFile(await (await pending).path(), 'utf8');
         expect(markup).not.toMatch(/data-wheel-entry|data-highlight-edge|exploration-marker|natal-patterns-v1/);

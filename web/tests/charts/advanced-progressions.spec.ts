@@ -43,6 +43,7 @@ test('secondary progression keeps mapped date and MCp/MCr distinct in archive an
   expect(disclosurePosts).toBe(0);
   await expect(view.getByRole('table', { name: /Progressed planetary positions/ }).getByRole('row')).toHaveCount(11);
   const download = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const markup = await readFile(await (await download).path(), 'utf8');
   expect(markup).toContain(`"effective_utc":"${saved.effective_utc}"`);

@@ -35,6 +35,7 @@ test('bundled wheel fonts obey isolated CSP in page and export', async ({ page }
     ['Download PNG wheel', 'font-chart.png'],
   ]) {
     const download = page.waitForEvent('download');
+    await actions.getByText('Download chart', { exact: true }).click();
     await actions.getByRole('button', { name: label }).click();
     copyFileSync(await (await download).path(), resolve(renders, filename));
   }
@@ -89,6 +90,7 @@ test('saved cross-technique dates sort chronologically and open their actual cal
   for (const [button, file] of [['Download safe SVG wheel', 'corrected-arc.svg'],
     ['Download PNG wheel', 'corrected-arc.png']]) {
     const downloaded = page.waitForEvent('download');
+    await timing.locator('.timing-opened').getByText('Download chart', { exact: true }).click();
     await timing.locator('.timing-opened').getByRole('button', { name: button }).click();
     copyFileSync(await (await downloaded).path(), resolve(renders, file));
   }

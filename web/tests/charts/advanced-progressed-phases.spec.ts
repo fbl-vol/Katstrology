@@ -34,6 +34,7 @@ test('progressed lunar cycle keeps effective and mapped times separate with save
   await expect(view).toContainText('not an actual New or Full Moon');
   await expect(chart).toContainText('Moon–Sun separation 0.00000°');
   const download = page.waitForEvent('download');
+  await chart.getByText('Download chart', { exact: true }).click();
   await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const markup = await readFile(await (await download).path(), 'utf8');
   expect(markup).toContain(`"effective_utc":"${saved.events[0].effective_utc}"`);

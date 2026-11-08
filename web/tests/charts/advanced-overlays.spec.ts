@@ -36,6 +36,7 @@ test('directional overlays save and replay with separate recipient house tables'
   await expect(first.getByRole('row')).toHaveCount(11);
   expect((await (await page.request.get('/api/conversations')).json()).conversations).toHaveLength(0);
   const download = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const markup = await readFile(await (await download).path(), 'utf8');
   expect(markup).toContain('"house_overlays"');

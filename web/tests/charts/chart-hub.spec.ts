@@ -214,6 +214,7 @@ for (const viewport of [
     await expect(synastry.locator('.synastry-result')).not.toContainText(data.chart_b_id);
     if (!viewport.dark) {
       const printReady = page.waitForEvent('download');
+      await synastry.getByText('Download chart', { exact: true }).click();
       await synastry.getByRole('button', { name: 'Download print-ready SVG' }).click();
       const markup = await readFile(await (await printReady).path(), 'utf8');
       expect(markup).toContain(`"chart_a_id":"${data.chart_a_id}"`);

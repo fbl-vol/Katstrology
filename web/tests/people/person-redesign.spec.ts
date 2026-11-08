@@ -33,7 +33,8 @@ for (const viewport of [
     const chart = page.locator('.profile-active-chart');
     await expect(chart.getByRole('group', { name: /Tropical natal wheel/ })).toBeVisible();
     await expect(chart.getByRole('tab', { name: /^Positions/ })).toBeVisible();
-    await expect(chart.getByRole('button', { name: 'Download safe SVG wheel' })).toBeVisible();
+    await expect(chart.getByText('Download chart', { exact: true })).toBeVisible();
+    await expect(chart.getByRole('button', { name: 'Download safe SVG wheel' })).toBeHidden();
     const wheel = await chart.locator('.natal-wheel-frame').boundingBox();
     const data = await chart.locator('.explorer-panel').boundingBox();
     expect(wheel).not.toBeNull(); expect(data).not.toBeNull();

@@ -89,6 +89,7 @@ for (const viewport of [
     expect(wheelPaper).toBe('rgb(48, 46, 50)'); // Ink & Copper, not a bright white chart.
     if (viewport.name === 'desktop') {
       const printReady = page.waitForEvent('download');
+      await panel.getByText('Download chart', { exact: true }).click();
       await panel.getByRole('button', { name: 'Download print-ready SVG' }).click();
       const markup = await readFile(await (await printReady).path(), 'utf8');
       expect(markup).toContain(`"chart_id":"${chartId}"`);

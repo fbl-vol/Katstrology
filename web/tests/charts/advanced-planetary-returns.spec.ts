@@ -36,6 +36,7 @@ test('named planetary returns show every pass, export provenance and replay with
   await expect(view.getByRole('region', { name: 'Planetary return results' })).not.toContainText('not independently verified');
   await expect(view.locator('.advanced-event')).toHaveCount(result.events.length);
   const download = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).first().click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).first().click();
   const svg = await readFile(await (await download).path(), 'utf8');
   expect(svg).toContain('"return_body":"jupiter"');

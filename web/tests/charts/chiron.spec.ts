@@ -32,6 +32,7 @@ test('explicit Chiron profile renders, exports and survives reload without chang
   const wheel = charts.locator('.natal-wheel').first();
   await expect(wheel).toContainText('Ch');
   const downloadPromise = page.waitForEvent('download');
+  await charts.getByText('Download chart', { exact: true }).first().click();
   await charts.getByRole('button', { name: 'Download safe SVG wheel' }).first().click();
   const download = await downloadPromise;
   const xml = await readFile(await download.path(), 'utf8');

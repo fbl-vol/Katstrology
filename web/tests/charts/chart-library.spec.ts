@@ -44,6 +44,7 @@ test('chart library opens every persisted technique with its original reader and
     if (['synastry_overlay', 'midpoint_composite', 'uncorrected_davison'].includes(example.technique)) {
       await expect(library.getByRole('heading', { name: /Other synthetic reader/, level: 2 })).toBeVisible();
       const download = page.waitForEvent('download');
+      await library.getByText('Download chart', { exact: true }).click();
       await library.getByRole('button', { name: 'Download safe SVG wheel', exact: true }).click();
       expect((await download).suggestedFilename()).toMatch(/\.svg$/);
       await expect(library.getByRole('button', { name: /Calculate|Compare charts|Save this comparison/ })).toHaveCount(0);

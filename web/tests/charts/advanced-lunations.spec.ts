@@ -38,6 +38,7 @@ test('actual lunation and global eclipse have distinct UTC instants and no local
   const chart = view.getByRole('region', { name: 'Selected actual-sky chart' });
   await expect(chart).toContainText('Global lunar eclipse maximum');
   const download = page.waitForEvent('download');
+  await chart.getByText('Download chart', { exact: true }).click();
   await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const svg = await readFile(await (await download).path(), 'utf8');
   expect(svg).toContain('"global_visibility":"not_calculated_for_location"');

@@ -119,6 +119,7 @@ for (const viewport of [
     await expect(chart.getByText(/ecliptic-projected longitude/)).toBeVisible();
     await page.screenshot({ path: `../.local/acceptance/natal-${viewport.name}.png`, fullPage: true });
     const downloadPromise = page.waitForEvent('download');
+    await chart.getByText('Download chart', { exact: true }).click();
     await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
     const download = await downloadPromise;
     const markup = await readFile(await download.path(), 'utf8');

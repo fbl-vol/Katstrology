@@ -197,6 +197,7 @@ for (const viewport of [
     expect(savedTurn.selected_people[0].chart_id).toBe(chartId);
     if (viewport.name === 'desktop') {
       const printReady = page.waitForEvent('download');
+      await card.getByText('Download chart', { exact: true }).click();
       await card.getByRole('button', { name: 'Download print-ready SVG' }).click();
       const markup = await readFile(await (await printReady).path(), 'utf8');
       expect(markup).toContain(`"chart_id":"${chartId}"`);

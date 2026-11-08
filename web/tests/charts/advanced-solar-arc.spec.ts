@@ -96,6 +96,7 @@ test('true solar arc is not MCp or fixed one degree per year and replays saved w
   await view.getByText(/Directed positions and natal aspects/).click();
   await expect(view.getByRole('table', { name: /Solar-arc directions/ }).getByRole('row')).toHaveCount(13);
   const download = page.waitForEvent('download');
+  await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();
   const markup = await readFile(await (await download).path(), 'utf8');
   expect(markup).toContain(`"arc_degrees":${saved.arc_degrees}`);

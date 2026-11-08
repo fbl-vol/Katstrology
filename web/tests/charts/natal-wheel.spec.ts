@@ -54,6 +54,7 @@ test('eight added palettes keep natal geometry, screen PNG colors and light prin
     await wheel.scrollIntoViewIfNeeded();
     await page.screenshot({ path: resolve(evidence, `${stage}-${theme.id}-chart-desktop.png`) });
     const download = page.waitForEvent('download');
+    await chart.getByText('Download chart', { exact: true }).click();
     await chart.getByRole('button', { name: 'Download PNG wheel' }).click();
     const png = await readFile(await (await download).path());
     expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
@@ -70,6 +71,7 @@ test('eight added palettes keep natal geometry, screen PNG colors and light prin
     await exported.close();
   }
   const print = page.waitForEvent('download');
+  await page.getByText('Download chart', { exact: true }).click();
   await page.getByRole('button', { name: 'Download print-ready SVG' }).click();
   const printMarkup = await readFile(await (await print).path(), 'utf8');
   expect(printMarkup).toContain('--wheel-paper: #ffffff');
@@ -145,6 +147,7 @@ for (const viewport of [
         await page.screenshot({ path: resolve(evidence, 'theme-dark-natal-desktop.png') });
       }
       const download = page.waitForEvent('download');
+      await chart.getByText('Download chart', { exact: true }).click();
       await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
       const original = await download;
       const markup = await readFile(await original.path(), 'utf8');
@@ -167,6 +170,7 @@ for (const viewport of [
       await exported.locator('svg').screenshot({ path: resolve(evidence, `${stage}-${fixture.name}-${viewport.name}-export.png`) });
       if (fixture.name === 'ordinary' && viewport.name === 'desktop') {
         const printReady = page.waitForEvent('download');
+        await chart.getByText('Download chart', { exact: true }).click();
         await chart.getByRole('button', { name: 'Download print-ready SVG' }).click();
         const printMarkup = await readFile(await (await printReady).path(), 'utf8');
         expect(printMarkup).toContain('viewBox="0 0 480 480"');
@@ -182,6 +186,7 @@ for (const viewport of [
         await exported.locator('svg').screenshot({ path: resolve(evidence, `${stage}-ordinary-desktop-print.png`) });
 
         const pngReady = page.waitForEvent('download');
+        await chart.getByText('Download chart', { exact: true }).click();
         await chart.getByRole('button', { name: 'Download PNG wheel' }).click();
         const png = await readFile(await (await pngReady).path());
         expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
@@ -196,6 +201,55 @@ for (const viewport of [
           return [...canvas.getContext('2d')!.getImageData(80, 80, 1, 1).data];
         });
         expect(background.slice(0, 3)).toEqual([38, 51, 77]); // screen PNG uses Blue Hour, not print paper.
+        await expect(chart.getByRole('alert')).toHaveCount(0);
+
+        const craft = resolve(import.meta.dirname, '../../../.local/ui-craft/renders');
+        mkdirSync(craft, { recursive: true });
+        const trigger = chart.getByText('Download chart', { exact: true });
+        const formats = chart.getByRole('group', { name: 'Chart download formats' });
+        for (const size of [
+          { name: 'desktop', width: 1440, height: 1024 }, { name: 'wide', width: 2560, height: 1080 },
+          { name: 'mobile', width: 390, height: 844 }, { name: 'short-mobile', width: 390, height: 560 },
+          { name: 'tablet', width: 768, height: 1024 },
+        ]) {
+          await page.setViewportSize(size);
+          await expect(formats).toBeHidden();
+          await trigger.focus(); await page.keyboard.press('Enter');
+          await expect(formats).toBeVisible();
+          await chart.getByRole('button', { name: 'Download PNG wheel' }).focus();
+          await expect.poll(async () => {
+            const box = await formats.boundingBox();
+            return box && box.x >= 0 && box.x + box.width <= size.width && box.y >= 0 && box.y + box.height <= size.height;
+          }).toBe(true);
+          await page.screenshot({ path: resolve(craft, `export-open-${size.name}.png`) });
+          await page.keyboard.press('Escape');
+          await expect(formats).toBeHidden(); await expect(trigger).toBeFocused();
+          await page.screenshot({ path: resolve(craft, `export-closed-${size.name}.png`) });
+        }
+        await page.evaluate(() => {
+          const original = HTMLCanvasElement.prototype.toBlob;
+          HTMLCanvasElement.prototype.toBlob = function(callback) {
+            HTMLCanvasElement.prototype.toBlob = original;
+            (window as unknown as { rejectChart: () => void }).rejectChart = () => callback(null);
+          };
+        });
+        let downloads = 0; page.on('download', () => { downloads++; });
+        await trigger.click();
+        await chart.getByRole('button', { name: 'Download PNG wheel' }).click();
+        await expect(chart.getByRole('status').filter({ hasText: 'Preparing chart…' })).toBeVisible();
+        await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+        await trigger.press('Enter'); await expect(formats).toBeHidden();
+        await page.screenshot({ path: resolve(craft, 'export-pending-tablet.png') });
+        await page.waitForFunction(() => typeof (window as unknown as { rejectChart?: () => void }).rejectChart === 'function');
+        await page.evaluate(() => (window as unknown as { rejectChart: () => void }).rejectChart());
+        await expect(chart.getByRole('alert')).toContainText('PNG could not be prepared');
+        expect(downloads).toBe(0);
+        await expect(trigger).toBeFocused();
+        await page.screenshot({ path: resolve(craft, 'export-failure-tablet.png') });
+        const fallback = page.waitForEvent('download');
+        await trigger.click(); await chart.getByRole('button', { name: 'Download safe SVG wheel' }).click();
+        expect((await fallback).suggestedFilename()).toMatch(/\.svg$/);
+        await expect(formats).toBeHidden(); await expect(trigger).toBeFocused();
         await expect(chart.getByRole('alert')).toHaveCount(0);
       }
       await exported.close();
