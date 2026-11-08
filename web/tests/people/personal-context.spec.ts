@@ -138,10 +138,22 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await expect(life.getByRole('alert')).toContainText('Context could not be refreshed');
   await expect(lifeSearch).toBeFocused();
   await capture('expanded-unavailable', true);
+  // Keep loading deterministic: once rows arrive they precede Show less in tab order.
+  let releaseRetry!: () => void;
+  expansionGate = new Promise<void>(resolve => { releaseRetry = resolve; });
   await life.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(life.getByText('Opening context…')).toBeVisible();
+  await expect(life.locator('.context-row')).toHaveCount(0);
   await lifeSearch.focus();
   await page.keyboard.press('Tab');
-  await expect(life.getByRole('button', { name: 'Show less', exact: true })).toBeFocused();
+  const showLess = life.getByRole('button', { name: 'Show less', exact: true });
+  await expect(showLess).toBeFocused();
+  releaseRetry(); expansionGate = null;
+  await expect(life.getByRole('button', { name: 'More entries' })).toBeEnabled();
+  await expect(showLess).toBeFocused(); // Completing the request must not steal focus.
+  await lifeSearch.focus();
+  await page.keyboard.press('Tab');
+  await expect(life.locator('.context-row').first()).toBeFocused();
   await expect(learning.getByRole('button', { name: /Short explanations/ })).toBeVisible();
   await expect(life.getByRole('button', { name: 'More entries' })).toBeVisible();
   await life.getByRole('button', { name: 'More entries' }).click();
