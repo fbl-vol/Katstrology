@@ -71,7 +71,8 @@ for (const viewport of [
     await page.screenshot({ path: resolve(renders, `${viewport.name}-${theme}-one-chart.png`), fullPage: true });
     await chart.getByRole('button', { name: /Open Synthetic transit reader’s full chart/ }).click();
     await expect(page.getByRole('tab', { name: 'Charts' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('.profile-active-chart')).toContainText('Calculated natal chart');
+    await expect(page.getByRole('heading', { name: 'Current birth chart' })).toBeVisible();
+    await expect(page.locator('.profile-active-chart .natal-wheel')).toBeVisible();
     await expect(page.locator('.profile-active-chart').getByText(chartId!, { exact: false })).toHaveCount(0);
     await page.getByRole('button', { name: 'Return to workspace' }).click();
     await expect(page.getByLabel('Message Kat')).toHaveValue('This draft stays while I inspect the chart.');

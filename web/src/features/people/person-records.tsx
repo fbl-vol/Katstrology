@@ -31,6 +31,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
   const [journalOpen, setJournalOpen] = useState(false);
   const watchDetails = useRef<HTMLDetailsElement>(null);
   const journalDetails = useRef<HTMLDetailsElement>(null);
+  const journalInput = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!openRequest) return;
     const selected = section === 'later' ? watchDetails.current : section === 'journal' ? journalDetails.current : null;
@@ -250,22 +251,7 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
       {journalOpen && <><p>Optional self-reported reflections. Not sent to Kat's model, tools or automatic recall. A linked calculation does not establish why something happened.</p>
         {journalState === 'loading' && <p role="status">Opening private reflections…</p>}
         {journalState === 'error' && <p role="alert">Private reflections could not be refreshed. <button type="button" onClick={() => void loadJournal()}>Try again</button></p>}
-        <form className="journal-form" onSubmit={event => void addReflection(event)}>
-          <label>Date <input type="date" required value={day} onChange={event => setDay(event.target.value)} /></label>
-          <label>Date certainty <select value={kind} onChange={event => setKind(event.target.value as typeof kind)}>
-            <option value="date">Day only</option><option value="uncertain">Approximate day</option><option value="instant">Exact local time</option>
-          </select></label>
-          {kind === 'instant' && <><label>Local time <input type="datetime-local" required value={time} onChange={event => setTime(event.target.value)} /></label>
-            <label>Timezone (IANA) <input required value={zone} onChange={event => setZone(event.target.value)} /></label>
-            <label>Repeated hour <select value={fold === null ? '' : String(fold)} onChange={event => setFold(event.target.value ? Number(event.target.value) : null)}>
-              <option value="">Check for ambiguity</option><option value="0">Earlier occurrence</option><option value="1">Later occurrence</option>
-            </select></label></>}
-          <label>Link a saved item (optional) <select value={linked} onChange={event => setLinked(event.target.value)}>
-            <option value="">No link</option>{watch.map(item => <option key={item.id} value={item.result_id}>{names[item.technique] || 'Saved calculation'} · {(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc)?.slice(0, 10) || 'saved period'}</option>)}
-          </select></label>
-          <label className="journal-note">Your reflection <textarea required maxLength={4096} value={note} onChange={event => setNote(event.target.value)} /></label>
-          <button type="submit" disabled={busy || !note.trim() || !day}>Save private reflection</button>
-        </form>
+        {journal.length > 0 && <button type="button" onClick={() => journalInput.current?.focus()}>Add reflection</button>}
         {journal.length ? <ul>{journal.map(item => <li key={item.id}>
           <strong>{item.local_date}{item.kind === 'uncertain' && ' · approximate day'}{item.kind === 'instant' && ` · ${item.instant_utc} (recorded instant)`}</strong>
           <p>{item.text}</p>{item.linked_result_id && <p>{item.linked_source_status === 'historical' ? 'Linked calculation is historical; your reflection remains yours.' : 'Linked saved calculation.'}</p>}
@@ -280,6 +266,23 @@ export function PersonRecords({ workspace, personId, onDiscuss, watchVersion, se
         </li>)}</ul> : journalState === 'ready' && <p>No private reflections saved.</p>}
         {journalNext !== null && <button type="button" disabled={busy || journalState !== 'ready'}
           onClick={() => void loadJournal(journalNext)}>Load more reflections</button>}
+        <h3>Add a private reflection</h3>
+        <form className="journal-form" aria-label="Add private reflection" onSubmit={event => void addReflection(event)}>
+          <label>Date <input type="date" required value={day} onChange={event => setDay(event.target.value)} /></label>
+          <label>Date certainty <select value={kind} onChange={event => setKind(event.target.value as typeof kind)}>
+            <option value="date">Day only</option><option value="uncertain">Approximate day</option><option value="instant">Exact local time</option>
+          </select></label>
+          {kind === 'instant' && <><label>Local time <input type="datetime-local" required value={time} onChange={event => setTime(event.target.value)} /></label>
+            <label>Timezone (IANA) <input required value={zone} onChange={event => setZone(event.target.value)} /></label>
+            <label>Repeated hour <select value={fold === null ? '' : String(fold)} onChange={event => setFold(event.target.value ? Number(event.target.value) : null)}>
+              <option value="">Check for ambiguity</option><option value="0">Earlier occurrence</option><option value="1">Later occurrence</option>
+            </select></label></>}
+          <label>Link a saved item (optional) <select value={linked} onChange={event => setLinked(event.target.value)}>
+            <option value="">No link</option>{watch.map(item => <option key={item.id} value={item.result_id}>{names[item.technique] || 'Saved calculation'} · {(item.event?.maximum_utc || item.event?.instant_utc || item.event?.effective_utc)?.slice(0, 10) || 'saved period'}</option>)}
+          </select></label>
+          <label className="journal-note">Your reflection <textarea ref={journalInput} required maxLength={4096} value={note} onChange={event => setNote(event.target.value)} /></label>
+          <button type="submit" disabled={busy || !note.trim() || !day}>Save private reflection</button>
+        </form>
       </>}
     </details>
     {error && <p role="alert" className="error">{error}</p>}

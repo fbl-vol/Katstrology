@@ -112,9 +112,6 @@ export function LunationsView({ workspace, people, onClose, initialPersonId }: {
       {clock.unavailable && <p role="status">Application date is unavailable. Choose UTC dates yourself.</p>}
       <button className="primary" type="submit" disabled={busy || !personId}>{busy ? 'Searching…' : 'Find lunations and eclipses'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved real-sky searches"><h2>Saved sky searches</h2>
-      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
-        Open saved sky search · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p className="error" role="alert">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Actual lunations result">
       {result.source_status === 'historical' && <p role="status" className="error">Historical natal source. Archived contacts were not recalculated.</p>}
@@ -164,5 +161,8 @@ export function LunationsView({ workspace, people, onClose, initialPersonId }: {
       <button type="button" onClick={() => downloadCsv(result)}>Download lunations and eclipses CSV</button>
       <p className="transit-scroll-hint">Swipe tables and wheel sideways on narrow screens. Global results do not establish local eclipse visibility.</p>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved real-sky searches"><h2>Saved sky searches</h2>
+      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
+        Open saved sky search · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
   </section>;
 }

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -32,6 +33,7 @@ test('progressed lunar cycle keeps effective and mapped times separate with save
   await expect(chart).toContainText('mapped');
   await expect(view).not.toContainText('not independently verified');
   await expect(view).toContainText('not an actual New or Full Moon');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Progressed phase result' }), view.getByRole('navigation', { name: 'Saved progressed phase searches' }), 'progressed-phases');
   await expect(chart).toContainText('Moon–Sun separation 0.00000°');
   const download = page.waitForEvent('download');
   await chart.getByText('Download chart', { exact: true }).click();

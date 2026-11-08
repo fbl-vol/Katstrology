@@ -66,9 +66,6 @@ export function ProgressionsView({ workspace, people, onClose, initialPersonId }
       {clock.unavailable && <p role="status">Application date is unavailable. Choose an effective UTC date yourself.</p>}
       <button type="submit" className="primary" disabled={busy || !personId}>{busy ? 'Calculating…' : 'Calculate progression'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressions"><h2>Saved progressions</h2>
-      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
-        Open saved progression · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Progression result">
       {result.source_status === 'historical' && <p role="status" className="error">Historical progression: the source natal is no longer current. These archived positions were not recalculated.</p>}
@@ -115,6 +112,9 @@ export function ProgressionsView({ workspace, people, onClose, initialPersonId }
       <p className="transit-scroll-hint">Swipe tables sideways on narrow screens. MCp and MCr are separate symbolic branches, not transiting planets or an event forecast.</p>
       </details>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressions"><h2>Saved progressions</h2>
+      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
+        Open saved progression · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
     {personId && <details className="chart-supporting-data progressed-search">
       <summary>Search exact progressed MC dates · separate method</summary>
       <ProgressedMcTimeline key={personId} workspace={workspace} personId={personId} />

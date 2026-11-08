@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -33,6 +34,7 @@ test('actual lunation and global eclipse have distinct UTC instants and no local
   expect(saved.eclipses.some((item: { family: string; eclipse_type: string }) =>
     item.family === 'lunar' && item.eclipse_type === 'penumbral')).toBe(true);
   await expect(view.getByRole('region', { name: 'Actual lunations result' })).toContainText('not necessarily visible');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Actual lunations result' }), view.getByRole('navigation', { name: 'Saved real-sky searches' }), 'lunations');
   await expect(view.getByRole('region', { name: 'Actual lunations result' })).not.toContainText('not independently verified');
   await view.getByRole('button', { name: 'View global eclipse' }).first().click();
   const chart = view.getByRole('region', { name: 'Selected actual-sky chart' });

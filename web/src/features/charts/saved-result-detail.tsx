@@ -66,7 +66,7 @@ export function SavedResultDetail({ result, resultId, technique, sourceStatus }:
   const returns = ['solar_return', 'lunar_return', 'planetary_return'].includes(technique);
   const events = result.events || [];
   return <section className="timing-opened" aria-label="Opened saved calculation">
-    <h3>{sourceStatus === 'current' ? 'Current source' : 'Historical source'} · original saved calculation</h3>
+    <h3>{sourceStatus === 'current' ? 'Saved calculation' : 'Historical source · saved calculation'}</h3>
     <p>{result.window_utc ? `Saved interval ${format(result.window_utc[0])} to ${format(result.window_utc[1])} (end excluded).` :
       result.effective_utc ? `Effective ${format(result.effective_utc)}.` : 'Saved interval not recorded.'}
       {' '}No values were recalculated.</p>

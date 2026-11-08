@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -30,6 +31,7 @@ test('secondary progression keeps mapped date and MCp/MCr distinct in archive an
   expect(saved.mapped_ephemeris_utc).not.toContain('2026');
   await expect(view.getByRole('region', { name: 'Progression result' })).toContainText('MCp');
   await expect(view.getByRole('region', { name: 'Progression result' })).toContainText('MCr');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Progression result' }), view.getByRole('navigation', { name: 'Saved progressions' }), 'progression');
   await page.setViewportSize({ width: 390, height: 560 });
   mkdirSync(resolve(import.meta.dirname, '../../../.local/ux-followup'), { recursive: true });
   await page.screenshot({ path: resolve(import.meta.dirname, '../../../.local/ux-followup/progression-collapsed-short-mobile.png'), fullPage: true });
@@ -65,6 +67,7 @@ test('secondary progression keeps mapped date and MCp/MCr distinct in archive an
   expect(mcp.body).toBe('mercury');
   expect(mcp.events.length).toBeGreaterThan(0);
   await expect(timeline.getByRole('region', { name: 'Progressed MC timeline' })).toContainText('MCp');
+  await captureResultHierarchy(page, timeline.getByRole('region', { name: 'Progressed MC timeline' }), timeline.getByRole('navigation', { name: 'Saved progressed MC searches' }), 'progressed-mc');
   const csvDownload = page.waitForEvent('download');
   await timeline.getByRole('button', { name: 'Download MC dates CSV' }).click();
   const csv = await readFile(await (await csvDownload).path(), 'utf8');

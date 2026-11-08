@@ -173,14 +173,6 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
       {clock.unavailable && <p role="status">Application date is unavailable. Choose a year or dates yourself.</p>}
       <button type="submit" className="primary" disabled={busy || !exactSource || !!yearError || reference.kind === 'missing'}>{busy ? 'Calculating…' : `Calculate ${label.toLowerCase()}`}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved returns">
-      <h2>Saved {label.toLowerCase()}</h2>
-      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
-        Open saved {label.toLowerCase()} · {item.window_utc?.length === 2 ? period(item.window_utc) :
-          moment(item.first_utc)}{item.event_count != null &&
-          ` · ${item.event_count} crossing${item.event_count === 1 ? '' : 's'}`} · {historyPlace(item)}
-      </button>)}
-    </nav>}
     {error && <p className="error" role="alert">{error}</p>}
     {sourceStatus === 'historical' && result && <p className="error" role="status">Historical return: the saved source is no longer this person’s current natal. These archived values were not recalculated.</p>}
     {result?.status === 'no_return_in_window' && <div role="status" className="advanced-results">
@@ -206,9 +198,6 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
           result.reference_place_source?.kind === 'saved_birthplace_coordinates' ? 'Saved birthplace coordinates' :
           'Reference coordinates'}: {result.reference_place?.latitude}°, {result.reference_place?.longitude}°.
           {entry.chart.houses.status !== 'supported' && ' Houses and angles are unavailable at this place.'}</p>
-        {result.id && result.person_id && onDiscuss && <button type="button" onClick={() => onDiscuss(result.person_id!,
-          { result_id: result.id!, event_index: index },
-          `${label} · ${moment(entry.instant_utc)} UTC`)}>Discuss this crossing</button>}
         {result.source_birth && result.source_settings && result.id && result.person_id && result.source_birth_id &&
           result.method_version && result.engine_version && result.profile_id && result.profile_revision &&
           <ReturnWheel natal={entry.chart} resultId={`${result.id}-${index}`} personId={result.person_id}
@@ -218,7 +207,18 @@ export function AdvancedView({ workspace, people, technique, onClose, onCreateNa
             engineVersion={result.engine_version} additionalProvenance={{
               reference_place: result.reference_place, reference_place_source: result.reference_place_source,
               window_utc: result.window_utc }} />}
+        {result.id && result.person_id && onDiscuss && <button type="button" onClick={() => onDiscuss(result.person_id!,
+          { result_id: result.id!, event_index: index },
+          `${label} · ${moment(entry.instant_utc)} UTC`)}>Discuss this crossing</button>}
       </article>)}
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved returns">
+      <h2>Saved {label.toLowerCase()}</h2>
+      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
+        Open saved {label.toLowerCase()} · {item.window_utc?.length === 2 ? period(item.window_utc) :
+          moment(item.first_utc)}{item.event_count != null &&
+          ` · ${item.event_count} crossing${item.event_count === 1 ? '' : 's'}`} · {historyPlace(item)}
+      </button>)}
+    </nav>}
   </section>;
 }

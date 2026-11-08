@@ -64,14 +64,11 @@ export function SolarArcView({ workspace, people, onClose, initialPersonId }: {
       {clock.unavailable && <p role="status">Application date is unavailable. Choose an effective UTC date yourself.</p>}
       <button className="primary" type="submit" disabled={busy || !personId}>{busy ? 'Calculating…' : 'Calculate solar arc'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved solar arcs"><h2>Saved solar arcs</h2>
-      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
-        Open saved solar arc · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p className="error" role="alert">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Solar-arc result">
       {result.source_status === 'historical' && <p role="status" className="error">Historical source natal. Archived directions were not recalculated.</p>}
       <h2 ref={intent.resultHeading} tabIndex={-1}>Solar arc · {people.find(person => person.id === personId)?.name || 'saved person'} · {result.effective_utc.slice(0, 10)} UTC</h2>
-      <p>True forward arc {result.arc_degrees.toFixed(5)}°. Saved natal Sun {zodiac(result.natal_sun_degrees)}; directly progressed Sun {zodiac(result.progressed_sun_degrees)} at symbolic ephemeris instant {result.mapped_ephemeris_utc}. Age {result.age_completed_years} + {result.anniversary_fraction.toFixed(6)} anniversary years.</p>
+      <p>True forward arc {result.arc_degrees.toFixed(5)}°.</p>
       <p>These directed points are symbolic, not a simultaneous sky. They do not show houses, motion or retrograde state. Natal axes: {result.axis_status}.</p>
       <SymbolicComparisonWheel positions={result.positions} natalPositions={result.natal_positions}
         label="Directed" description="Each direction is a saved natal degree plus one true forward solar arc. These are not sampled planetary positions or progressed houses."
@@ -90,6 +87,7 @@ export function SolarArcView({ workspace, people, onClose, initialPersonId }: {
           profile_id: result.profile_id, profile_revision: result.profile_revision,
         }} />
       <details className="chart-supporting-data"><summary>Directed positions and natal aspects · {result.directed_natal_aspects_total} aspects</summary>
+      <p>Saved natal Sun {zodiac(result.natal_sun_degrees)}; directly progressed Sun {zodiac(result.progressed_sun_degrees)} at symbolic ephemeris instant {result.mapped_ephemeris_utc}. Age {result.age_completed_years} + {result.anniversary_fraction.toFixed(6)} anniversary years.</p>
       <div className="transit-tables"><table><caption>Solar-arc directions · original natal and directed longitude</caption>
         <thead><tr><th scope="col">Natal point</th><th scope="col">Original degree</th><th scope="col">Directed degree</th></tr></thead>
         <tbody>{result.positions.map(point => <tr key={point.id}><th scope="row">{bodyLabel(point.id)}</th>
@@ -102,5 +100,8 @@ export function SolarArcView({ workspace, people, onClose, initialPersonId }: {
       <p className="transit-scroll-hint">Swipe tables and wheel sideways on narrow screens. Directions are not MCp, mean solar arc or transits.</p>
       </details>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved solar arcs"><h2>Saved solar arcs</h2>
+      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
+        Open saved solar arc · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
   </section>;
 }

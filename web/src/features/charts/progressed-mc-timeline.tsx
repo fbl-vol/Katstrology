@@ -109,15 +109,11 @@ export function ProgressedMcTimeline({ workspace, personId }: { workspace: Works
       {clock.unavailable && <p role="status">Application date is unavailable. Choose UTC dates yourself.</p>}
       <button type="submit" className="primary" disabled={busy}>{busy ? 'Searching…' : 'Search exact dates'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressed MC searches"><h3>Saved MC searches</h3>
-      {history.map(row => <button type="button" key={row.id} onClick={() => void openSaved(row.id)}>
-        Open saved {row.branch?.toUpperCase() || 'MC'} {row.body ? bodyLabel(row.body) : ''} · {row.created_at.slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Progressed MC timeline">
       {result.source_status === 'historical' && <p role="status" className="error">Historical source natal. Archived dates were not recalculated.</p>}
       <h3 ref={intent.resultHeading} tabIndex={-1}>{result.branch.toUpperCase()} · {bodyLabel(result.body)} {result.aspect}</h3>
       <p>{result.branch_description}. Fixed natal MC {zodiac(result.natal_mc_degrees)}. Effective dates are symbolic in the requested half-open UTC interval.</p>
-      <details className="chart-supporting-data"><summary>How these dates were found</summary><p>Contacts were found on a 12-hour scan with 60-second refinement.</p></details>
       <ChartNotation rings="No wheel is drawn for symbolic effective-date contacts. Dates are not concurrent positions." ids={[result.body]} />
       {result.events.length ? <div className="transit-tables"><table><caption>{result.branch.toUpperCase()} exact dates · {result.events.length} contacts</caption>
         <thead><tr><th scope="col">Effective instant (UTC)</th><th scope="col">Target longitude</th></tr></thead>
@@ -125,6 +121,10 @@ export function ProgressedMcTimeline({ workspace, personId }: { workspace: Works
           <td>{zodiac(item.target_degrees)}</td></tr>)}</tbody></table></div> :
         <p>No crossing in the chosen interval for this selected branch, body and aspect; this is not a promise about other intervals.</p>}
       <button type="button" onClick={() => downloadCsv(result)}>Download MC dates CSV</button>
+      <details className="chart-supporting-data"><summary>How these dates were found</summary><p>Contacts were found on a 12-hour scan with 60-second refinement.</p></details>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressed MC searches"><h3>Saved MC searches</h3>
+      {history.map(row => <button type="button" key={row.id} onClick={() => void openSaved(row.id)}>
+        Open saved {row.branch?.toUpperCase() || 'MC'} {row.body ? bodyLabel(row.body) : ''} · {row.created_at.slice(0, 10)}</button>)}</nav>}
   </section>;
 }

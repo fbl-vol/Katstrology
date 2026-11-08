@@ -117,17 +117,14 @@ export function RelationshipDerivedView({ workspace, people, onClose, savedResul
       <button className="primary" type="submit" disabled={busy || !first || !second || first === second}>
         {busy ? 'Calculating…' : 'Calculate derived chart'}</button>
     </form>}
-    {!savedResult && history.length > 0 && <nav className="advanced-history" aria-label="Saved relationship charts"><h2>Saved derived charts</h2>
-      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
-        Open saved derived chart · {row.created_at.slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Derived chart result">
       {result.source_status === 'historical' && <p role="status" className="error">Historical source version: this archived chart was not recalculated.</p>}
       <h2 ref={intent.resultHeading} tabIndex={-1}>{result.technique === 'midpoint_composite' ? 'Midpoint composite' : 'Uncorrected Davison'} · {name(result.person_a_id)} and {name(result.person_b_id)}</h2>
       {result.technique === 'midpoint_composite' ? <>
         <p>Each planet is the shortest circular midpoint of the two saved natal longitudes. This has no physical instant, houses, angles or motion.</p>
-        <CompositeWheel result={result} />
         {result.position_status !== 'supported' && <p role="status">An exactly opposite source pair has no unique circular midpoint. Those bodies were omitted from the wheel and aspects, not guessed.</p>}
+        <CompositeWheel result={result} />
         <details className="chart-supporting-data"><summary>Composite planetary positions and aspects · {result.aspects_total} aspects</summary>
         <div className="transit-tables"><table><caption>Composite planets · both natal sources and midpoint</caption>
           <thead><tr><th scope="col">Planet</th><th scope="col">First natal</th><th scope="col">Second natal</th><th scope="col">Symbolic midpoint</th></tr></thead>
@@ -163,5 +160,8 @@ export function RelationshipDerivedView({ workspace, people, onClose, savedResul
       <details className="chart-supporting-data"><summary>Chiron in this chart</summary><p>{result.chiron_policy}</p></details>
       <p className="transit-scroll-hint">Swipe wide tables and wheel sideways on small screens. Saved results keep both source versions; corrections do not rewrite past outputs.</p>
     </div>}
+    {!savedResult && history.length > 0 && <nav className="advanced-history" aria-label="Saved relationship charts"><h2>Saved derived charts</h2>
+      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
+        Open saved derived chart · {row.created_at.slice(0, 10)}</button>)}</nav>}
   </section>;
 }

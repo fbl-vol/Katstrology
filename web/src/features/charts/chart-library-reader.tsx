@@ -43,14 +43,14 @@ export function ChartLibraryReader({ workspace, selected, onBack, onDiscuss, isA
     <button type="button" onClick={onBack}>← Back to chart library</button>
     <div className={selected.technique === 'natal' ? 'profile-chart-heading' : undefined}><div>
       <h2 ref={heading} tabIndex={-1}>{selected.technique === 'natal' ? isActiveNatal ? 'Current birth chart' : 'Saved birth chart' : libraryTitles[selected.technique]}</h2>
-      {selected.technique === 'natal' && <p>Calculated from saved birth details · {libraryDate(selected)} · {selected.date ? `saved birth time ${selected.date.slice(11, 16)}` : 'birth time unknown'}. Earlier versions remain in History.</p>}
+      {selected.technique === 'natal' && <p>{libraryDate(selected)} · {selected.date ? `saved birth time ${selected.date.slice(11, 16)}` : 'birth time unknown'}.</p>}
     </div></div>
     {error ? <div role="alert"><p>This saved result could not be loaded. Nothing was recalculated.</p>
       <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry saved result</button></div> :
       !chart && !saved && <p role="status">Loading saved result…</p>}
-    {chart && <div className="profile-active-chart"><p>Original saved natal · source {chart.source_status}. Opening History does not change the active chart.</p>
+    {chart && <div className="profile-active-chart">
       {chart.result.natal ? <NatalChart chart={chart} allowMotion /> :
-        <p>This saved version contains only solar information. A full natal wheel is unavailable.</p>}</div>}
+        <p role="status">{chart.source_status !== 'current' && 'Historical source. '}This saved version contains only solar information. A full natal wheel is unavailable.</p>}</div>}
     {saved && <><SavedResultDetail result={saved.result as SavedCalculation} resultId={saved.id}
       technique={saved.technique} sourceStatus={saved.source_status} />
       <button type="button" onClick={() => onDiscuss({ result_id: saved.id, event_index: null },

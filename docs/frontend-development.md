@@ -31,6 +31,30 @@ Global styles and assets live in `src/shared/`; chart and thinking styles stay
 with their feature. Theme changes must preserve the synchronous CSP-hashed
 prepaint bootstrap in `index.html`, all eighteen palettes and chart-export colors.
 
+## Reading and result hierarchy
+
+Use the shared text roles (`--text-reading`, `--text-support`, `--text-label`,
+`--text-note`) rather than shrinking consequential text to fit a viewport.
+Replies and retained passages need comfortable line spacing and a bounded measure;
+long tables keep their own horizontal scroll. Wheel glyphs retain their calculation
+geometry. Enlarged text must not change the document scroll owner or lose drafts.
+
+Keep essential provisional, historical, unsupported, symbolic and clipping
+qualifications beside the result. Put saved-history navigation after the principal
+result, and numerical-method detail behind its existing disclosure where possible.
+Necessary input controls and primary event/comparison tables remain directly
+available. Opening a saved result always uses its immutable ID, never a newer chart.
+
+Collection entries precede expansion and creation chrome. Counts must describe the
+actual loaded/query result; refresh failure must not turn retained content into an
+empty state. Keep independent searches, paging, edits and focus continuity.
+
+Wheel formats share `WheelExportActions`: one native **Download chart** disclosure,
+ordinary keyboard-reachable format buttons, Escape/focus return, and honest pending
+or failure text. Do not add menu roles requiring arrow-key behavior to a disclosure.
+Keep the existing SVG sanitization, palette policies, embedded fonts and captured
+result provenance. A single CSV or JSON export stays a direct action.
+
 ## Validate without touching a running app
 
 From the repository root, with existing Python/Node/Chromium dependencies and

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -30,6 +31,7 @@ test('manual natal MC contacts save a dated timeline and CSV without a message',
   expect(result.window_end_inclusive).toBe(false);
   expect(result.events.length).toBeGreaterThanOrEqual(1);
   await expect(view.getByRole('region', { name: 'MC contact results' })).toContainText('astronomical natal MC');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'MC contact results' }), view.getByRole('navigation', { name: 'Saved MC timelines' }), 'mc-transit');
   await expect(view.getByRole('region', { name: 'MC contact results' })).not.toContainText('not independently verified');
   const download = page.waitForEvent('download');
   await view.getByRole('button', { name: 'Download CSV timeline' }).click();

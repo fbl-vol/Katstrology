@@ -327,7 +327,9 @@ dialog{padding:0;color:var(--ink);border:1px solid var(--line);border-radius:13p
 .settings-row-main small,.tone-options small,.settings-value,.provider-current,.settings-connection small{font-size:var(--text-label);line-height:1.6}
 .settings-dialog p,.settings-connection p,.connection-setup ol,.tone-example p{font-size:var(--text-support);line-height:1.65}
 .person-page .profile-quiet-row strong{font-size:15px}.person-page .profile-quiet-row small{font-size:var(--text-label);line-height:1.6}
-.person-records li>p{font-size:15px;line-height:1.7;max-width:66ch}
+.person-records li>p,.profile-facts dd{font-size:var(--text-reading);line-height:1.7;max-width:66ch}
 .chart-hub-choice span:not(.hub-arrow),.explorer-note{font-size:var(--text-label);line-height:1.6}
 .natal-tables table,.transit-tables table{font-size:var(--text-label);line-height:1.6}
 .insight-source,.profile-facts dt{font-size:var(--text-note)}
+.advanced-results>h2{font:normal 26px/1.25 Georgia,serif;scroll-margin-top:90px}
+.advanced-event>button,.advanced-results>button,.synastry-result>button,.transit-heading>button,.chart-hub-heading>button{font:inherit;min-height:44px;padding:9px 13px;border:1px solid var(--line);border-radius:6px;background:var(--white);color:var(--link)}

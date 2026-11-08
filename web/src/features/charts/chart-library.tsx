@@ -52,7 +52,7 @@ function ChartLibraryHistory({ personId, technique, onOpen, onBack }: {
     <p>All saved versions, newest save first. Opening one never replaces the active natal or rewrites a result.</p>
     <ol>{rows.map(row => <li key={row.id} data-result-id={row.id}>
       <div><strong>Saved {new Date(row.created_at).toISOString().slice(0, 19).replace('T', ' ')} UTC</strong>
-        <ResultSummary result={row} personId={personId} /><p className="library-place">Version {row.id}</p></div>
+        <ResultSummary result={row} personId={personId} /></div>
       <button type="button" onClick={() => onOpen(row)} aria-label={`Open saved ${libraryTitles[technique]} ${row.id}`}>Open</button>
     </li>)}</ol>
     {busy && <p role="status">Loading saved history…</p>}

@@ -156,7 +156,7 @@ export function NatalChart({ chart, allowMotion = false, explorationEnabled = tr
     {positions}{houses}{aspects}</details>;
 
   return <div className="natal-detail">
-    <p>{natal.status === 'complete' ? 'Calculated natal chart' : 'Limited natal chart'} · {settings.house_system} houses · {settings.node_type} north node{natal.lilith_method ? ` · ${natal.lilith_method}` : ''}.</p>
+    <p>{natal.status !== 'complete' && 'Limited natal chart · '}{settings.house_system} houses · {settings.node_type} north node{natal.lilith_method ? ` · ${natal.lilith_method}` : ''}.</p>
     {(birth.provenance.startsWith('provisional:') || birth.provenance.includes('geonames_city_centre')) &&
       <p className="natal-qualification">{birth.provenance.startsWith('provisional:') &&
         'Birth details are provisional; treat these positions as tentative.'}

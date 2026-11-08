@@ -45,7 +45,13 @@ test('private journal fences a late initial read and retains drafts only for thi
   release(); await done;
   await expect(records.locator('li').filter({ hasText: 'A private synthetic entry' })).toBeVisible();
   await expect(records.getByText('No private reflections saved.')).toHaveCount(0);
-  await records.getByLabel('Your reflection', { exact: true }).fill('An unsaved private draft');
+  const entry = await records.locator('li').filter({ hasText: 'A private synthetic entry' }).boundingBox();
+  const addForm = records.getByRole('form', { name: 'Add private reflection' });
+  const formBox = await addForm.boundingBox();
+  expect(entry && formBox && entry.y + entry.height <= formBox.y).toBe(true);
+  await records.getByRole('button', { name: 'Add reflection', exact: true }).click();
+  await expect(addForm.getByLabel('Your reflection')).toBeFocused();
+  await addForm.getByLabel('Your reflection').fill('An unsaved private draft');
   await records.getByRole('button', { name: 'Edit text' }).click();
   await records.getByRole('form', { name: 'Edit private reflection' }).getByLabel('Your reflection').fill('An unsaved edit');
   await page.getByRole('tab', { name: 'Charts' }).click();
@@ -55,7 +61,7 @@ test('private journal fences a late initial read and retains drafts only for thi
   await expect(page.getByRole('tab', { name: 'Overview' })).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Saved' })).toBeFocused();
-  await expect(records.locator('form.journal-form').first().locator('textarea')).toHaveValue('An unsaved private draft');
+  await expect(addForm.getByLabel('Your reflection')).toHaveValue('An unsaved private draft');
   await expect(records.getByRole('form', { name: 'Edit private reflection' }).getByLabel('Your reflection')).toHaveValue('An unsaved edit');
   for (const viewport of [
     { name: 'desktop', width: 1440, height: 1024 }, { name: 'mobile', width: 390, height: 844 },

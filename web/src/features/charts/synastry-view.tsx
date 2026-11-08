@@ -155,11 +155,6 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
       <button className="primary" type="submit" disabled={busy || !a || !b || a === b}>{busy ? 'Calculating…' : 'Compare charts'}</button>
     </form>}
     {a && b && a === b && <p className="error" role="alert">Choose two different people; no chart was calculated.</p>}
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved comparisons"><h2>Saved comparisons</h2>
-      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
-        Open saved comparison · {item.created_at.slice(0, 10)}
-      </button>)}
-    </nav>}
     {error && <p className="error" role="alert">{error}</p>}
     {result?.status === 'no_active_natal' && <div role="status" className="synastry-unavailable"><p>Both people need a current generated natal. An older or uploaded chart is never substituted.</p>
       {result.missing_person_ids?.map(id => <button type="button" key={id} onClick={() => onCreate?.(id)}>Create chart for {people.find(person => person.id === id)?.name || 'person'}</button>)}</div>}
@@ -176,10 +171,10 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
       <h2>{aName} · {bName}</h2>
       <p className="pair-ring-key">A · {aName} (outer teal) · B · {bName} (inner amber). Exact degrees and aspects are in the tables.</p>
       {historical && <p role="status" className="error">Historical comparison: one or both source charts are no longer current. These archived placements were not recalculated.</p>}
-      {savedId ? <p role="status">{savedResult ? 'Saved comparison; original source charts.' : 'Saved comparison; reopen it from Saved comparisons after a refresh.'}</p> :
-        <button type="button" disabled={saving} onClick={() => void save()}>{saving ? 'Saving comparison…' : 'Save this comparison'}</button>}
-      <PairWheel result={result} aName={aName} bName={bName} />
       {(!result.a_angles || !result.b_angles) && <p className="natal-qualification">Houses or angles are unavailable for one of these charts; only the supported direction of house overlay is shown.</p>}
+      <PairWheel result={result} aName={aName} bName={bName} />
+      {savedId ? !savedResult && <p role="status">Saved comparison; reopen it from Saved comparisons after a refresh.</p> :
+        <button type="button" disabled={saving} onClick={() => void save()}>{saving ? 'Saving comparison…' : 'Save this comparison'}</button>}
       {([['a', aName, result.positions_a], ['b', bName, result.positions_b]] as const).map(([key, name, positions]) => <div className="transit-tables" key={key}><table><caption>{key.toUpperCase()} · {name}</caption><thead><tr><th scope="col">Natal position</th><th scope="col">Sign and degree</th><th scope="col">Longitude</th></tr></thead><tbody>{positions?.map(body => <tr key={body.id}><th scope="row">{bodyLabel(body.id)}</th><td>{zodiac(body.longitude_degrees)}</td><td>{body.longitude_degrees.toFixed(4)}°</td></tr>)}</tbody></table></div>)}
       <p className="transit-scroll-hint">Swipe the tables sideways to see every column.</p>
       <div className="transit-tables"><h3>Inter-chart aspects · {result.total_aspects} found; showing {result.aspects?.length} closest</h3><table><caption className="sr-only">A to B inter-chart ecliptic aspects</caption><thead><tr><th scope="col">A · {aName}</th><th scope="col">Aspect</th><th scope="col">B · {bName}</th><th scope="col">Orb</th></tr></thead><tbody>{result.aspects?.map((aspect, index) => <tr key={`${aspect.a_body_id}-${aspect.b_body_id}-${index}`}><th scope="row">{bodyLabel(aspect.a_body_id)}</th><td>{aspect.aspect}</td><td>{bodyLabel(aspect.b_body_id)}</td><td>{aspect.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
@@ -205,5 +200,10 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
       {discussionDisabled && <p role="status">Finish or check the pending conversation before starting a different discussion. This chart did not change your draft.</p>}
       {!savedResult && onDiscuss && <button type="button" disabled={discussionDisabled} onClick={() => onDiscuss([a, b])}>Start conversation about these people</button>}
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved comparisons"><h2>Saved comparisons</h2>
+      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
+        Open saved comparison · {item.created_at.slice(0, 10)}
+      </button>)}
+    </nav>}
   </section>;
 }

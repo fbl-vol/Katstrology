@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -22,6 +23,7 @@ test('normal return workflows save trusted charts without sending a message', as
   await view.getByRole('button', { name: 'Calculate solar return' }).click();
   const record = await (await created).json();
   await expect(view.locator('.advanced-event')).toHaveCount(1);
+  await captureResultHierarchy(page, view.locator('.advanced-results'), view.getByRole('navigation', { name: 'Saved returns' }), 'solar-return');
   await expect(view.locator('.natal-wheel')).toContainText('Solar return · tropical');
   await expect(view).not.toContainText('not independently verified');
   const saved = await (await page.request.get(`/api/advanced-results/${record.id}`)).json();

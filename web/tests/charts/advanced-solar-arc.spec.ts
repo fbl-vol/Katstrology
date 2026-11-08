@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -93,6 +94,7 @@ test('true solar arc is not MCp or fixed one degree per year and replays saved w
   expect(saved.arc_degrees).toBeGreaterThan(0);
   expect(saved.positions).toHaveLength(12);
   await expect(view.getByRole('region', { name: 'Solar-arc result' })).toContainText('not a simultaneous sky');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Solar-arc result' }), view.getByRole('navigation', { name: 'Saved solar arcs' }), 'solar-arc');
   await view.getByText(/Directed positions and natal aspects/).click();
   await expect(view.getByRole('table', { name: /Solar-arc directions/ }).getByRole('row')).toHaveCount(13);
   const download = page.waitForEvent('download');

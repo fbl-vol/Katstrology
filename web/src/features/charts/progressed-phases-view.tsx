@@ -85,9 +85,6 @@ export function ProgressedPhasesView({ workspace, people, onClose, initialPerson
       {clock.unavailable && <p role="status">Application date is unavailable. Choose effective UTC dates yourself.</p>}
       <button type="submit" className="primary" disabled={busy || !personId}>{busy ? 'Searching…' : 'Find progressed phases'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressed phase searches"><h2>Saved phase searches</h2>
-      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
-        Open saved phases · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="Progressed phase result">
       {result.source_status === 'historical' && <p role="status" className="error">Historical source natal. These archived symbolic dates were not recalculated.</p>}
@@ -126,5 +123,8 @@ export function ProgressedPhasesView({ workspace, people, onClose, initialPerson
       <button type="button" onClick={() => downloadCsv(result)}>Download progressed phase dates CSV</button>
       <p className="transit-scroll-hint">Swipe the event table and wheel sideways on narrow screens.</p>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved progressed phase searches"><h2>Saved phase searches</h2>
+      {history.map(row => <button key={row.id} type="button" onClick={() => void openSaved(row.id)}>
+        Open saved phases · {(row.first_utc || row.created_at).slice(0, 10)}</button>)}</nav>}
   </section>;
 }

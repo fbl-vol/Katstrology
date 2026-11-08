@@ -151,9 +151,6 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
       {clock.unavailable && <p role="status">Application date is unavailable. Choose UTC dates yourself.</p>}
       <button type="submit" className="primary" disabled={!exactSource || busy || reference.kind === 'missing'}>{busy ? 'Searching…' : 'Find planetary return passes'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved planetary returns"><h2>Saved planetary returns</h2>
-      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
-        Open saved planetary returns · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result && <div role="region" aria-label="Planetary return results" className="advanced-results">
       {result.source_status === 'historical' && <p role="status" className="error">Historical natal source: these archived passes were not recalculated.</p>}
@@ -181,5 +178,8 @@ export function PlanetaryReturnsView({ workspace, people, onClose, onCreateNatal
       </article>)}
       <button type="button" onClick={() => downloadCsv(result)}>Download planetary returns CSV</button>
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved planetary returns"><h2>Saved planetary returns</h2>
+      {history.map(item => <button key={item.id} type="button" onClick={() => void openSaved(item.id)}>
+        Open saved planetary returns · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
   </section>;
 }

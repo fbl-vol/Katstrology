@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -33,6 +34,7 @@ test('named planetary returns show every pass, export provenance and replay with
   expect(result.method_version).toBe('planet-own-natal-longitude-all-passes-v1');
   expect(result.events.length).toBeGreaterThan(0);
   await expect(view.getByRole('region', { name: 'Planetary return results' })).toContainText('Jupiter returns');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Planetary return results' }), view.getByRole('navigation', { name: 'Saved planetary returns' }), 'planetary-return');
   await expect(view.getByRole('region', { name: 'Planetary return results' })).not.toContainText('not independently verified');
   await expect(view.locator('.advanced-event')).toHaveCount(result.events.length);
   const download = page.waitForEvent('download');

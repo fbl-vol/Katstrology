@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { captureResultHierarchy } from '../support/ui-craft';
 
 const renders = resolve(import.meta.dirname, '../../../.local/advanced-techniques');
 
@@ -27,6 +28,7 @@ test('composite and uncorrected Davison keep two owner source versions and expor
   expect(composite.physical_instant).toBeNull();
   expect(composite.houses).toBe('not_defined');
   await expect(view.getByRole('region', { name: 'Derived chart result' })).toContainText('no physical instant');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Derived chart result' }), view.getByRole('navigation', { name: 'Saved relationship charts' }), 'composite');
   await expect(view.getByRole('region', { name: 'Derived chart result' })).not.toContainText('not independently verified');
   await expect(view.getByRole('region', { name: 'Derived chart result' }).getByText('Chiron in this chart')).toBeVisible();
   const exported = page.waitForEvent('download');
@@ -53,6 +55,7 @@ test('composite and uncorrected Davison keep two owner source versions and expor
   expect(davison.technique).toBe('uncorrected_davison');
   expect(davison.derived_natal.instant_utc).toBe(davison.derived_instant_utc);
   await expect(view.getByRole('region', { name: 'Derived chart result' })).toContainText('not a spherical midpoint');
+  await captureResultHierarchy(page, view.getByRole('region', { name: 'Derived chart result' }), view.getByRole('navigation', { name: 'Saved relationship charts' }), 'davison');
   const derivedExport = page.waitForEvent('download');
   await view.getByText('Download chart', { exact: true }).click();
   await view.getByRole('button', { name: 'Download safe SVG wheel' }).click();

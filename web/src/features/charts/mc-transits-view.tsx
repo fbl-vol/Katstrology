@@ -83,9 +83,6 @@ export function McTransitsView({ workspace, people, onClose, initialPersonId }: 
       {clock.unavailable && <p role="status">Application date is unavailable. Choose UTC dates yourself.</p>}
       <button type="submit" className="primary" disabled={busy || !personId}>{busy ? 'Calculating…' : 'Calculate MC contacts'}</button>
     </form>
-    {history.length > 0 && <nav className="advanced-history" aria-label="Saved MC timelines"><h2>Saved MC timelines</h2>
-      {history.map(item => <button type="button" key={item.id} onClick={() => void openSaved(item.id)}>
-        Open saved timeline · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
     {error && <p role="alert" className="error">{error}</p>}
     {result?.status === 'supported' && <div className="advanced-event" role="region" aria-label="MC contact results">
       {result.source_status === 'historical' && <p role="status" className="error">Historical timeline: the source natal is no longer current. These archived contacts were not recalculated.</p>}
@@ -100,5 +97,8 @@ export function McTransitsView({ workspace, people, onClose, initialPersonId }: 
       <button type="button" onClick={downloadCsv}>Download CSV timeline</button>
 
     </div>}
+    {history.length > 0 && <nav className="advanced-history" aria-label="Saved MC timelines"><h2>Saved MC timelines</h2>
+      {history.map(item => <button type="button" key={item.id} onClick={() => void openSaved(item.id)}>
+        Open saved timeline · {(item.first_utc || item.created_at).slice(0, 10)}</button>)}</nav>}
   </section>;
 }
