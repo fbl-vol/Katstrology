@@ -6,15 +6,91 @@ on:
         value: ${{ jobs.candidate.outputs.artifact-id }}
 permissions:
   contents: read
-# Distinct from caller/release locks, so nested reusable calls cannot deadlock.
+# Workflow lock only: lanes remain parallel; distinct from caller/release locks.
 concurrency:
   group: kat-qualification-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  candidate:
-    name: candidate
+  synthetic:
+    name: ${{ matrix.lane }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { lane: backend, kind: backend }
+          - { lane: browser-1, kind: browser }
+          - { lane: browser-2, kind: browser }
+          - { lane: browser-3, kind: browser }
+          - { lane: browser-4, kind: browser }
+          - { lane: interaction, kind: interaction }
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/qualification-setup
+        id: setup
+        with:
+          lane: ${{ matrix.kind }}
+      - name: Complete isolated lane
+        env:
+          KAT_HOSTED_DOCKER_SOCKET: ${{ steps.setup.outputs.docker-socket }}
+          QUALIFICATION_LANE: ${{ matrix.lane }}
+        run: .venv-swiss/bin/python -m deploy.qualify --lane "$QUALIFICATION_LANE" --execute
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
+          path: .local/qualification-lanes/${{ matrix.lane }}/*.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 3
+  native:
+    name: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/qualification-setup
+        id: setup
+        with:
+          lane: native
+      - name: Build once and qualify the exact native archive
+        env:
+          KAT_HOSTED_DOCKER_SOCKET: ${{ steps.setup.outputs.docker-socket }}
+        run: .venv-swiss/bin/python -m deploy.qualify --lane native --execute
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ github.run_id }}-${{ github.run_attempt }}-native
+          path: .local/qualification-lanes/native/*.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: native
+        with:
+          name: native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .local/fresh-production/package/*/receipt.json
+            .local/fresh-production/package/*/kat-production-amd64.tar
+            .local/fresh-production/package/*/kat-public-source.tar
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+  candidate:
+    # Preserve the installed admission job name: release / qualify / candidate.
+    name: candidate
+    needs: [synthetic, native]
+    if: success()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
@@ -29,40 +105,38 @@ jobs:
         with:
           node-version: '22.23.4'
           package-manager-cache: false
-      - uses: docker/setup-docker-action@e43656e248c0bd0647d3f5c195d116aacf6fcaf4 # v4
-        id: docker
+      - run: npm ci --prefix web --no-audit --no-fund
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          version: v29.7.2
-          set-host: true
-          daemon-config: '{"features":{"containerd-snapshotter":true}}'
-      - name: Pin native Docker CLI plugins
-        run: python -m deploy.hosted_tools --execute
-      - name: Prepare public test dependencies
-        run: |
-          python -m venv .venv-swiss
-          .venv-swiss/bin/python -m pip install -r m2/requirements.txt -r probes/requirements-swiss.txt
-          npm ci --prefix web --no-audit --no-fund
-          cd web && npx playwright install --with-deps chromium
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Prepare hash-pinned public numerical files
-        run: .venv-swiss/bin/python -m deploy.prepare_ci_inputs
-      - name: All isolated suites and native build-once Compose qualification
-        id: qualify
-        env:
-          KAT_HOSTED_DOCKER_SOCKET: ${{ steps.docker.outputs.sock }}
-        run: |
-          .venv-swiss/bin/python -m deploy.qualify --execute
-          printf 'package=.local/fresh-production/package/%s\n' "${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          pattern: evidence-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: .local/ci-evidence
+          merge-multiple: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .local/ci-native
+      - name: Join exact-source complete evidence without rebuilding
+        run: python -m deploy.qualify --join .local/ci-evidence --receipt .local/ci-native/receipt.json --execute
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: joined-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .local/release-qualification/*/synthetic.json
+            .local/qualification-discovery/report.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 3
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         id: upload
         with:
-          name: candidate-${{ github.sha }}
+          name: candidate-${{ github.sha }}-${{ github.run_attempt }}
           path: |
-            ${{ steps.qualify.outputs.package }}/receipt.json
-            ${{ steps.qualify.outputs.package }}/qualification.json
-            ${{ steps.qualify.outputs.package }}/kat-production-amd64.tar
-            ${{ steps.qualify.outputs.package }}/kat-public-source.tar
+            .local/ci-native/receipt.json
+            .local/ci-native/qualification.json
+            .local/ci-native/kat-production-amd64.tar
+            .local/ci-native/kat-public-source.tar
+          include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
-          include-hidden-files: true

@@ -23,6 +23,42 @@ def workflow(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_parallel_qualification_requires_every_lane_before_candidate_upload(self):
+        document = workflow('qualify.yml')
+        jobs = document['jobs']
+        self.assertEqual(set(jobs), {'synthetic', 'native', 'candidate'})
+        matrix = jobs['synthetic']['strategy']
+        self.assertEqual(matrix['fail-fast'], 'false')
+        self.assertEqual([entry['lane'] for entry in matrix['matrix']['include']],
+                         ['backend', 'browser-1', 'browser-2', 'browser-3', 'browser-4', 'interaction'])
+        candidate = jobs['candidate']
+        self.assertEqual(candidate['name'], 'candidate')
+        self.assertEqual(candidate['needs'], ['synthetic', 'native'])
+        self.assertEqual(candidate['if'], 'success()')
+        self.assertEqual(document['on']['workflow_call']['outputs']['artifact-id']['value'],
+                         '${{ jobs.candidate.outputs.artifact-id }}')
+        for job in jobs.values():
+            self.assertEqual(job['runs-on'], 'ubuntu-24.04')
+            self.assertNotIn('concurrency', job)
+            self.assertNotIn('secrets', job)
+            self.assertNotIn('continue-on-error', str(job))
+            self.assertEqual(job['steps'][0]['with'], {
+                'persist-credentials': 'false', 'ref': '${{ github.sha }}'})
+        steps = candidate['steps']
+        join = next(step for step in steps if '--join' in step.get('run', ''))
+        upload = next(step for step in steps if step.get('id') == 'upload')
+        self.assertLess(steps.index(join), steps.index(upload))
+        self.assertNotIn('if', upload)  # Normal success gate, never always().
+        self.assertIn('qualification.json', upload['with']['path'])
+        downloads = [step['with'] for step in steps if step.get('uses', '').startswith('actions/download-artifact@')]
+        self.assertTrue(all('${{ github.run_attempt }}' in str(step) for step in downloads))
+        self.assertTrue(all('${{ github.run_id }}' in str(step) for step in downloads))
+        self.assertEqual(downloads[0]['merge-multiple'], 'false')
+        native_upload = next(step for step in jobs['native']['steps'] if step.get('id') == 'native')
+        self.assertNotIn('qualification.json', native_upload['with']['path'])
+        self.assertNotIn('deploy/build_local.py', str(candidate))
+        self.assertEqual(document['permissions'], {'contents': 'read'})
+
     def test_caller_forwards_only_named_secrets_to_reviewed_authority(self):
         jobs = workflow('release.yml')['jobs']
         self.assertEqual(jobs['release'].get('secrets'), {

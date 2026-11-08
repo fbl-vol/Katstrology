@@ -1,0 +1,47 @@
+name: Pinned qualification dependencies
+description: Public inputs only; no credentials, caches or release authority.
+inputs:
+  lane:
+    required: true
+    description: backend, browser, interaction or native
+outputs:
+  docker-socket:
+    value: ${{ steps.docker.outputs.sock }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.11.16'
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      if: inputs.lane == 'browser' || inputs.lane == 'interaction'
+      with:
+        node-version: '22.23.4'
+        package-manager-cache: false
+    - uses: docker/setup-docker-action@e43656e248c0bd0647d3f5c195d116aacf6fcaf4 # v4
+      id: docker
+      with:
+        version: v29.7.2
+        set-host: true
+        daemon-config: '{"features":{"containerd-snapshotter":true}}'
+    - name: Pin native Docker CLI plugins
+      shell: bash
+      run: python -m deploy.hosted_tools --execute
+    - name: Python and PostgreSQL client
+      shell: bash
+      run: |
+        python -m venv .venv-swiss
+        .venv-swiss/bin/python -m pip install -r m2/requirements.txt
+        sudo apt-get update && sudo apt-get install -y postgresql-client
+    - name: Synthetic numerical and tokenizer dependencies
+      if: inputs.lane != 'native'
+      shell: bash
+      run: |
+        .venv-swiss/bin/python -m pip install -r probes/requirements-swiss.txt
+        .venv-swiss/bin/python -m deploy.prepare_ci_inputs
+    - name: Browser dependencies
+      if: inputs.lane == 'browser' || inputs.lane == 'interaction'
+      shell: bash
+      run: |
+        npm ci --prefix web --no-audit --no-fund
+        cd web && npx playwright install --with-deps chromium
