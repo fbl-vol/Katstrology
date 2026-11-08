@@ -30,6 +30,13 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   const other = await make('Synthetic linked person');
   for (let index = 0; index < 52; index++) await make(`Synthetic picker filler ${index}`);
   const duplicate = await make('Synthetic linked person');
+  for (const [id, occupation] of [[other, 'Teacher'], [duplicate, 'Artist']]) {
+    const response = await page.request.post(`/api/people/${id}/personal-profile`, { headers, data: {
+      operation_id: crypto.randomUUID(), change: { kind: 'details', expected_version: 0,
+        details: { pronouns: '', home: '', occupation, about: '' } },
+    } });
+    expect(response.ok()).toBe(true);
+  }
   const person = await make('Synthetic context reader');
   const sidebar = await (await page.request.get('/api/people')).json();
   expect(sidebar.people.some((entry: { id: string }) => entry.id === other)).toBe(false);
@@ -167,9 +174,14 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await expect(link.getByRole('button', { name: 'More people', exact: true })).toBeEnabled();
   await link.getByRole('button', { name: 'More people', exact: true }).click();
   await expect(link.getByText('55 of 55 matching owned people loaded; this person cannot link to itself.')).toBeVisible();
+  await link.getByLabel('Search owned people').fill('Synthetic picker filler 0');
+  await expect(link.getByRole('option', { name: 'Synthetic picker filler 0', exact: true })).toHaveCount(1);
   await link.getByLabel('Search owned people').fill('Synthetic linked person');
-  await expect(link.getByRole('option', { name: `Synthetic linked person · ${other}`, exact: true })).toHaveCount(1);
-  await expect(link.getByRole('option', { name: `Synthetic linked person · ${duplicate}`, exact: true })).toHaveCount(1);
+  await expect(link.getByRole('option', { name: 'Synthetic linked person · Teacher (profile 1)', exact: true })).toHaveAttribute('value', other);
+  await expect(link.getByRole('option', { name: 'Synthetic linked person · Artist (profile 2)', exact: true })).toHaveAttribute('value', duplicate);
+  const labels = (await link.getByRole('option').allTextContents()).join('\n');
+  expect(labels).not.toContain(other);
+  expect(labels).not.toContain(duplicate);
   await link.getByRole('combobox', { name: 'Person', exact: true }).selectOption(other);
   let failPicker = true;
   await page.route('**/api/people/picker', async route => {
@@ -180,6 +192,8 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await expect(link.getByRole('alert')).toContainText('Your selection and relationship draft are retained');
   await expect(link.getByLabel('Their relationship')).toHaveValue('Friend');
   await expect(link.getByRole('combobox', { name: 'Person', exact: true })).toHaveValue(other);
+  await expect(link.getByRole('option', { name: 'Synthetic linked person · Teacher (profile 1)', exact: true })).toHaveAttribute('value', other);
+  expect(await link.innerText()).not.toContain(other);
   await capture('picker-failure');
   await link.getByRole('button', { name: 'Retry people search' }).click();
   await expect(link.getByText('Finding owned people…')).not.toBeVisible();

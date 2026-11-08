@@ -9,7 +9,7 @@ from psycopg.types.json import Jsonb
 
 from m2.people.personal_context import PersonalContext, ContextConflict
 from m2.people.person_records import _person
-from m2.chat.context_candidates import UPDATE_TOOL, candidate, PROPERTIES
+from m2.chat.context_candidates import UPDATE_TOOL, candidate, correction_target, PROPERTIES
 
 
 def preference(store, session):
@@ -165,10 +165,9 @@ def stage(store, session, conv_id, turn_id, args):
             WHERE owner_id=%s AND person_id=%s AND id=%s''', (owner, person_id, args['entry_id'])).fetchone()
         if not existing or existing['version'] != args['expected_version']:
             raise ContextConflict('Current entry version required')
-        # A model may only correct a version actually supplied in this turn.
-        if not any(row['id'] == args['entry_id'] and row['person_id'] == person_id and row['version'] == args['expected_version']
-                   for row in snapshot.get('entries', [])):
-            raise ContextConflict('Entry version was not selected for this turn')
+        # Resolve source evidence across ALL supplied eligible records, rather
+        # than letting a model-selected ID authorize an unrelated replacement.
+        correction_target(args, snapshot.get('entries', []))
     elif args['expected_version'] != 0:
         raise ValueError('New entries require version zero')
     digest = hashlib.sha256((person_id + '\n' + statement).encode()).hexdigest()

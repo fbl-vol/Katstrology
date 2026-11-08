@@ -20,7 +20,13 @@ class PersonalProfileTests(DatabaseCase):
         self.assertEqual(len(second['people']), 6)
         self.assertIsNone(second['next_after'])
         self.assertIn('z-old', {row['id'] for row in second['people']})
-        self.assertNotIn('private', {row['id'] for row in first['people'] + second['people']})
+        choices = first['people'] + second['people']
+        self.assertNotIn('private', {row['id'] for row in choices})
+        self.assertEqual(len({row['picker_label'] for row in choices}), 56)
+        self.assertTrue(all(row['id'] not in row['picker_label'] for row in choices))
+        self.assertIn('(profile 1)', next(row['picker_label'] for row in choices if row['id'] == 'z-old'))
+        people.charts.add_person(self.alice, 'unique', 'Unique name')
+        self.assertEqual(people.picker(self.alice, 'Unique')['people'][0]['picker_label'], 'Unique name')
         with self.assertRaises(KeyError):
             people.picker(self.alice, '', 'private')
         profile = PersonalProfile(self.store)
@@ -38,6 +44,10 @@ class PersonalProfileTests(DatabaseCase):
         profile.change(self.alice, 'one', 'details', details)
         profile.change(self.alice, 'one', 'details', details)
         self.assertEqual(profile.get(self.alice, 'one')['version'], 1)
+        label = next(row['picker_label'] for row in people.picker(self.alice, 'Same')['people'] if row['id'] == 'one')
+        self.assertIn('Teacher, A fictional town', label)
+        self.assertNotIn('one', label)
+        self.assertEqual(next(row['picker_label'] for row in people.picker(self.alice, 'name')['people'] if row['id'] == 'one'), label)
         with self.assertRaises(ContextConflict):
             profile.change(self.alice, 'one', 'stale', details)
         link = {'kind': 'link', 'expected_version': 0, 'id': 'link', 'other_person_id': 'two',

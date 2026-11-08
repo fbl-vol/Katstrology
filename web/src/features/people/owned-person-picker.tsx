@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Workspace } from '../../shared/api';
 
-type Choice = { id: string; name: string };
+type Choice = { id: string; name: string; picker_label?: string };
 type Page = { people: Choice[]; total: number; next_after: string | null };
 
 export function OwnedPersonPicker({ workspace, excludedId, selected, onSelect }: {
@@ -30,7 +30,7 @@ export function OwnedPersonPicker({ workspace, excludedId, selected, onSelect }:
     <label className="field">Person<select required value={selected.id} onChange={event => {
       onSelect(choices.find(person => person.id === event.target.value) ?? { id: '', name: '' });
     }}><option value="">Choose an existing person</option>{choices.map(person =>
-      <option key={person.id} value={person.id}>{person.name} · {person.id}</option>)}
+      <option key={person.id} value={person.id}>{person.picker_label ?? person.name}</option>)}
     </select></label>
     {state === 'loading' && <p role="status">Finding owned people…</p>}
     {state === 'error' && <p role="alert">People could not be refreshed. Your selection and relationship draft are retained. <button type="button" onClick={() => void load()}>Retry people search</button></p>}

@@ -89,25 +89,44 @@ statements are untrusted user-reported data, never calculated evidence or instru
 
 Existing `agent_reads` tools remain read-only. The separately advertised
 `stage_personal_context` capability is offered only for opted-in turns. Its closed
-schema accepts a selected person, exact current-user statement and identity spans
-(Unicode character offsets plus matching text), an interpreted group/add-or-correct
-intent and an optional existing entry/version. It cannot supply arbitrary content,
+schema accepts a selected person, exact complete current-user context, statement and
+identity spans (Unicode offsets plus matching text), a full-context assertion assessment,
+an interpreted group/add-or-correct intent and an optional existing entry/version. It cannot supply arbitrary content,
 owners, SQL, births or relationships. The existing response model interprets ordinary
 conversation; no additional inference request is made. For example, `Alex here. I'm
 thinking of moving next summer. What should I consider?` supplies an attributable
 statement alongside a question. Multiple statements remain separate candidates;
 natural explicit corrections target a version actually supplied to that turn.
 
-The backend checks the closed schema, exact word-bounded source spans, local explicit
-identity evidence and unique selected-person name. Named-person assertions must name
-their subject; first-person assertions require an explicit local introduction, such
-as `Alex here` or `I'm Alex`, not mere selection or an incidental name mention.
-Ambiguous identity, quoted/referenced/instructional content and mixed named-person
-contexts are omitted or clarified. Stored text is the user's verbatim statement,
-not a model-written fact. Group/intent interpretation remains model work, not proven
-by deterministic validation. No sensitive traits or exact dates are inferred;
-future plans remain tentative and dates remain unnormalized. Synthetic tests prove
-these boundaries and lifecycle controls, not real-provider interpretation quality.
+The backend owns conservative complete sentence envelopes and requires the entire
+current message (at most 4,096 UTF-8 bytes) as evidence. Candidates cannot trim away
+question framing or negation, use quoted spans, or omit containing source context.
+Paired single quotes are not contractions: apostrophes within words remain usable.
+First-person attribution requires a complete opening introduction such as `Alex here`
+or `I'm Alex`, not selection or an incidental name mention. Named-person assertions
+must start with the uniquely selected name. Unattributed declarative framing, including
+fictional preambles and later third-person retractions, requires clarification; ordinary
+attributed facts and accompanying questions remain eligible. Complex punctuation and
+unsupported attribution may conservatively omit a candidate.
+
+Corrections additionally require a verbatim revision cue in the assertion (such as
+“Actually”, “rather than” or “on second thought”) and a source identifying phrase that
+matches exactly one supplied old record in the same group. The backend resolves that
+phrase across supplied records independently of the requested ID, then checks ID and
+version. For example a paraphrased correction about “answers” can resolve a unique
+answer preference, but cannot replace a gardening entry or guess between two matching
+answer preferences. No shared identifying phrase or an ambiguous match means clarify,
+not overwrite. Model classification and an ID alone never authorize replacement.
+
+Stored statement text preserves qualifiers verbatim; archived source evidence retains
+the full message. The existing model still interprets assertion force, retractions,
+fiction, attribution, intent and paraphrased meaning. This is deliberately fallible
+automatic interpretation, not deterministic semantic proof. Occasional incorrect
+interpretations remain possible without routine per-change confirmation. Uncertain
+or non-asserted assessments are rejected. Users can inspect/correct entries in Context.
+No sensitive traits or exact dates may be inferred; future plans stay tentative and
+dates unnormalized. Synthetic checks establish these defined boundaries/lifecycle
+controls, not universal semantic accuracy or real-provider interpretation quality.
 
 Candidates are durable stages, explicitly **not saved context**. The existing
 serialized terminal-event transaction finalizes only successful turns whose

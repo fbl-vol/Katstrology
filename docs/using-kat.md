@@ -57,7 +57,9 @@ Person pages have sibling **Overview / Context / Charts / Saved** panes.
 Overview keeps optional personal details and directional links to existing people
 in your own workspace. Links do not share accounts or automatically select another
 person's records for chat. Unlinking leaves both people and their records intact. The relationship picker
-searches and pages through all owned people; stable IDs distinguish duplicate names.
+searches and pages through all owned people. Same-name people show existing occupation/home
+or an added-date preview with a local profile number; unique names need no suffix.
+These recognition labels can change as profiles change, while links retain the chosen identity.
 The Quiet Overview also leads to conversations, Charts and Saved. Exact-time natal
 charts provide qualified planets/nodes, houses/angles, aspects, accessible tables
 and downloadable wheels. Unsupported houses remain visibly partial. Child's
@@ -81,8 +83,9 @@ It starts off even when a provider is connected. Selected relevant details may
 then be sent to that provider; no chart is required. Speak naturally about an
 explicitly identified selected person, for example `Alex here. I'm considering a
 move next summer. What should I consider?` Selecting someone does not establish
-who “I” refers to. Ambiguous identities or statements are omitted or clarified,
-not invented.
+who “I” refers to. Kat should omit or clarify ambiguous statements and correction targets.
+Automatic interpretation can occasionally be wrong; inspect and correct entries in Context.
+Clear updates do not require a separate confirmation each time.
 You still control birth details, people and relationships. Plans do not become
 completed events merely because a date passes. See the [provider contract](provider-and-context.md)
 for exact accepted statement and source-lifecycle boundaries.

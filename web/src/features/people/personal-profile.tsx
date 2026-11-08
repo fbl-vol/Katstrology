@@ -4,7 +4,7 @@ import { CreatePersonDialog, type Person } from './people';
 import { OwnedPersonPicker } from './owned-person-picker';
 
 type Details = { pronouns: string; home: string; occupation: string; about: string };
-type Link = { id: string; other_person_id: string; name: string; label: string; dates: string; version: number };
+type Link = { id: string; other_person_id: string; name: string; picker_label?: string; label: string; dates: string; version: number };
 type Profile = { version: number; details: Details; links: Link[] };
 
 export type ProfileMemory = { details?: Details | null; link?: Link | null; version?: number;
@@ -68,8 +68,8 @@ export function PersonalProfile({ workspace, personId, active, openPerson, memor
         <h2>{details ? 'Personal details' : 'Linked person'}</h2>
         {details && (Object.keys(details) as (keyof Details)[]).map(key => <label className="field" key={key}>{key === 'home' ? 'Based in' : key[0].toUpperCase() + key.slice(1)}<input maxLength={1024} value={details[key]} onChange={event => setDetails({ ...details, [key]: event.target.value })} /></label>)}
         {link && <>
-          <OwnedPersonPicker workspace={workspace} excludedId={personId} selected={{ id: link.other_person_id, name: link.name }}
-            onSelect={person => setLink({ ...link, other_person_id: person.id, name: person.name })} />
+          <OwnedPersonPicker workspace={workspace} excludedId={personId} selected={{ id: link.other_person_id, name: link.name, picker_label: link.picker_label }}
+            onSelect={person => setLink({ ...link, other_person_id: person.id, name: person.name, picker_label: person.picker_label })} />
           <button type="button" onClick={() => setCreating(true)}>Create a new person</button>
           <label className="field">Their relationship to this person<input required maxLength={128} placeholder="For example, sibling" value={link.label} onChange={event => setLink({ ...link, label: event.target.value })} /></label>
           <label className="field">Dates (optional)<input maxLength={256} value={link.dates} onChange={event => setLink({ ...link, dates: event.target.value })} /></label>

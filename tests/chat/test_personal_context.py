@@ -16,13 +16,17 @@ from tests.chat.test_tool_evidence_budget import native_call
 from tests.support.database import DatabaseCase
 
 
-def candidate_args(prompt, statement=None, group='coming_up', identity='Alex here.', intent='add', entry_id=None, version=0):
+def candidate_args(prompt, statement=None, group='coming_up', identity='Alex here.', intent='add', entry_id=None, version=0,
+                   cue='Actually', target='answers', assessment='asserted'):
     statement = statement or prompt.removeprefix(identity + ' ')
     def span(value):
         start = prompt.index(value)
         return {'start': start, 'end': start + len(value), 'text': value}
     return {'person_id': 'alex', 'statement': span(statement), 'identity': span(identity),
+            'context': span(prompt), 'assessment': assessment,
             'attribution': 'self_identification', 'intent': intent, 'group': group,
+            'correction_cue': cue if intent == 'correct' else '',
+            'target_phrase': target if intent == 'correct' else '',
             'entry_id': entry_id, 'expected_version': version}
 
 
@@ -137,12 +141,12 @@ class ConversationalContextTests(DatabaseCase):
         self.assertEqual(corrected['content']['title'], 'Actually, I prefer detailed answers rather than short ones.')
         correction = 'Alex here. On second thought, brief answers suit me better.'
         self.begin('racing', correction, 'correction')
-        args = candidate_args(correction, group='guidance_preferences', intent='correct', entry_id=entry['id'], version=2)
+        args = candidate_args(correction, group='guidance_preferences', intent='correct', entry_id=entry['id'], version=2, cue='On second thought')
         stage(self.store, self.alice, 'thread', 'racing', args)
-        self.context.save(self.alice, 'alex', entry['id'], 'manual', 2, fact('guidance_preferences', 'Manual takes precedence'))
+        self.context.save(self.alice, 'alex', entry['id'], 'manual', 2, fact('guidance_preferences', 'Manual answers take precedence'))
         self.store.append(self.alice, 'thread', 'racing', 'complete', {})
         corrected = next(row for row in self.context.list(self.alice, 'alex')['entries'] if row['id'] == entry['id'])
-        self.assertEqual(corrected['content']['title'], 'Manual takes precedence')
+        self.assertEqual(corrected['content']['title'], 'Manual answers take precedence')
         removal_race = 'Alex here. Actually, I would like longer answers again.'
         self.begin('removal-race', removal_race, 'racing')
         removal_args = candidate_args(removal_race, group='guidance_preferences', intent='correct', entry_id=entry['id'], version=3)
@@ -261,6 +265,108 @@ class ConversationalContextTests(DatabaseCase):
                                            lambda value, **_: list(value), context_limit=50000)
         self.assertNotIn('Contaminated answer marker', rendered)
         self.assertEqual(budget['personal_context_dependencies'], [])
+
+    def test_complete_source_context_rejects_misleading_fragments(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.context.save(self.alice, 'alex', 'old', 'old', 0, fact('guidance_preferences', 'Short answers'))
+        cases = [
+            ('Is Alex here? I enjoy sailing.', 'Alex here'),
+            ('I am not Alex here. I enjoy sailing.', 'Alex here.'),
+            ("The book reads: 'Alex here. I enjoy sailing.'", 'Alex here.'),
+            ('Alex here. It is not true that I enjoy sailing.', 'Alex here.'),
+            ('Alex here. I enjoy sailing. That last sentence is false.', 'Alex here.'),
+            ('This is a fictional diary. Alex here. I enjoy sailing.', 'Alex here.'),
+        ]
+        for index, (prompt, identity) in enumerate(cases):
+            with self.subTest(prompt=prompt):
+                turn = f'negative-{index}'
+                self.begin(turn, prompt)
+                for intent, entry_id, version in [('add', None, 0), ('correct', 'old', 1)]:
+                    with self.assertRaises(ValueError):
+                        stage(self.store, self.alice, 'thread', turn,
+                              candidate_args(prompt, 'I enjoy sailing.', 'guidance_preferences', identity,
+                                             intent, entry_id, version))
+                self.store.append(self.alice, 'thread', turn, 'complete', {})
+                entries = self.context.list(self.alice, 'alex')['entries']
+                self.assertEqual([(row['id'], row['version'], row['content']['title']) for row in entries],
+                                 [('old', 1, 'Short answers')])
+                self.assertEqual(self.store.db.execute('SELECT count(*) AS n FROM context_update_stages').fetchone()['n'], 0)
+
+    def test_native_plain_add_cannot_correct_either_supplied_record(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.context.save(self.alice, 'alex', 'gardening', 'garden', 0, fact('interests', 'Gardening'))
+        self.context.save(self.alice, 'alex', 'preference', 'prefer', 0, fact('guidance_preferences', 'Short answers'))
+        prompt = 'Alex here. I enjoy baking. How does gardening compare?'
+        for index, target in enumerate(('gardening', 'preference')):
+            args = candidate_args(prompt, 'I enjoy baking.', 'interests', intent='correct', entry_id=target, version=1)
+            model, bridge = model_for(native_call(1, 'stage_personal_context', args),
+                                      [text('We can talk about baking.'), slim_footer([])])
+            try:
+                self.assertEqual(run_turn(self.store, self.alice, 'thread', f'wrong-{index}', prompt,
+                    model, lambda _: None, selected_people=[{'person_id': 'alex', 'chart_id': None}],
+                    model_provider='chatgpt_plan', model_slug='gpt-6.1-sol', clock=self.clock), 'complete')
+                snapshot = self.store.read_turn(self.alice, 'thread', f'wrong-{index}')['events'][0]['payload']['personal_context']
+                self.assertEqual({row['id'] for row in snapshot['entries']}, {'gardening', 'preference'})
+                self.assertIn('error', bridge.requests[1]['input'][-1]['output'])
+                entries = self.context.list(self.alice, 'alex')['entries']
+                self.assertEqual({row['content']['title'] for row in entries}, {'Gardening', 'Short answers'})
+                self.assertTrue(all(row['version'] == 1 for row in entries))
+                self.assertEqual(self.store.db.execute('SELECT count(*) AS n FROM context_update_stages').fetchone()['n'], 0)
+            finally:
+                bridge.close()
+
+    def test_correction_evidence_resolves_unique_supplied_target(self):
+        set_preference(self.store, self.alice, True, 0)
+        for key, title in [('garden', 'Gardening outdoors'), ('answers', 'Short answers')]:
+            self.context.save(self.alice, 'alex', key, key, 0, fact('interests', title))
+        statement = 'Actually, detailed answers suit me better than short ones.'
+        prompt = 'Alex here. ' + statement + ' How does gardening compare?'
+        self.begin('evidence', prompt)
+        supplied = self.store.read_turn(self.alice, 'thread', 'evidence')['events'][0]['payload']['personal_context']['entries']
+        self.assertEqual({row['id'] for row in supplied}, {'garden', 'answers'})
+        good = candidate_args(prompt, statement, group='interests', intent='correct', entry_id='answers', version=1)
+        for changed in ({'entry_id': 'garden'}, {'target_phrase': 'gardening'},
+                        {'expected_version': 2}, {'correction_cue': 'I'}, {'group': 'goals'}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                stage(self.store, self.alice, 'thread', 'evidence', {**good, **changed})
+        stage(self.store, self.alice, 'thread', 'evidence', good)
+        self.store.append(self.alice, 'thread', 'evidence', 'complete', {})
+        self.context.save(self.alice, 'alex', 'other-answers', 'other-answers', 0, fact('interests', 'Long answers'))
+        self.begin('ambiguous-target', prompt, 'evidence')
+        with self.assertRaises(ValueError):
+            stage(self.store, self.alice, 'thread', 'ambiguous-target', {**good, 'expected_version': 2})
+        self.store.append(self.alice, 'thread', 'ambiguous-target', 'complete', {})
+        entries = {row['id']: row for row in self.context.list(self.alice, 'alex', group='interests')['entries']}
+        self.assertEqual(entries['garden']['content']['title'], 'Gardening outdoors')
+        self.assertEqual(entries['answers']['version'], 2)
+        self.assertEqual(entries['other-answers']['version'], 1)
+        self.assertEqual(self.store.db.execute("SELECT count(*) AS n FROM context_update_stages WHERE turn_id='ambiguous-target'").fetchone()['n'], 0)
+
+    def test_full_context_and_fallible_assessment_are_required(self):
+        set_preference(self.store, self.alice, True, 0)
+        prompt = "I'm Alex. I don't enjoy sailing. I'm considering a retreat. What could I try?"
+        self.begin('contractions', prompt)
+        for statement, group in [("I don't enjoy sailing.", 'interests'), ("I'm considering a retreat.", 'coming_up')]:
+            args = candidate_args(prompt, statement, group, "I'm Alex.")
+            stage(self.store, self.alice, 'thread', 'contractions', args)
+        self.store.append(self.alice, 'thread', 'contractions', 'complete', {})
+        entries = self.context.list(self.alice, 'alex')['entries']
+        self.assertEqual({row['content']['title'] for row in entries},
+                         {"I don't enjoy sailing.", "I'm considering a retreat."})
+        self.assertTrue(all(row['source']['evidence']['context']['text'] == prompt for row in entries))
+        prompt = 'Alex here. I enjoy sailing. I take that back.'
+        self.begin('retracted', prompt, 'contractions')
+        args = candidate_args(prompt, 'I enjoy sailing.', 'interests', assessment='non_asserted')
+        with self.assertRaises(ValueError):
+            stage(self.store, self.alice, 'thread', 'retracted', args)
+        # Full-context force is interpreted by the model, not independently proved
+        # by the server. Even an asserted classification cannot omit source bytes.
+        args['assessment'] = 'asserted'
+        args['context'] = {'start': 0, 'end': 26, 'text': prompt[:26]}
+        with self.assertRaises(ValueError):
+            stage(self.store, self.alice, 'thread', 'retracted', args)
+        self.store.append(self.alice, 'thread', 'retracted', 'complete', {})
+        self.assertEqual(len(self.context.list(self.alice, 'alex')['entries']), 2)
 
     def test_named_statements_and_identity_collisions(self):
         set_preference(self.store, self.alice, True, 0)

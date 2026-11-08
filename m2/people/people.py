@@ -80,12 +80,31 @@ class People:
             raise ValueError('Invalid person search')
         if after is not None:
             self._person(session, after)  # cursor cannot name another owner's person
-        rows = self.store.db.execute('''SELECT id,name FROM people WHERE owner_id=%s
-            AND (%s::text IS NULL OR id>%s) AND strpos(lower(name),lower(%s))>0
-            ORDER BY id LIMIT 51''', (owner, after, after, query)).fetchall()
+        rows = self.store.db.execute('''WITH choices AS (
+            SELECT p.id,p.name,p.created_at,d.details,
+                count(*) OVER (PARTITION BY lower(p.name)) AS name_count,
+                row_number() OVER (PARTITION BY lower(p.name) ORDER BY p.created_at,p.id) AS name_number
+            FROM people p LEFT JOIN personal_details d
+                ON d.owner_id=p.owner_id AND d.person_id=p.id
+            WHERE p.owner_id=%s)
+            SELECT * FROM choices WHERE (%s::text IS NULL OR id>%s)
+                AND strpos(lower(name),lower(%s))>0 ORDER BY id LIMIT 51''',
+            (owner, after, after, query)).fetchall()
+        choices = []
+        for row in rows[:50]:
+            label = row['name']
+            if row['name_count'] > 1:
+                details = row['details'] or {}
+                description = ', '.join(details.get(key, '').strip() for key in ('occupation', 'home')
+                                        if details.get(key, '').strip())
+                # Local ordinal is a recognition aid, never identity authority.
+                # It is computed across the owner, not the current page/search.
+                preview = description[:80] or 'added ' + row['created_at'].strftime('%d %b %Y')
+                label += f" · {preview} (profile {row['name_number']})"
+            choices.append({'id': row['id'], 'name': row['name'], 'picker_label': label})
         count = self.store.db.execute('''SELECT count(*) AS total FROM people WHERE owner_id=%s
             AND strpos(lower(name),lower(%s))>0''', (owner, query)).fetchone()['total']
-        return {'people': rows[:50], 'total': count,
+        return {'people': choices, 'total': count,
                 'next_after': rows[49]['id'] if len(rows) > 50 else None}
 
     def add_draft(self, session, person_id, details):
