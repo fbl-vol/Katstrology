@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 import { AssistantMarkdown } from './assistant-markdown';
 import { ThinkingIndicator } from './thinking';
+import { ContextOutcomes } from './context-outcomes';
 import type { Person } from '../people/people';
 import { TransitResult, type TransitResultData } from '../charts/transit-result';
 import { SaveInsight } from '../people/insights';
@@ -77,10 +78,11 @@ export type TurnActions = {
 };
 
 export const TurnCard = memo(function TurnCard({ turn, people, workspace, conversationId, activeHead, actions,
-  eventFailure, displayBody = true, showRevisionActions = true }: {
+  eventFailure, displayBody = true, showRevisionActions = true, onInspectContext }: {
   turn: Turn; people: Person[]; workspace: Workspace; conversationId: string; activeHead: string | null;
   actions: { current: TurnActions }; eventFailure?: string;
   displayBody?: boolean; showRevisionActions?: boolean;
+  onInspectContext?: (id: string) => void;
 }) {
   const [correction, setCorrection] = useState(false);
   const [replacement, setReplacement] = useState('');
@@ -160,10 +162,7 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
       {savedFile ? <span> To try again, reselect the file and give fresh consent.</span> :
         <button className="quiet-action" onClick={() => actions.current.onRetryFailed(turn)}>
           Try again as a new message with current selection</button>}</p>}
-    {turn.events.some(event => ['complete', 'interrupted', 'error'].includes(event.kind) &&
-      Array.isArray(event.payload.personal_context_updates) && event.payload.personal_context_updates.some(
-        (update: { outcome?: string }) => update.outcome !== 'saved')) &&
-      <p className="turn-warning" role="status">Some personal-context changes were not saved. Your conversation remains archived. Check Context before making a manual correction; no automatic retry will run.</p>}
+    <ContextOutcomes turn={turn} people={people} inspect={onInspectContext} />
     {turn.status === 'interrupted' && <p className="turn-warning">Interrupted. The committed prefix is preserved; continue in a new turn if needed.</p>}
     {eventFailure ? <p className="turn-warning" role="alert">{eventFailure}{' '}
       <button className="quiet-action" onClick={() => actions.current.onRetryEvents(turn)}>Retry loading saved reply</button></p> :

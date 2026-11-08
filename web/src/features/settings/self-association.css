@@ -1,0 +1,10 @@
+.self-association { min-width: 0; margin-block: 1.25rem; overflow-wrap: anywhere; }
+.self-association h3 { font-size: var(--text-reading); margin-bottom: .5rem; }
+.self-association p { font-size: var(--text-support); }
+.self-association fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.self-association legend { font-size: var(--text-support); font-weight: bold; }
+.self-association .field { display: grid; gap: .35rem; min-width: 0; font-size: var(--text-support); }
+.self-association .field input, .self-association .field select { width: 100%; min-width: 0; max-width: 100%; }
+.self-association .form-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.self-association button { min-height: 44px; max-width: 100%; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 6px; background: var(--white); color: var(--link); font-size: var(--text-support); }
+.self-association .self-confirm { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }

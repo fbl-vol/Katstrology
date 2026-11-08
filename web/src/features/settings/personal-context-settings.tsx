@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Workspace } from '../../shared/api';
+import { SelfAssociation } from './self-association';
 
 type Preference = { enabled: boolean; version: number };
 export function PersonalContextSettings({ workspace }: { workspace: Workspace }) {
@@ -24,7 +25,8 @@ export function PersonalContextSettings({ workspace }: { workspace: Workspace })
     <p>Manual editing is always available. Journals, unselected people, relationship links and birth details are never collected automatically.</p>
     {saved ? <label><input type="checkbox" checked={pending ?? saved.enabled} disabled={busy || !!error} onChange={event => void change(event.target.checked)} /> Use and collect personal context automatically</label> : !error && <p role="status">Loading choice…</p>}
     {busy && <p role="status">Saving your choice…</p>}
-    <p>Speak naturally about an explicitly identified selected person. Selecting a person does not tell Kat who you are; introduce yourself when using “I”. Kat should omit or clarify ambiguity, but automatic interpretation can sometimes be wrong. You can inspect and correct entries in Context.</p>
+    <SelfAssociation workspace={workspace} />
+    <p>Speak naturally about your life, including facts alongside a question. You can also explicitly name another selected person or introduce yourself in the message. Selecting a chart or matching a name never establishes who you are. Ambiguous, quoted or hypothetical material should be omitted or clarified; interpretation can still be wrong. Saved outcomes do not mean every fact was found. Inspect and correct entries in Context.</p>
     <p>Turning this off affects subsequent turns, not archived answers. Removing context does not erase original conversations or information already sent to a provider; retained conversation history may still contain it.</p>
     {error && <p role="alert">{error} <button type="button" onClick={() => void load()}>Refresh choice</button></p>}
   </section>;

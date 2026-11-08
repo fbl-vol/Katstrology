@@ -77,6 +77,14 @@ turns, not already transmitted data or immutable archives. Revocation versions a
 also retained in the independent deletion journal so an older database backup
 cannot silently restore consent.
 
+Settings also has a separate, explicit **Who is me?** choice of an owned person.
+It neither enables consent nor adds anyone to conversation selection. Names, login,
+selected charts and model output never establish this authority. Migration032 stores
+only the owner-scoped person ID/version. Each change journals its revocation generation
+without the replacement identity; restoring an older generation clears the association
+rather than reviving the former speaker. Person/account deletion uses existing foreign
+keys and deletion replay. Old facts and archives are never retagged.
+
 Turn acknowledgement freezes the consent version and exact entry/detail versions
 in the original user event. Selection considers only explicitly selected people,
 never relationship neighbors or private journals. It ranks the newest 500 candidate
@@ -93,21 +101,35 @@ schema accepts a selected person, exact complete current-user context, statement
 identity spans (Unicode offsets plus matching text), a full-context assertion assessment,
 an interpreted group/add-or-correct intent and an optional existing entry/version. It cannot supply arbitrary content,
 owners, SQL, births or relationships. The existing response model interprets ordinary
-conversation; no additional inference request is made. For example, `Alex here. I'm
+conversation in its existing response/tool-continuation flow; no separate extraction
+inference pass or background request is made. For example, `Alex here. I'm
 thinking of moving next summer. What should I consider?` supplies an attributable
 statement alongside a question. Multiple statements remain separate candidates;
 natural explicit corrections target a version actually supplied to that turn.
 
-The backend owns conservative complete sentence envelopes and requires the entire
-current message (at most 4,096 UTF-8 bytes) as evidence. Candidates cannot trim away
-question framing or negation, use quoted spans, or omit containing source context.
-Paired single quotes are not contractions: apostrophes within words remain usable.
-First-person attribution requires a complete opening introduction such as `Alex here`
-or `I'm Alex`, not selection or an incidental name mention. Named-person assertions
-must start with the uniquely selected name. Unattributed declarative framing, including
-fictional preambles and later third-person retractions, requires clarification; ordinary
-attributed facts and accompanying questions remain eligible. Complex punctuation and
-unsupported attribution may conservatively omit a candidate.
+The backend requires the entire current message (at most 4,096 UTF-8 bytes) as
+evidence. Legacy explicit introduction and uniquely named-person paths retain their
+complete sentence envelopes. With an eligible explicit self association, the new
+`associated_self` attribution accepts complete clauses within a containing sentence,
+including compound facts followed by a question. The identity span is that entire
+sentence, not a new identity claim. Server-owned comma/semicolon/coordinating-conjunction
+boundaries (including a following wh-question) prevent arbitrary substring extraction;
+adjacent clauses can retain qualifiers.
+Quoted/reference delimiters still fail closed, and a question itself is not a fact.
+Apostrophes within words remain contractions. Named subjects must use the named-person
+path, not self association to bypass ambiguous names. Unattributed framing outside the
+containing envelope still requires clarification.
+
+For example, an explicitly associated and selected Casey can say `Got married in May
+2020, joined ExampleWorks as a trainee in July 2021, became full time around 2022,
+I am building a small venture, what does my chart suggest?` without another name
+introduction. Four separately inspectable entries retain the exact assertions and
+full source message. Date wording stays verbatim; normalized date bounds remain unknown.
+The model must assess the **whole** source, including negation, conditional scope,
+quotation/reference, retraction and mixed speakers, before proposing any clause.
+Clause boundaries do not prove that meaning: an asserted classification can be wrong.
+These are provenance/authority bounds, not an English semantic verifier. Unsupported
+punctuation or uncertain omitted-subject attribution must omit/clarify rather than guess.
 
 Corrections additionally require a verbatim revision cue in the assertion (such as
 “Actually”, “rather than” or “on second thought”) and a source identifying phrase that
@@ -130,19 +152,27 @@ controls, not universal semantic accuracy or real-provider interpretation qualit
 
 Candidates are durable stages, explicitly **not saved context**. The existing
 serialized terminal-event transaction finalizes only successful turns whose
-source epoch and consent still match. Each update has a source-derived operation
+source epoch, consent and (for associated-self proposals) frozen self ID/version still match.
+The selected projection exposes the association target only when that person is selected;
+unselected self has a status, not a leaked person ID or automatic selection expansion. Each update has a source-derived operation
 identity, expected-version check and deletion-ledger fence. Cancellation, failure,
 stale branches, consent changes and abandoned work publish nothing. Storage errors
 are recorded as failed outcomes without another inference request; restart marks
-unfinished stages abandoned. The terminal event records outcomes, and the UI warns
-when a proposed change was not saved. No scheduler, extra summarization request,
+unfinished stages abandoned. The terminal event records per-entry/person outcomes.
+A quiet archive disclosure distinguishes saved, discarded, conflict, storage failure,
+rejected tool proposals and no proposal. It offers selected-person Context inspection
+through the existing navigation authority, preserving the conversation draft on return.
+It does not equate staging, an empty bounded projection, or no proposal with a successful
+save or an empty profile. Historical saved outcomes are not a current storage audit. No scheduler, extra summarization request,
 background backfill or second archive sender is involved.
 
 Manual edits take precedence over older staged updates. Source corrections,
 withdrawals, branch abandonment and source deletion suppress derived projections;
 manual corrections retain their own attribution. Removed entry identities cannot
 be reused, including after backup restore. A later explicit statement is a distinct
-source, not replay of a removed source. Context version/consent changes invalidate
+source, not replay of a removed source. Explicit self-association changes also invalidate
+derived assistant continuity that used the prior speaker authority, without rewriting
+originals or moving facts. Context version/consent changes invalidate
 cached continuity; subsequent recall/compaction omits assistant replies relying on
 superseded structured context while retaining eligible original user text. Each new
 context event records effective assistant-turn dependencies actually consumed by the

@@ -216,8 +216,16 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
     });
   }
 
+  async function inspectContext(id: string) {
+    const version = navigation.beginHubPerson();
+    try {
+      const selected = await api<Person>(`people/${encodeURIComponent(id)}`);
+      if (navigation.isCurrent(version)) navigation.openConversationPerson(selected, 'context');
+    } catch { if (navigation.isCurrent(version)) setNotice('Context could not be opened. Your conversation is unchanged.'); }
+  }
+
   function openContextChart(personRecord: Person) {
-    navigation.openContextChart(personRecord);
+    navigation.openConversationPerson(personRecord, 'charts');
   }
 
   function openHubPerson(id: string, child = false) {
@@ -367,7 +375,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
             <button onClick={() => void deleteConversation()} disabled={archive.busy}>Delete conversation</button></ConversationMenu></div>
           {archive.turns.length ? archive.turns.map(turn => <TurnCard key={turn.id} turn={turn} people={people} workspace={workspace}
             conversationId={conversation.id} activeHead={conversation.active_head} actions={turnActions}
-            eventFailure={archive.eventFailures[turn.id]} />) : !archive.localPending && <p className="conversation-empty">This conversation has no messages yet. Its selected people are ready.</p>}
+            eventFailure={archive.eventFailures[turn.id]} onInspectContext={inspectContext} />) : !archive.localPending && <p className="conversation-empty">This conversation has no messages yet. Its selected people are ready.</p>}
           {archive.localPending?.conversationId === conversation.id && <LocalPendingMessage pending={archive.localPending}
             onRetry={() => void retryPending()} onReconnect={openSettings} disabled={archive.busy || preparingSend} />}
           {headNotLoaded && <p className="conversation-empty" role="status">The current saved message is on another page. Load more saved messages before editing or sending.</p>}

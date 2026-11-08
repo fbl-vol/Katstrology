@@ -85,6 +85,8 @@ async def main():
                 store.register_local('reader-escaped-boundary', 'synthetic-browser-password')
                 from m2.people.people import People
                 from tests.support.database import seed_legacy_person_file
+                from tests.support.natural_context import seed_capture_views
+                seed_capture_views(store)
                 legacy_session = store.authenticate('reader-handoff-file', 'synthetic-browser-password')
                 People(store).charts.add_person(legacy_session, 'legacy-file-person', 'Synthetic file-only person')
                 seed_legacy_person_file(store, legacy_session, 'legacy-file-person', 'existing-file',

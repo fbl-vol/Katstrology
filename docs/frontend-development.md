@@ -151,6 +151,15 @@ the pinned private reference; absent/changed inputs fail rather than silently
 substituting a new baseline. Synthetic Chromium is not physical-phone,
 virtual-keyboard, screen-reader, real-provider or human visual acceptance.
 
+`tests/people/natural-context.spec.ts` exercises explicit self set/change/clear,
+independent default-off consent, duplicate-name selection, keyboard/reflow/loading
+and uncertain-save recovery, archived saved/rejected/storage-failure/no-proposal
+outcomes, and Context inspection with native Back/draft retention. Its fixture uses
+synthetic Responses bytes through real staging/publication; backend natural-context
+regressions additionally cover selection/version/consent/source and restore fences.
+Renders are under `.local/natural-context-capture/renders/`. These tests do not
+establish real-provider interpretation quality or physical-device keyboard behavior.
+
 `tests/people/personal-context.spec.ts` exercises provider-free manual context,
 section-owned multi-group paging/search, disclosure keyboard focus through loading
 and failure, edit/removal, failure recovery, stable details, linking beyond the

@@ -203,12 +203,13 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
       chartHub: current.skyFromHub ? 'hub' : current.chartHub }));
   }
 
-  function openContextChart(person: Person) {
+  function openConversationPerson(person: Person, tab: 'charts' | 'context') {
     version.current++;
     previousPerson.current = null;
     previousFilter.current = view.filterPersonId;
     setView(current => ({ ...current, person, filterPersonId: person.id,
-      profileFromHub: true, profileChartFocus: true, profileChildFocus: false,
+      profileFromHub: true, profileChartFocus: tab === 'charts', profileChildFocus: false,
+      nested: { ...current.nested, [`person-tab:${person.id}`]: tab },
       profileEditorPersonId: null, skyOpen: false, chartHub: null, chartOriginId: null, drawer: false }));
   }
 
@@ -302,7 +303,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
 
   return { ...view, restoring, nestedNavigation: { state: view.nested, change: changeNested }, version, focusProfile, isCurrent, signOut, allConversations, newConversation,
     beginConversation, showConversation, openChartHub, selectChart, backToChartChoices,
-    closeChartHub, closeTechnique, closeSky, openContextChart, beginHubPerson, showHubPerson,
+    closeChartHub, closeTechnique, closeSky, openConversationPerson, beginHubPerson, showHubPerson,
     abandonReturn, createNatalForTechnique, createNatalFromAdvanced, createNatalFromPlanetary, returnFromPerson,
     beginSidebarPerson, showSidebarPerson, createdPerson, personDeleted, discussResult,
     openDrawer: () => setView(current => ({ ...current, drawer: true })),

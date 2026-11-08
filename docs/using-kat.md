@@ -120,12 +120,23 @@ the signed-in workspace. Reload retrieves durable saved entries, not unsaved dra
 
 Use Settings → Personal context to explicitly enable automatic collection/use.
 It starts off even when a provider is connected. Selected relevant details may
-then be sent to that provider; no chart is required. Speak naturally about an
-explicitly identified selected person, for example `Alex here. I'm considering a
-move next summer. What should I consider?` Selecting someone does not establish
-who “I” refers to. Kat should omit or clarify ambiguous statements and correction targets.
+then be sent to that provider; no chart is required. Separately choose **Who is me?**
+once to explicitly associate yourself with an owned person. This does not enable
+automatic context or select anyone. Keep that person selected in the conversation,
+then speak naturally: facts alongside a chart question can become separate entries
+without repeating your name. Clear or change the association in the same settings;
+in-flight self updates will not be saved to the old target. Old entries are not moved.
+
+You can still explicitly introduce yourself in a message or name another uniquely
+identified selected person. Matching names or selecting a chart never establishes
+who “I” refers to. Kat should omit or clarify ambiguous, quoted, hypothetical,
+retracted or inferred statements and uncertain correction targets.
 Automatic interpretation can occasionally be wrong; inspect and correct entries in Context.
-Clear updates do not require a separate confirmation each time.
+Clear updates do not require a separate confirmation each time. The reply's quiet
+**Personal context** disclosure shows durable saved/not-saved outcomes and a button
+to inspect Context. No proposal is not a save, and does not mean the profile is empty.
+A saved outcome records that attempt, not a guarantee that every fact was found or
+that an entry has not since been edited, removed or invalidated.
 You still control birth details, people and relationships. Plans do not become
 completed events merely because a date passes. See the [provider contract](provider-and-context.md)
 for exact accepted statement and source-lifecycle boundaries.
