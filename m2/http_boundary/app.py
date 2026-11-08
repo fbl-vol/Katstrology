@@ -11,10 +11,11 @@ from m2.release_drain import AdmissionBoundary
 from m2.http_boundary.boundary import Forbidden, LocalBoundary, json_response, login, logout, session
 from m2.http_boundary.config import deployment_origin
 from m2.http_boundary.runtime import BrowserRuntime
+from m2.http_boundary.signup import Signup, signup
 
 
 def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root=None,
-               clock=None, origin=None, deployment=False):
+               clock=None, origin=None, deployment=False, signup_policy=None):
     """Testing may supply an owned isolated DB; serving selects one explicit mode."""
     if deployment:
         origin = deployment_origin(origin)
@@ -61,6 +62,7 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
 
     app = Starlette(routes=[Route('/api/session', session),
                             Route('/api/login', login, methods=['POST']),
+                            Route('/api/signup', signup, methods=['GET', 'POST']),
                             Route('/api/logout', logout, methods=['POST']),
                             *people_routes,
                             *conversation_routes,
@@ -79,6 +81,7 @@ def create_app(dsn, files, ledger, dist, port=8765, siwc_factory=None, siwc_root
     app.add_middleware(AdmissionBoundary, admission=runtime.admission)
     app.add_middleware(LocalBoundary, origin=origin, deployment=deployment)
     app.state.runtime = runtime
+    app.state.signup = Signup(signup_policy)
     app.state.port = port
     app.state.deployment = deployment
     return app

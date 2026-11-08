@@ -5,6 +5,7 @@ Choose the task you need; these guides describe supported behavior, not a work l
 | Task | Guide |
 | --- | --- |
 | Use conversations, people, charts and saved records | [Using Kat](using-kat.md) |
+| Create accounts and prepare explicit LAN-only enrollment | [LAN account creation](lan-account-creation.md) |
 | Understand ownership and data flow | [Architecture](architecture/README.md) |
 | Develop the browser and run isolated browser checks | [Frontend development](frontend-development.md) |
 | Maintain themes, prepaint and export colors | [Appearance contracts](appearance.md) |

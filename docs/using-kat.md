@@ -2,6 +2,19 @@
 
 [Documentation index](README.md)
 
+## Sign-in and account creation
+
+Ordinary sign-in works remotely. **Create account** is enabled only when the
+server positively verifies the configured home-network connection; otherwise its
+disabled button explains why. Use a username, a password of at least12 characters
+and matching confirmation. Creation returns to normal sign-in, with an empty
+separate workspace and no provider connection. If creation was not confirmed,
+try signing in with that same username before creating another account.
+
+Signup is off by default until its explicit private-edge configuration is
+installed. See [LAN account creation](lan-account-creation.md) for behavior,
+security boundaries and separately approved installation prerequisites.
+
 ## Conversations
 
 Sign in to the Kat workspace with its password; this is separate from connecting

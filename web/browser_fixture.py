@@ -629,9 +629,13 @@ async def main():
                 from datetime import datetime
                 instant = datetime.fromisoformat(os.environ['KAT_BROWSER_FIXED_CLOCK'])
                 fixed_clock = lambda: instant
+            from m2.http_boundary.signup import SignupPolicy
+            signup_policy = SignupPolicy.parse({'socket': '/synthetic/kat-signup.sock',
+                'networks': ['192.0.2.0/24'], 'excluded_clients': ['192.0.2.1', '192.0.2.5']})
             app = create_app(dsn, files, ledger, dist, port=port,
                              siwc_factory=provider_factory, siwc_root=Path(directory) / 'siwc',
-                             clock=fixed_clock)
+                             clock=fixed_clock, signup_policy=signup_policy)
+            app = synthetic_signup_transport(app, signup_policy)
             if synthetic_siwc:
                 provider_port = port + 1 if port < 65535 else port - 1
                 app = synthetic_auth_origin(app, f'http://127.0.0.2:{provider_port}')
@@ -648,6 +652,26 @@ async def main():
     finally:
         with psycopg.connect(base, autocommit=True) as admin:
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+
+
+def synthetic_signup_transport(app, policy):
+    """Test-only ASGI metadata/clock, never imported by the production server.
+
+    Browser scenarios exercise the real gate and Store. Actual Unix/TCP scopes
+    have a separate native-socket regression; these are not real LAN proofs.
+    """
+    clock = [0]
+    app.state.signup.clock = lambda: clock[0]
+    async def transport(scope, receive, send):
+        headers = dict(scope.get('headers', []))
+        network = headers.get(b'x-kat-test-signup-network')
+        if scope['type'] == 'http' and scope['path'] == '/api/signup' and network in (b'lan', b'public'):
+            clock[0] = int(headers.get(b'x-kat-test-signup-clock', b'0'))
+            peer = b'192.0.2.20' if network == b'lan' else b'203.0.113.20'
+            scope = {**scope, 'server': (policy.socket, None), 'client': None,
+                     'headers': [*scope['headers'], (b'x-kat-signup-client', peer)]}
+        await app(scope, receive, send)
+    return transport
 
 
 if __name__ == '__main__':

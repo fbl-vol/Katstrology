@@ -101,12 +101,16 @@ class Store:
             raise ValueError('Invalid or oversized text')
         return value
 
-    def register_local(self, owner_id, password):
-        """Local workstation enrollment, not an unauthenticated network endpoint."""
-        self._id(owner_id)
-        self._text(password, 1024)
+    @staticmethod
+    def registration_credentials(owner_id, password):
+        Store._id(owner_id)
+        Store._text(password, 1024)
         if len(password) < 12:
             raise ValueError('Password too short')
+
+    def register_local(self, owner_id, password):
+        """Enrollment primitive; network callers require the separate signup gate."""
+        self.registration_credentials(owner_id, password)
         hashed = self.password_hasher.hash(password)
         self.db.execute('INSERT INTO accounts VALUES (%s, %s)', (owner_id, hashed))
 

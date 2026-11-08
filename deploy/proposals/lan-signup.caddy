@@ -1,0 +1,14 @@
+# PROPOSAL ONLY: route fragment inside the existing exact-host HTTPS site.
+# Requires separately approved installation and verified original-client topology.
+# Never import this into the running edge merely to test it.
+handle /api/signup {
+    reverse_proxy unix//run/kat-signup/signup.sock {
+        # Use the connection peer, NOT a forwarded/client_ip header chain.
+        header_up X-Kat-Signup-Client {http.request.remote.host}
+        header_up -Forwarded
+        header_up -X-Forwarded-*
+        header_up -X-Real-IP
+    }
+}
+# Existing routes retain their existing TCP upstream and exact Host/Origin.
+# The trusted edge must not configure a global forwarded-header authority.

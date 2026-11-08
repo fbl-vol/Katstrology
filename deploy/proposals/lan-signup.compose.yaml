@@ -1,0 +1,8 @@
+# Source-only overlay proposal, NOT installed or included by native deployment.
+# Apply only after explicit approval, exact merged-config review and trust enrollment.
+services:
+  app:
+    command: ["python", "-m", "m2.web_server", "serve", "--deployment-origin", "https://katstrology.dk", "--db-password-file", "/run/secrets/db_password", "--state-directory", "/var/lib/kat", "--served-dist", "/opt/kat/web/dist", "--enable-siwc", "--signup-policy", "/etc/kat/signup-policy.json"]
+    volumes:
+      - ${KAT_SIGNUP_POLICY_FILE:?explicit root-owned non-writable signup policy required}:/etc/kat/signup-policy.json:ro
+      - ${KAT_SIGNUP_SOCKET_DIRECTORY:?pre-provisioned app and edge only socket directory required}:/run/kat-signup
