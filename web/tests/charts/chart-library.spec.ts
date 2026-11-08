@@ -112,7 +112,8 @@ test('chart library pages all saved versions and labels body variants beyond the
   const historyRows = library.locator('.library-history li');
   await expect(historyRows).toHaveCount(20);
   await expect(historyRows.first()).toHaveAttribute('data-result-id', ids.at(-1)!);
-  await expect(historyRows.first()).toContainText(`Version ${ids.at(-1)}`);
+  await expect(historyRows.first()).not.toContainText(ids.at(-1)!);
+  await expect(historyRows.first().locator('strong')).toHaveText(/^Saved .* UTC$/);
   await page.screenshot({ path: resolve(renders, 'history-first-page-390-560.png') });
   await page.route(`**/api/people/${personId}/chart-library/true_solar_arc?before=*`, route =>
     route.fulfill({ status: 503, json: { error: 'synthetic_page_failure' } }), { times: 1 });
