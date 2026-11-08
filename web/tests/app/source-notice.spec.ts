@@ -15,9 +15,13 @@ test('source, license and warranty notice are available before and after local s
     .toHaveAttribute('href', 'https://github.com/fbl-vol/Katstrology');
   await expect(notice.getByRole('link', { name: 'Source and build instructions' }))
     .toHaveAttribute('rel', 'noopener noreferrer');
+  // The accepted signup section adds document height on short phones. Legal
+  // links must remain reachable in that ordinary scroll, not a fixed footer.
+  await notice.getByRole('link', { name: 'Read the license' }).focus();
+  await expect(notice.getByRole('link', { name: 'Read the license' })).toBeFocused();
   const licenseLink = await notice.getByRole('link', { name: 'Read the license' }).boundingBox();
   expect(licenseLink && licenseLink.y + licenseLink.height).toBeLessThanOrEqual(560);
-  await page.screenshot({ path: resolve(renders, 'license-login-mobile.png') });
+  await page.screenshot({ path: resolve(renders, 'license-login-mobile.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.screenshot({ path: resolve(renders, 'license-login-desktop.png') });
   await page.setViewportSize({ width: 390, height: 560 });

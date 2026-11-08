@@ -6,7 +6,9 @@ const renders = resolve(import.meta.dirname, '../../../.local/application-perfor
 
 test('ordinary account and chart history use human labels without losing chart identity', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Sign in to your local workspace. Your ChatGPT connection is separate.')).toBeVisible();
+    const intro = page.getByText('Sign in to your workspace.', { exact: false });
+    await expect(intro).toBeVisible();
+    await expect(intro).toContainText('Your ChatGPT connection is separate.');
     await page.getByLabel('Username').fill('reader-transit-desktop');
     await page.getByLabel('Password').fill('synthetic-browser-password');
     await page.getByRole('button', { name: 'Open workspace' }).click();
