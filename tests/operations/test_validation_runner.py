@@ -286,14 +286,17 @@ raise SystemExit(main())
                 (out / (profile + '-report.json')).write_text('{invalid')
                 failure = subprocess.CalledProcessError(9, ['PRIVATE_COMMAND'])
                 results = {}
-                with patch.object(validate, 'command', side_effect=failure) as command, \
+                with patch.object(validate, 'discover_browser', return_value={
+                        'workers': 1, 'status': 'passed', 'errors': 0,
+                        'tests': [{'id': 'a' * 64, 'allowedSkip': False, 'outcomes': []}]}), \
+                        patch.object(validate, 'command', side_effect=failure) as command, \
                         redirect_stderr(io.StringIO()), self.assertRaises(subprocess.CalledProcessError) as caught:
                     validate.run_profile(profile, {}, out, results, timings=[])
                 self.assertIs(caught.exception, failure)
                 self.assertEqual(results[profile]['returncode'], 9)
                 self.assertEqual(results[profile]['status'], 'stopped')
                 self.assertEqual(results[profile]['diagnostics_status'], 'unavailable')
-                self.assertIn('--reporter=line,json,./validation-reporter.cjs', command.call_args.args[0])
+                self.assertIn('--reporter=line,json,./validation-reporter.cjs,./inventory-reporter.cjs', command.call_args.args[0])
                 self.assertEqual(command.call_args.kwargs['env']['PLAYWRIGHT_JSON_OUTPUT_FILE'],
                                  str(out / (profile + '-report.json')))
                 self.assertNotIn('PRIVATE_COMMAND', json.dumps(results))
