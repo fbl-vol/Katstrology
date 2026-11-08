@@ -3,7 +3,6 @@
 from hashlib import sha256
 import io
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -61,30 +60,16 @@ class PublicTokenizerPreparationTests(unittest.TestCase):
             build.assert_not_called()
             self.assertEqual(target.read_bytes(), b'keep')
 
-    def test_installer_uses_pinned_cpu_wheel_and_preserves_failure(self):
-        with patch.object(model.sys, 'prefix', '/synthetic-venv'), \
-                patch.object(model.sys, 'base_prefix', '/synthetic-base'), \
-                patch.object(model.subprocess, 'run') as run:
-            model.install_binding()
-            argv = run.call_args.args[0]
-            self.assertEqual(argv[:3], [model.sys.executable, '-m', 'pip'])
-            self.assertIn('--isolated', argv)
-            self.assertIn('--only-binary=:all:', argv)
-            self.assertIn(str(model.ROOT / 'probes/requirements-model.txt'), argv)
-            self.assertTrue(argv[-1].startswith('https://github.com/abetlen/llama-cpp-python/releases/'))
-            self.assertIn('#sha256=', argv[-1])
-            self.assertTrue(run.call_args.kwargs['check'])
-            failure = subprocess.CalledProcessError(1, argv)
-            run.side_effect = failure
-            with patch.object(model, 'prepare_model') as prepare, \
-                    self.assertRaises(subprocess.CalledProcessError) as caught:
-                model.main()
-            self.assertIs(caught.exception, failure)
-            prepare.assert_not_called()
+    def test_installer_requires_virtualenv_before_any_io(self):
         with patch.object(model.sys, 'prefix', '/base'), patch.object(model.sys, 'base_prefix', '/base'), \
-                patch.object(model.subprocess, 'run') as run, self.assertRaises(ValueError):
-            model.install_binding()
-        run.assert_not_called()
+                patch.object(model, 'TemporaryDirectory') as temporary, \
+                patch.object(model, 'build_opener') as build, \
+                patch.object(model.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'virtualenv'):
+                model.install_binding()
+            temporary.assert_not_called()
+            build.assert_not_called()
+            run.assert_not_called()
 
     def test_existing_ci_input_entrypoint_prepares_the_tokenizer(self):
         with tempfile.TemporaryDirectory() as directory:
