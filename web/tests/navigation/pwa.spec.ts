@@ -152,6 +152,31 @@ test('native restoration checks current session even when only closing a layer',
   await expect(page.locator('.account')).toHaveCount(0);
 });
 
+test('explicit library parent close preserves native ancestry and descendant Forward', async ({ page }) => {
+  await login(page);
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
+  await page.getByRole('tab', { name: 'Charts', exact: true }).click();
+  const open = page.getByRole('button', { name: 'Open Natal chart', exact: true });
+  await open.click();
+  const reader = page.getByRole('region', { name: 'Saved chart reader' });
+  const sun = reader.locator('[data-wheel-entry="sun"]');
+  await sun.focus(); await sun.press('Enter');
+  await expect(reader.getByRole('heading', { name: 'Sun', exact: true })).toBeFocused();
+  const length = await page.evaluate(() => history.length);
+  await page.getByRole('button', { name: '← Back to chart library' }).click();
+  await expect(open).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(length);
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.goForward();
+  await expect(open).toBeVisible();
+  await page.goForward();
+  await expect(reader.locator('svg.natal-wheel')).toBeVisible();
+  await page.goForward();
+  await expect(reader.getByRole('heading', { name: 'Sun', exact: true })).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(length);
+});
+
 test('native library Forward re-resolves saved bytes and refuses a removed result', async ({ page }) => {
   await login(page);
   await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();

@@ -60,6 +60,8 @@ result provenance. A single CSV or JSON export stays a direct action.
 `workspace-navigation.ts` is still the view authority. `browser-history.ts` journals
 its visited routes for native Back/Forward; `NestedNavigation` lets person tabs,
 library results and the existing natal reader participate in that same journey.
+Explicit parent close removes that resource and its actual active reader descendant
+atomically; the historical visit remains available to native Forward.
 There is one popstate listener, not a second reader/router stack. Transient request
 states, data refreshes and wheel highlights do not add visits. Explicit closing
 can return to a matching ancestor; ordinary tab selection remains forward
@@ -83,14 +85,20 @@ the SVG and before notation/export. It reserves its measured layout space, uses
 SVG coordinates and visual-viewport/header bounds, and never scrolls on selection.
 At enlarged text sizes optional preview degree/member text yields to the complete
 name and Read details action; complete facts remain in the existing reader.
-Overlaps use a native select plus explicit selection. Keyboard/directory activation
+Overlaps use a native select plus explicit selection. A concise heading/action and
+bounded button padding keep the select, Select and Cancel controls in chart context
+at 320px/200% text without reducing font size or hiding candidates. Measure each
+post-touch and post-option state before activating the action; automation scrolling
+an offscreen button is not evidence of unsolicited tap scrolling. Keyboard/directory activation
 still enters the reader directly. The preview is outside the exported SVG.
 
 On retained-page foreground/BFCache return, verify the session, then reconcile
 saved conversation metadata and already loaded archive pages. Reconnect only the
 existing archived turn/event cursor, never POST a message or start inference.
-Uncertain/pending acknowledgements remain under the existing explicit same-ID
-retry contract. Preserve loaded pages, drafts and older-message position. The
+Queue and retry invalidate the foreground read's mutation lifetime, so a GET that
+finishes after a newer ACK cannot merge stale paging/state or replace its stream.
+Stream callbacks also check current connection ownership. Uncertain/pending
+acknowledgements remain under the existing explicit same-ID retry contract. Preserve loaded pages, drafts and older-message position. The
 composer uses visualViewport height/offset for its sticky inset and tall-editor
 flow threshold, with safe-area padding; the document remains the scroll owner.
 

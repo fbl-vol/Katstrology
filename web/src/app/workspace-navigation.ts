@@ -112,13 +112,16 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
     restorationVersion.current++; setRestoring(false);
     journey.cancelRestoration(); journey.remember(); setViewState(update);
   }
-  function changeNested(key: string, value: string | null, replace = false) {
-    if ((view.nested[key] ?? null) === value) return;
+  function changeNested(key: string, value: string | null, replace = false, descendants: readonly string[] = []) {
+    if ((view.nested[key] ?? null) === value && !descendants.some(child => child in view.nested)) return;
     if (replace) journey.replaceNext();
     if (value === null && !key.startsWith('person-tab:')) journey.backNext();
     setView(current => {
       const nested = { ...current.nested };
-      if (value === null) delete nested[key]; else nested[key] = value;
+      if (value === null) {
+        delete nested[key];
+        for (const child of descendants) delete nested[child];
+      } else nested[key] = value;
       return { ...current, nested };
     });
   }

@@ -116,6 +116,40 @@ test('resume reads an interrupted reply after a lost stream without new inferenc
   expect(writes).toBe(0);
 });
 
+test('stale foreground read cannot disconnect a newer acknowledged reply', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, 'reader-instant-normal');
+  await page.getByLabel('Message Kat').fill('Synthetic hello. Reply in one sentence.');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.locator('.turn-card')).toHaveAttribute('data-kat-status', 'complete', { timeout: 15000 });
+  let release!: () => void, arrived!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const held = new Promise<void>(resolve => { arrived = resolve; });
+  await page.route('**/api/conversations/*/turns?offset=0', async route => {
+    const response = await route.fetch(); arrived(); await gate; await route.fulfill({ response });
+  });
+  try {
+    await visibility(page, 'hidden'); await visibility(page, 'visible'); await held;
+    const acknowledged = page.waitForResponse(response => response.request().method() === 'POST' && /\/turns$/.test(response.url()));
+    await page.getByLabel('Message Kat').fill('Synthetic slow cancel');
+    await page.getByRole('button', { name: 'Send message' }).click();
+    const ack = await acknowledged;
+    const { turn } = await ack.json();
+    await expect(page.locator('.turn-card')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Stop response', exact: true })).toBeVisible();
+    await page.getByLabel('Message Kat').fill('Draft after the newer ACK');
+    const refreshed = page.waitForResponse(response => response.url().includes('/turns?offset=0'));
+    release(); await refreshed;
+    const savedUrl = `${new URL(ack.url()).pathname}/${turn.id}`;
+    await expect.poll(async () => (await (await page.request.get(savedUrl)).json()).status, { timeout: 15000 }).toBe('complete');
+    await expect(page.locator('.turn-card').last()).toHaveAttribute('data-kat-status', 'complete');
+    await expect(page.locator('.assistant-answer').last()).toContainText('Synthetic committed prefix');
+    await expect(page.getByLabel('Message Kat')).toHaveValue('Draft after the newer ACK');
+    mkdirSync('../.local/ci-phone-remediation/renders', { recursive: true });
+    await page.screenshot({ path: '../.local/ci-phone-remediation/renders/new-send-after-stale-refresh.png' });
+  } finally { release(); }
+});
+
 test('resume clears mounted private state after session expiry instead of reviving it', async ({ page }) => {
   await login(page, 'reader-shell');
   await page.getByLabel('Message Kat').fill('Old session private draft');

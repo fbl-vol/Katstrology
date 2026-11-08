@@ -121,7 +121,9 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
     setSelected(result);
   }
   function backToCollection() {
-    setSelected(null);
+    // Close this resource and its active reader in one route transition. Keep
+    // the old visit untouched so native Forward can restore that exact detail.
+    resultNavigation.close(selected?.technique === 'natal' ? [`natal:${selected.id}`] : []);
     requestAnimationFrame(() => {
       if (opener.current?.getClientRects().length) opener.current.focus();
       else collectionHeading.current?.focus();

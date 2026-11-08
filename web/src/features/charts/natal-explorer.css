@@ -49,6 +49,7 @@
 .wheel-preview-selection > div { flex: 1 1 10rem; min-width: 0; }
 .natal-wheel-frame .wheel-preview button { min-height: 44px; font-size: var(--text-support); margin: 0; }
 .wheel-preview-selection button { max-width: 8em; }
+.natal-wheel-frame .wheel-preview-actions button { padding: 6px 10px; }
 .wheel-preview-compact .wheel-preview-selection small { display: none; }
 .wheel-preview :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1050px) { .natal-explorer { grid-template-columns: minmax(0, 1fr); } }

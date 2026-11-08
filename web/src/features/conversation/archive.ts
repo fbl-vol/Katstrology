@@ -35,6 +35,7 @@ export function useArchiveChat(workspace: Workspace | null,
   const [sendError, setSendError] = useState('');
   const [resumeError, setResumeError] = useState('');
   const reconciling = useRef<number | null>(null);
+  const mutationVersion = useRef(0);
   const [hasPending, setHasPending] = useState(false);
   const [localPending, setLocalPending] = useState<Pending | null>(null);
   const [eventFailures, setEventFailures] = useState<Record<string, string>>({});
@@ -61,6 +62,7 @@ export function useArchiveChat(workspace: Workspace | null,
   }
   function reset() {
     navigationVersion.current++;
+    mutationVersion.current++;
     reconciling.current = null;
     openedConversation.current = '';
     disconnect(); pending.current = null; retryInFlight.current = null;
@@ -86,6 +88,7 @@ export function useArchiveChat(workspace: Workspace | null,
     const source = new EventSource(`/api/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/events?after=${after}`);
     connection.current = source;
     source.onmessage = message => {
+      if (connection.current !== source) return;
       const event = JSON.parse(message.data) as ArchiveEvent;
       mergeEvent(turnId, event);
       if (['complete', 'interrupted', 'error'].includes(event.kind)) {
@@ -94,7 +97,9 @@ export function useArchiveChat(workspace: Workspace | null,
         onTerminalRef.current(conversationId, event.kind);
       }
     };
-    source.onerror = () => setSendError('Stream disconnected. Reconnecting from the committed event cursor; no turn will rerun.');
+    source.onerror = () => {
+      if (connection.current === source) setSendError('Stream disconnected. Reconnecting from the committed event cursor; no turn will rerun.');
+    };
   }
 
   function sameConversation(conversationId: string, version: number, owner: string) {
@@ -107,10 +112,11 @@ export function useArchiveChat(workspace: Workspace | null,
       viewRef.current.conversationId === conversationId;
   }
 
-  async function loadRemaining(conversationId: string, turn: Turn, version: number, owner: string) {
+  async function loadRemaining(conversationId: string, turn: Turn, version: number, owner: string,
+    ownsRead = () => true) {
     const routeAtStart = routeVersion.current;
     const key = `${version}:${routeAtStart}:${conversationId}:${turn.id}`;
-    const live = () => routeVersion.current === routeAtStart &&
+    const live = () => ownsRead() && routeVersion.current === routeAtStart &&
       sameView(conversationId, version, owner);
     if (eventLoads.current.has(key)) return;
     eventLoads.current.add(key);
@@ -193,20 +199,26 @@ export function useArchiveChat(workspace: Workspace | null,
     reconciling.current = navigationVersion.current;
     routeVersion.current = viewRef.current.navigation.current;
     const version = navigationVersion.current, owner = identityRef.current;
+    const mutation = mutationVersion.current, source = connection.current;
+    // Pending flags can clear after ACK while an older GET is still in flight.
+    // Queue/retry owns a new mutation lifetime; reads never take over its stream.
+    const ownsRead = () => mutationVersion.current === mutation && sameView(id, version, owner);
+    const ownsConnection = () => ownsRead() && connection.current === source;
     try {
       let offset = 0;
       let next: number | null = null;
       const refreshed: Turn[] = [];
       do {
         const page = await api<TurnPage>(`conversations/${encodeURIComponent(id)}/turns?offset=${offset}`);
-        if (!sameView(id, version, owner) || pending.current || retryInFlight.current) return;
+        if (!ownsConnection()) return;
         for (const turn of page.turns) checkEventPage(turn, turn.id, 0);
         refreshed.push(...page.turns); next = page.next_offset;
         if (next !== null && (!Number.isSafeInteger(next) || next <= offset)) throw new Error('Invalid saved page cursor');
         offset = next ?? 0;
       } while (next !== null && refreshed.length < turns.length);
-      setNextOffset(next);
+      setNextOffset(existing => ownsRead() ? next : existing);
       setTurns(existing => {
+        if (!ownsRead()) return existing;
         const updated = new Map(refreshed.map(turn => [turn.id, turn]));
         const merged = existing.map(turn => {
           const fresh = updated.get(turn.id); updated.delete(turn.id);
@@ -215,13 +227,13 @@ export function useArchiveChat(workspace: Workspace | null,
         });
         return [...merged, ...updated.values()];
       });
-      for (const turn of refreshed) void loadRemaining(id, turn, version, owner);
+      for (const turn of refreshed) void loadRemaining(id, turn, version, owner, ownsRead);
       const openTurn = refreshed.find(turn => turn.status === 'open');
       if (openTurn) connect(id, openTurn.id, openTurn.events.at(-1)?.sequence ?? -1);
       else disconnect();
       setResumeError('');
     } catch {
-      if (sameView(id, version, owner)) setResumeError('Saved replies could not be refreshed. Existing content remains here; no message was resent.');
+      if (ownsConnection()) setResumeError('Saved replies could not be refreshed. Existing content remains here; no message was resent.');
     } finally { if (reconciling.current === version) reconciling.current = null; }
   }
 
@@ -245,6 +257,7 @@ export function useArchiveChat(workspace: Workspace | null,
     parent = '@active', revisionKind: Send['revision_kind'] = 'normal', replaces: string | null = null,
     selectedResult?: SelectedResult) {
     if (!workspace || pending.current) return false;
+    mutationVersion.current++;
     const payload: Send = { id: `turn-${crypto.randomUUID()}`, text, selected_people: selected,
       parent, revision_kind: revisionKind, replaces_turn_id: replaces,
       ...(selectedResult ? { selected_result: selectedResult } : {}) };
@@ -262,6 +275,7 @@ export function useArchiveChat(workspace: Workspace | null,
   async function retry() {
     const item = pending.current;
     if (!workspace || !item || retryInFlight.current) return false;
+    mutationVersion.current++;
     retryInFlight.current = item;
     pending.current = { ...item, failure: undefined };
     setLocalPending(pending.current);

@@ -47,6 +47,61 @@ test.describe('contextual phone selection', () => {
   });
 });
 
+test.describe('in-context overlap controls', () => {
+  test.use({ hasTouch: true });
+  for (const [width, height, scale] of [[320, 560, 200], [390, 560, 100], [390, 844, 100], [844, 390, 100]]) {
+    test(`seeded touch chooser ${width}x${height} text ${scale}`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await page.goto('/');
+      await page.getByLabel('Username').fill('reader-transit-desktop');
+      await page.getByLabel('Password').fill('synthetic-browser-password');
+      await page.getByRole('button', { name: 'Open workspace' }).click();
+      if (scale === 200) await page.evaluate(() => document.documentElement.style.setProperty('font-size', '200%', 'important'));
+      if (width < 700) await page.getByRole('button', { name: 'Open navigation' }).click();
+      await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Synthetic transit reader/ }).click();
+      await page.getByRole('tab', { name: 'Charts', exact: true }).click();
+      await page.getByRole('button', { name: 'Open Natal chart', exact: true }).click();
+      const wheel = page.locator('.profile-active-chart svg.natal-wheel');
+      await wheel.evaluate(element => element.scrollIntoView({ block: 'center' }));
+      const sun = wheel.locator('[data-wheel-entry="sun"]');
+      const target = (await sun.boundingBox())!;
+      const before = await page.evaluate(() => scrollY);
+      await page.touchscreen.tap(target.x + target.width / 2, target.y + target.height / 2);
+      const preview = page.getByRole('region', { name: 'Selected chart feature' });
+      const chooser = preview.getByRole('combobox');
+      const action = preview.getByRole('button', { name: 'Select detail', exact: true });
+      await expect(chooser).toBeVisible();
+      const candidates = await chooser.locator('option').allTextContents();
+      expect(candidates.length).toBeGreaterThan(2);
+      mkdirSync('../.local/ci-phone-remediation/renders', { recursive: true });
+      async function check(stage: string) {
+        expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+        expect((await sun.boundingBox())!.y).toBeCloseTo(target.y, 0);
+        for (const control of [chooser, action]) {
+          const box = (await control.boundingBox())!;
+          expect(box.y).toBeGreaterThanOrEqual(0);
+          expect(box.y + box.height).toBeLessThanOrEqual(height);
+        }
+        const box = (await preview.boundingBox())!;
+        expect(box.y + box.height <= target.y || box.y >= target.y + target.height).toBe(true);
+        await page.screenshot({ path: `../.local/ci-phone-remediation/renders/chooser-${width}-${height}-${scale}-${stage}.png` });
+      }
+      await check('touch-only');
+      await chooser.selectOption('sun');
+      await check('selected-option');
+      expect(await chooser.locator('option').allTextContents()).toEqual(candidates);
+      // Coordinates cannot silently auto-scroll an offscreen control into view.
+      const button = (await action.boundingBox())!;
+      await page.touchscreen.tap(button.x + button.width / 2, button.y + button.height / 2);
+      await expect(preview.getByRole('button', { name: 'Read details' })).toBeVisible();
+      expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+      const read = (await preview.getByRole('button', { name: 'Read details' }).boundingBox())!;
+      expect(read.y + read.height).toBeLessThanOrEqual(height);
+      await page.screenshot({ path: `../.local/ci-phone-remediation/renders/chooser-${width}-${height}-${scale}-committed.png` });
+    });
+  }
+});
+
 async function readPhoneSelection(page: Page, label?: RegExp) {
   const preview = page.getByRole('region', { name: 'Selected chart feature' });
   await expect(preview).toBeVisible();
@@ -407,6 +462,46 @@ async function patternPoint(wheel: import('@playwright/test').Locator, overlap: 
 
 test.describe('direct natal exploration', () => {
   test.use({ hasTouch: true });
+  test('enlarged long-label formation chooser retains every candidate in context', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 560 });
+    const { chart } = await openChart(page, 'Enlarged overlapping formations', 'multi');
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%');
+    const wheel = chart.locator('svg.natal-wheel');
+    const point = await patternPoint(wheel, true);
+    const before = await page.evaluate(() => scrollY);
+    await page.touchscreen.tap(point.x, point.y);
+    const preview = chart.getByRole('region', { name: 'Selected chart feature' });
+    const select = preview.getByRole('combobox');
+    await expect(select).toBeVisible();
+    const options = await select.locator('option').evaluateAll(elements => elements.slice(1).map(element => ({
+      id: (element as HTMLOptionElement).value, label: element.textContent! })));
+    expect(options.map(option => option.id).sort()).toEqual([...point.ids].sort());
+    const longest = options.reduce((a, b) => a.label.length > b.label.length ? a : b);
+    for (const stage of ['touch-only', 'long-option']) {
+      if (stage === 'long-option') await select.selectOption(longest.id);
+      for (const control of [select, preview.getByRole('button', { name: 'Select detail' })]) {
+        const box = (await control.boundingBox())!;
+        expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height).toBeLessThanOrEqual(560);
+      }
+      const box = (await preview.boundingBox())!;
+      expect(box.y + box.height < point.y || box.y > point.y).toBe(true);
+      expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+      mkdirSync('../.local/ci-phone-remediation/renders', { recursive: true });
+      await page.screenshot({ path: `../.local/ci-phone-remediation/renders/formation-320-200-${stage}.png` });
+    }
+    const action = (await preview.getByRole('button', { name: 'Select detail' }).boundingBox())!;
+    await page.touchscreen.tap(action.x + action.width / 2, action.y + action.height / 2);
+    await expect(preview.getByRole('button', { name: 'Read details' })).toBeVisible();
+    const title = await preview.locator('strong').innerText();
+    expect(longest.label.startsWith(title + ' · ')).toBe(true);
+    const read = (await preview.getByRole('button', { name: 'Read details' }).boundingBox())!;
+    expect(read.y).toBeGreaterThanOrEqual(0); expect(read.y + read.height).toBeLessThanOrEqual(560);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    expect(await page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
+    await page.screenshot({ path: '../.local/ci-phone-remediation/renders/formation-320-200-selected.png' });
+    await preview.getByRole('button', { name: 'Read details' }).click();
+    await expect(chart.getByRole('heading', { name: title, exact: true })).toBeFocused();
+  });
   for (const input of ['mouse', 'touch', 'enlarged-touch'] as const) {
     test(`expanded distribution ring pointer ${input}`, async ({ page }) => {
       await page.setViewportSize(input === 'enlarged-touch' ? { width: 320, height: 560 } : input === 'touch' ? { width: 390, height: 844 } : { width: 1440, height: 1024 });

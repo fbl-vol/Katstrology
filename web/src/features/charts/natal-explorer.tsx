@@ -148,16 +148,16 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
 
   const preview = compact && previewPoint ? <WheelPreview point={previewPoint}>
     {choices ? <>
-      <strong>Details at this point</strong>
+      <strong>Choose detail</strong>
       <label className="sr-only" htmlFor={`${chart.id}-overlap`}>Choose an overlapping detail</label>
       <select id={`${chart.id}-overlap`} value={choiceId} onChange={event => setChoiceId(event.target.value)}>
         <option value="">Choose from {choices.entries.length} details</option>
         {choices.entries.map(entry => <option key={entry.id} value={entry.id}>{entry.title} · {entry.subtitle}</option>)}
       </select>
-      <div className="wheel-preview-actions"><button type="button" disabled={!choiceId} onClick={() => {
+      <div className="wheel-preview-actions"><button type="button" aria-label="Select detail" disabled={!choiceId} onClick={() => {
         const entry = choices.entries.find(item => item.id === choiceId);
         if (entry) { choose(entry, choices); requestAnimationFrame(() => readButton.current?.focus({ preventScroll: true })); }
-      }}>Select detail</button><button type="button" onClick={() => {
+      }}>Select</button><button type="button" onClick={() => {
         const origin = choices.origin; setChoices(null); setPreviewPoint(previewBeforeChoices.current); origin.focus({ preventScroll: true });
       }}>Cancel</button></div>
     </> : selected && <div className="wheel-preview-selection">
