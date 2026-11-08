@@ -252,7 +252,12 @@ class ValidationPerformanceTests(unittest.TestCase):
                     dist.mkdir(parents=True)
                     (dist / 'index.html').write_text('synthetic build')
                 env = kwargs.get('env', {})
-                if 'PLAYWRIGHT_JSON_OUTPUT_FILE' in env:
+                if 'KAT_BROWSER_INVENTORY_FILE' in env:
+                    Path(env['KAT_BROWSER_INVENTORY_FILE']).write_text(json.dumps({
+                        'workers': 1, 'status': 'passed', 'errors': 0,
+                        'tests': [{'id': 'b' * 64, 'allowedSkip': False,
+                                   'outcomes': [] if '--list' in argv else ['passed']}]}))
+                if 'PLAYWRIGHT_JSON_OUTPUT_FILE' in env and '--list' not in argv:
                     Path(env['PLAYWRIGHT_JSON_OUTPUT_FILE']).write_text(json.dumps({
                         'suites': [{'specs': [{'tests': [{'expectedStatus': 'passed',
                             'results': [{'status': 'passed'}]}]}]}],
@@ -266,11 +271,44 @@ class ValidationPerformanceTests(unittest.TestCase):
         with TemporaryDirectory() as temp, \
              patch.object(validation, 'ROOT', Path(temp)), \
              patch.object(validation, 'git_state', return_value={'sha': SHA, 'dirty': False}), \
+             patch.object(validation, 'git_tree', return_value='c' * 40), \
              patch.object(validation, 'start_fixture', return_value=(
                  'synthetic-id', 'kat-origin-isolated-synthetic', 34567)) as start, \
              patch.object(validation, 'owned_container', return_value=True) as owned, \
              patch.object(validation, 'command', side_effect=fake_command) as command:
             yield calls, start, owned, command
+
+    def test_shard_is_passed_to_native_discovery_and_execution(self):
+        with self.synthetic_runner() as (calls, start, _, _):
+            code, report = invoke(validation.main, ['--profile', 'browser', '--browser-shard', '2/4', '--execute'])
+        self.assertEqual((code, report['browser_shard'], report['tree']), (0, '2/4', 'c' * 40))
+        start.assert_called_once()
+        native = [argv for argv, _ in calls if '--shard=2/4' in argv]
+        self.assertEqual(len(native), 2)
+        self.assertIn('--list', native[0])
+        self.assertNotIn('--list', native[1])
+        self.assertEqual(report['fixture_cleanup'], 'owned-container-removed')
+
+    def test_inventory_only_never_builds_or_starts_fixture(self):
+        with self.synthetic_runner() as (calls, start, _, _):
+            code, report = invoke(validation.main, ['--profile', 'browser', '--inventory-only', '--execute'])
+        self.assertEqual(code, 0)
+        start.assert_not_called()
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--list', calls[0][0])
+        self.assertEqual(report['results']['browser']['status'], 'discovered')
+
+    def test_interrupt_cleans_owned_fixture_and_never_passes(self):
+        with self.synthetic_runner() as (_, _, _, command):
+            original = command.side_effect
+            def interrupt(argv, **kwargs):
+                if kwargs.get('log') and kwargs['log'].name == 'browser.log':
+                    raise KeyboardInterrupt
+                return original(argv, **kwargs)
+            command.side_effect = interrupt
+            code, report = invoke(validation.main, ['--profile', 'browser', '--browser-shard', '1/4', '--execute'])
+        self.assertEqual((code, report['status'], report['error_type']), (1, 'stopped', 'KeyboardInterrupt'))
+        self.assertEqual(report['fixture_cleanup'], 'owned-container-removed')
 
     def test_grouped_plan_preserves_order_deduplicates_and_never_executes(self):
         with self.synthetic_runner() as (calls, start, _, _):
@@ -341,7 +379,7 @@ class ValidationPerformanceTests(unittest.TestCase):
             code, report = invoke(validation.main, ['--profiles', 'browser', 'clock',
                 '--browser-grep', 'synthetic selected behavior', '--execute'])
         self.assertEqual(code, 0)
-        tests = [argv for argv, _ in calls if '--grep' in argv]
+        tests = [argv for argv, _ in calls if '--grep' in argv and '--list' not in argv]
         self.assertEqual(len(tests), 2)
         self.assertTrue(all(argv[-2:] == ['--grep', 'synthetic selected behavior'] for argv in tests))
         self.assertEqual(report['filters']['browser_grep'], 'synthetic selected behavior')
@@ -370,6 +408,7 @@ class ValidationPerformanceTests(unittest.TestCase):
             code, report = invoke(validation.main, ['--profiles', 'browser', 'clock', '--execute'])
         self.assertEqual((code, report['status']), (1, 'stopped'))
         self.assertEqual(report['unrun'], ['clock'])
+        self.assertEqual(report['results']['browser'].pop('inventory')['tests'][0]['id'], 'b' * 64)
         self.assertEqual(report['results'], {'browser': {
             'status': 'stopped', 'log': str(Path(report['logs_dir']) / 'browser.log'),
             'error_type': 'CalledProcessError', 'returncode': 1,
@@ -387,7 +426,7 @@ class ValidationPerformanceTests(unittest.TestCase):
             def omit_diagnostics(argv, **kwargs):
                 result = original(argv, **kwargs)
                 report_path = kwargs.get('env', {}).get('PLAYWRIGHT_JSON_OUTPUT_FILE')
-                if report_path:
+                if report_path and '--list' not in argv:
                     Path(report_path).unlink()
                 return result
 
@@ -435,6 +474,10 @@ class ValidationPerformanceTests(unittest.TestCase):
             ['--profiles', 'backend', 'probes', '--browser-grep', 'synthetic'],
             ['--profiles', 'all'],
             ['--profile', 'siwc', '--private-layout-reference'],
+            *[['--profile', 'browser', '--browser-shard', value] for value in ('0/4', '5/4', '1/0', '1/65', '2', '1/4x')],
+            ['--profile', 'all', '--browser-shard', '1/4'],
+            ['--profile', 'browser', '--browser-shard', '1/4', '--browser-grep', 'partial'],
+            ['--profile', 'siwc', '--inventory-only'],
         ]
         with patch.object(validation, 'git_state', side_effect=AssertionError('execution started')):
             for args in invalid:

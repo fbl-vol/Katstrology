@@ -14,6 +14,9 @@ import sys
 from time import perf_counter
 
 ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT))
+from deploy.qualification_inventory import read_json, check_execution
+
 PROFILES = ('backend', 'probes', 'browser', 'siwc', 'clock')
 PASSWORD = 'synthetic_test_only'  # disposable test container, never a user credential
 
@@ -74,6 +77,32 @@ def timed_stage(timings, name):
 def git_state():
     return {'sha': command(['git', 'rev-parse', 'HEAD']),
             'dirty': bool(command(['git', 'status', '--porcelain']))}
+
+
+def git_tree():
+    return command(['git', 'rev-parse', 'HEAD^{tree}'])
+
+
+def browser_shard(value):
+    if not re.fullmatch(r'[1-9][0-9]?/[1-9][0-9]?', value):
+        raise argparse.ArgumentTypeError('Browser shard must be index/count')
+    index, count = map(int, value.split('/'))
+    if not 1 <= index <= count <= 64:
+        raise argparse.ArgumentTypeError('Browser shard requires 1 <= index <= count <= 64')
+    return value
+
+
+def discover_browser(profile, env, out, *, shard=None, grep=None):
+    path = out / (profile + '-inventory.json')
+    argv = [str(ROOT / 'web/node_modules/.bin/playwright'), 'test', '--list', '--forbid-only',
+            '--reporter=./inventory-reporter.cjs']
+    if shard:
+        argv.append('--shard=' + shard)
+    if grep:
+        argv.extend(['--grep', grep])
+    command(argv, cwd=ROOT / 'web', env=env | {'KAT_BROWSER_INVENTORY_FILE': str(path)},
+            log=out / (profile + '-discovery.log'))
+    return read_json(path)
 
 
 def clean_environment(*, include_browser=False):
@@ -153,7 +182,7 @@ def start_fixture(env):
             import time
             time.sleep(0.5)
         raise RuntimeError('Isolated fixture did not become ready')
-    except Exception:
+    except BaseException:
         # Never remove an unverified container; report its ID without credentials.
         if 'port' in locals() and owned_container(container_id, name, port):
             command(['docker', 'rm', '-f', container_id], env=clean_environment())
@@ -267,7 +296,7 @@ def browser_progress(path):
 
 
 def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timings,
-                private_layout_reference=False):
+                private_layout_reference=False, shard=None):
     python = ROOT / '.venv-swiss/bin/python'
     web = ROOT / 'web'
     if profile == 'backend':
@@ -286,12 +315,18 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
             env['KAT_LAYOUT_PRIVATE_REFERENCE'] = '1'
         env['PLAYWRIGHT_JSON_OUTPUT_FILE'] = str(out / (profile + '-report.json'))
         env['KAT_BROWSER_PROGRESS_FILE'] = str(out / (profile + '-progress.json'))
-        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test',
-                     '--reporter=line,json,./validation-reporter.cjs'], web
+        env['KAT_BROWSER_INVENTORY_FILE'] = str(out / (profile + '-executed.json'))
+        discovered = discover_browser(profile, env, out, shard=shard, grep=browser_grep)
+        argv, cwd = [str(web / 'node_modules/.bin/playwright'), 'test', '--forbid-only', '--retries=0',
+                     '--reporter=line,json,./validation-reporter.cjs,./inventory-reporter.cjs'], web
+        if shard:
+            argv.append('--shard=' + shard)
         if browser_grep:
             argv.extend(['--grep', browser_grep])
     logfile = out / (profile + '.log')
     results[profile] = {'status': 'stopped', 'log': str(logfile.relative_to(ROOT))}
+    if profile in PROFILES[2:]:
+        results[profile]['inventory'] = discovered
     try:
         with timed_stage(timings, profile + '-tests'):
             command(argv, cwd=cwd, env=env, log=logfile)
@@ -323,6 +358,10 @@ def run_profile(profile, env, out, results, tests=(), browser_grep=None, *, timi
                 results[profile]['diagnostics'] = browser_diagnostics(out / (profile + '-report.json'))
             except (OSError, ValueError, TypeError, KeyError, AttributeError):
                 results[profile]['diagnostics_status'] = 'unavailable'
+    if profile in PROFILES[2:]:
+        executed = read_json(out / (profile + '-executed.json'))
+        check_execution(discovered, executed)
+        results[profile]['executed'] = executed
     text = logfile.read_text(errors='replace')
     summary = re.findall(r'\b\d+ (?:passed|skipped|failed)\b|Ran \d+ tests?|^OK$', text, re.M)
     if results[profile].get('diagnostics_status') == 'unavailable':
@@ -340,6 +379,8 @@ def main():
     parser.add_argument('--execute', action='store_true', help='Create isolated fixture and run selected profile')
     parser.add_argument('--tests', nargs='+', default=[], help='Explicit tests.<capability>.test_* unittest selectors (backend only)')
     parser.add_argument('--browser-grep', help='Playwright title filter (browser profiles only)')
+    parser.add_argument('--browser-shard', type=browser_shard, help='Main browser index/count; no filters')
+    parser.add_argument('--inventory-only', action='store_true', help='Native browser discovery without fixtures/build')
     parser.add_argument('--private-layout-reference', action='store_true',
                         help='Explicitly compare with an available approved private mockup and historical CSS')
     args = parser.parse_args()
@@ -356,21 +397,36 @@ def main():
         parser.error('--browser-grep requires a browser profile')
     if args.private_layout_reference and 'browser' not in selected:
         parser.error('--private-layout-reference requires the normal browser profile')
+    if args.browser_shard and (selected != ('browser',) or args.browser_grep or args.tests or args.private_layout_reference):
+        parser.error('--browser-shard requires only the complete main browser profile')
+    if args.inventory_only and (selected != ('browser',) or args.browser_grep or args.tests or args.private_layout_reference):
+        parser.error('--inventory-only requires only the complete main browser profile')
     report = {'action': 'execute' if args.execute else 'plan', 'git': git_state(),
+              'tree': git_tree(),
+              'browser_shard': args.browser_shard, 'inventory_only': args.inventory_only,
               'selected': selected, 'unrun': list(selected), 'results': {}, 'timings': [],
               'status': 'stopped',
               'filters': {'tests': args.tests, 'browser_grep': args.browser_grep,
                           'private_layout_reference': args.private_layout_reference}}
     fixture = None
+    previous_term = None
     started = perf_counter()
     try:
         if args.execute:
+            def interrupted(_signum, _frame):
+                raise KeyboardInterrupt
+            previous_term = signal.signal(signal.SIGTERM, interrupted)
             os.umask(0o077)
             out = ROOT / '.local' / 'kat-validation' / secrets.token_hex(8)
             out.mkdir(parents=True, mode=0o700)
             report['logs_dir'] = str(out.relative_to(ROOT))
             env = clean_environment(include_browser=any(profile in PROFILES[2:] for profile in selected))
-            if any(profile != 'probes' for profile in selected):
+            if args.inventory_only:
+                browser = browser_env(env, 'browser', out / 'unused-dist')
+                report['results']['browser'] = {'status': 'discovered',
+                    'inventory': discover_browser('browser', browser, out, shard=args.browser_shard)}
+                report['unrun'] = []
+            if not args.inventory_only and any(profile != 'probes' for profile in selected):
                 with timed_stage(report['timings'], 'fixture-start'):
                     fixture = start_fixture(env)
                 report['fixture'] = 'owned-isolated-loopback'
@@ -380,13 +436,14 @@ def main():
                 with timed_stage(report['timings'], 'template-setup'):
                     command([str(ROOT / '.venv-swiss/bin/python'), '-m', 'tests.support.template'],
                             env=env, log=out / 'template.log')
-            for profile in selected:
+            for profile in (() if args.inventory_only else selected):
                 report['unrun'].remove(profile)
                 report['results'][profile] = {'status': 'stopped'}
                 run_profile(profile, env, out, report['results'], args.tests, args.browser_grep,
-                            timings=report['timings'], private_layout_reference=args.private_layout_reference)
+                            timings=report['timings'], private_layout_reference=args.private_layout_reference,
+                            shard=args.browser_shard)
         report['status'] = 'ok'
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as exc:
         report['status'] = 'stopped'
         report['error_type'] = type(exc).__name__  # never include command, DSN, stdout or input
     finally:
@@ -403,6 +460,8 @@ def main():
                 report.setdefault('fixture_cleanup', 'stopped-manual-inspection-required')
                 report['cleanup_error_type'] = type(exc).__name__
                 report['status'] = 'stopped'
+        if previous_term is not None:
+            signal.signal(signal.SIGTERM, previous_term)
         report['total_seconds'] = round(perf_counter() - started, 3)
         print(json.dumps(report, sort_keys=True))
         if report['status'] != 'ok':
