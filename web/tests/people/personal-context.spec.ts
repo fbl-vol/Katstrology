@@ -98,6 +98,13 @@ for (const viewport of viewports) test(`personal context complete manual workflo
   await dialog.getByLabel('Title', { exact: true }).fill('Short explanations');
   await dialog.getByRole('button', { name: 'Save entry' }).click();
   await expect(pane.getByRole('button', { name: /Short explanations/ })).toBeVisible();
+  for (const collection of [life, learning]) {
+    const entry = await collection.locator('.context-row').first().boundingBox();
+    const disclosure = await collection.getByRole('button', { name: /View all/ }).boundingBox();
+    expect(entry && disclosure && entry.y + entry.height <= disclosure.y).toBe(true);
+    await expect(collection.getByRole('searchbox')).toHaveCSS('font-size', '16px');
+    await expect(collection.getByText('Showing 1 of 1')).toBeVisible();
+  }
   await capture('ordinary', true);
   for (let index = 0; index < 25; index++) {
     const response = await page.request.post(`/api/people/${person}/context`, { headers, data: {

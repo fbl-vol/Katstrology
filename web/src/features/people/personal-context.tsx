@@ -51,11 +51,8 @@ function ContextCollection({ workspace, endpoint, active, revision, memory, sect
   const total = keys.reduce((sum, group) => sum + (page?.counts[group] ?? 0), 0);
   const shown = page?.entries.filter(entry => keys.includes(entry.content.group)).length ?? 0;
   return <section className="context-collection" aria-label={label}>
-    <div className="profile-editor-heading"><h2>{label}</h2><button type="button" onClick={() => open(keys[0])}>Add</button></div>
+    <div className="profile-editor-heading"><h2>{label}{page && <> <span className="context-count" aria-label={`${total} entries`}>{total}</span></>}</h2><button type="button" onClick={() => open(keys[0])}>Add</button></div>
     <label className="field">Search {label}<input ref={search} type="search" value={query} onChange={event => { setPage(null); setQuery(event.target.value); }} /></label>
-    <button ref={disclosure} type="button" aria-expanded={expanded} onClick={toggle}>
-      {expanded ? 'Show less' : page ? `View all (${total}${total > shown ? `, ${total - shown} more` : ''})` : 'View all'}
-    </button>
     {state === 'loading' && <p role="status">Opening context…</p>}
     {state === 'error' && <p role="alert">Context could not be refreshed. This is not an empty collection. <button type="button" onClick={() => void load()}>Try again</button></p>}
     {keys.map(group => {
@@ -72,7 +69,13 @@ function ContextCollection({ workspace, endpoint, active, revision, memory, sect
       </section>;
     })}
     {state === 'ready' && !total && <p className="muted">{query ? 'No matching entries.' : 'Nothing here yet. Add what matters to you.'}</p>}
-    {expanded && page?.next_offset != null && <button type="button" disabled={state !== 'ready'} onClick={() => void load(page.next_offset!)}>More entries</button>}
+    <div className="context-collection-footer">
+      <small>{page ? `Showing ${shown} of ${total}` : ''}</small>
+      <button ref={disclosure} type="button" aria-expanded={expanded} onClick={toggle}>
+        {expanded ? 'Show less' : page ? `View all (${total}${total > shown ? `, ${total - shown} more` : ''})` : 'View all'}
+      </button>
+      {expanded && page?.next_offset != null && <button type="button" disabled={state !== 'ready'} onClick={() => void load(page.next_offset!)}>More entries</button>}
+    </div>
   </section>;
 }
 

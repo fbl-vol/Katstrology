@@ -30,6 +30,7 @@ test('a normal archived reply loads all 17 remaining events without another send
     await expect(page.getByRole('button', { name: /Load remaining archived events/ })).toHaveCount(0);
     await card.getByRole('button', { name: 'Retry loading saved reply' }).click();
     await expect(visibleReply).toContainText('[segment-45]', { timeout: 30000 });
+    await expect(visibleReply.locator('.assistant-markdown')).toHaveCSS('font-size', '16px');
     await expect(card.getByRole('alert')).toHaveCount(0);
     expect(pages).toBe(2);
     const archived = await page.evaluate(async () => {
@@ -195,6 +196,16 @@ test('a normal long archived reply remains document-scrollable on mobile', async
     expect(scroll.document).toBeGreaterThan(scroll.viewport);
     await reply.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `../.local/application-performance/complete-reply-normal-mobile.png` });
+    await expect(reply.locator('.assistant-markdown')).toHaveCSS('font-size', '16px');
+    await page.getByLabel('Message Kat').fill('A retained draft while enlarging the reading');
+    await page.setViewportSize({ width: 320, height: 560 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    await expect(reply.locator('.assistant-markdown')).toHaveCSS('font-size', '32px');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    await expect(page.getByLabel('Message Kat')).toHaveValue('A retained draft while enlarging the reading');
+    await expect(reply).toContainText('[segment-45]');
+    await reply.locator('.assistant-markdown').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `../.local/application-performance/reading-enlarged-mobile.png` });
     await expect(page.getByRole('button', { name: /Load remaining archived events|Show more/ })).toHaveCount(0);
   });
 
