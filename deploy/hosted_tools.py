@@ -4,14 +4,17 @@ import argparse
 from hashlib import sha256
 import os
 from pathlib import Path
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 
 PLUGINS = {
-    'docker-buildx': ('https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.linux-amd64',
+    # docker/buildx v0.38.1 — buildx-v0.38.1.linux-amd64 (official release asset).
+    'docker-buildx': ('https://api.github.com/repos/docker/buildx/releases/assets/660618355',
                      'e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4'),
-    'docker-compose': ('https://github.com/docker/compose/releases/download/v2.38.2/docker-compose-linux-x86_64',
+    # docker/compose v2.38.2 — docker-compose-linux-x86_64 (official release asset).
+    'docker-compose': ('https://api.github.com/repos/docker/compose/releases/assets/270980274',
                       '486b3ffc0f806ca2efbc430cef89955386011662f0c76bad17c103d059cfa9cf'),
 }
+MAX_PLUGIN_BYTES = 150 * 1024 * 1024
 
 
 def install():
@@ -21,9 +24,12 @@ def install():
     folder.mkdir(parents=True, exist_ok=True)
     opener = build_opener(ProxyHandler({}))
     for name, (url, expected) in PLUGINS.items():
-        with opener.open(url, timeout=60) as response:
-            content = response.read(150 * 1024 * 1024 + 1)
-        if len(content) > 150 * 1024 * 1024 or sha256(content).hexdigest() != expected:
+        request = Request(url, headers={
+            'Accept': 'application/octet-stream', 'User-Agent': 'Kat-hosted-tools/1.0',
+        })
+        with opener.open(request, timeout=60) as response:
+            content = response.read(MAX_PLUGIN_BYTES + 1)
+        if len(content) > MAX_PLUGIN_BYTES or sha256(content).hexdigest() != expected:
             raise ValueError('Docker plugin differs from official release checksum')
         target = folder / name
         if target.is_symlink():
