@@ -247,6 +247,13 @@ def prepare(store, session, conv_id, head_id, request, selected_context,
         units = _estimate(model, item[1])
         if retained and retained_units + units > keep_goal:
             break
+        if retained:
+            try:
+                # Declarations and selected facts consume real headroom too.
+                # Compact older turns when the assembled recent tail cannot fit.
+                project([item] + retained, summary, covered)
+            except PromptBudgetError:
+                break
         retained.insert(0, item)
         retained_units += units
     retired = remaining[:len(remaining) - len(retained)]

@@ -188,7 +188,7 @@ class ChatBudgetTests(DatabaseCase):
         self.assertEqual({key: context[key] for key in tone_identity}, tone_identity)
         from m2.chat.agent_reads import TOOLS
         self.assertEqual(context['instruction_tokens'],
-                         (len((tone_text + json.dumps(TOOLS)).encode()) + 1) // 2)
+                         (len((tone_text + json.dumps(TOOLS, ensure_ascii=False, separators=(',', ':'))).encode()) + 1) // 2)
         sent = self.bridge.requests[0]
         self.assertEqual(sent['instructions'], tone_text)
         self.assertNotIn(HOSTED, sent['input'][0]['content'][0]['text'])
@@ -259,16 +259,16 @@ class ChatBudgetTests(DatabaseCase):
 
         prompt = 'How could I approach a creative disagreement without making a prediction?'
         for tone_id in ('thoughtful-wit', 'grounded-warmth', 'playful-cheek', 'cosmic-cabaret'):
-            for version in (1, 2, 3):
+            for version in (1, 2, 3, 4):
                 with self.subTest(tone_id=tone_id, version=version):
                     revision = self.store.tone_preference(self.alice)['revision']
                     self.store.set_tone_preference(self.alice, tone_id, revision)
                     turn_id = f'{tone_id}-v{version}'
-                    expected = (archived_instructions(legacy_identity(tone_id, version)) if version < 3
+                    expected = (archived_instructions(legacy_identity(tone_id, version)) if version < 4
                                 else instructions(tone_id))
                     bridge = ReadThenAnswer()
                     model = ResponsesModel(bridge, 'alice', self.model.slug)
-                    if version < 3:
+                    if version < 4:
                         # Accept an older version, switch to current code at ACK, then
                         # reconstruct the first request and every read from its record.
                         accepting_older = patch('m2.chat.tone_profiles.instructions', return_value=expected)
@@ -281,7 +281,7 @@ class ChatBudgetTests(DatabaseCase):
                     else:
                         status, events = self.turn(turn_id, prompt, parent='@root', model=model)
                     self.assertEqual(status, 'complete', events)
-                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 3)
+                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 4)
                     # Two requested reads require three calls, not an extra closing call.
                     self.assertEqual(len(bridge.requests), 3)
                     self.assertEqual(sum(event['kind'] == 'tool_result' and
@@ -294,7 +294,7 @@ class ChatBudgetTests(DatabaseCase):
                     context = next(event['payload'] for event in events if event['kind'] == 'context')
                     self.assertEqual({key: context[key] for key in expected[1]}, expected[1])
                     self.assertEqual(context['instruction_tokens'],
-                                     (len((expected[0] + json.dumps(TOOLS)).encode()) + 1) // 2)
+                                     (len((expected[0] + json.dumps(TOOLS, ensure_ascii=False, separators=(',', ':'))).encode()) + 1) // 2)
                     self.assertEqual(self.store.read_turn(self.alice, 'budget-thread', turn_id)
                                      ['events'][0]['payload']['tone'], expected[1])
                     replay, _ = self.turn(turn_id, prompt, parent='@root', model=model)
@@ -498,7 +498,9 @@ class ChatBudgetTests(DatabaseCase):
                          rows[-1]['covered_ids'])
 
     def test_summary_failures_do_not_publish_or_rerun_archived_turns(self):
-        self.bridge.catalog.append({'slug': 'synthetic-compact', 'context_window': 16384,
+        # Leave mandatory declarations/tone/chart room; the longer history must
+        # exercise summary failure, not the separate mandatory-input refusal.
+        self.bridge.catalog.append({'slug': 'synthetic-compact', 'context_window': 24576,
                                     'max_output_tokens': 2048})
         compact_model = ResponsesModel(self.bridge, 'alice', 'synthetic-compact')
         for behavior in ('empty', 'oversized', 'incomplete', 'tool_call',
@@ -506,7 +508,7 @@ class ChatBudgetTests(DatabaseCase):
             with self.subTest(behavior=behavior):
                 conv = f'failure-{behavior}'
                 self.store.create_conversation(self.alice, conv)
-                for index in range(4):
+                for index in range(8):
                     status, _ = self.turn(f'prefix-{index}',
                         f'Synthetic prior topic {index}: ' + 'ordinary discussion. ' * 100,
                         conv_id=conv)

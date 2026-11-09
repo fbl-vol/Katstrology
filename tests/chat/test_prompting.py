@@ -12,12 +12,12 @@ class PromptIdentityTests(unittest.TestCase):
         self.assertIs(SYSTEM, LOCAL)
         expected = {
             'local': '704636f680a118535bfa69aa4f1b52bdcfe629ceeb7466c744a897845f8e6444',
-            'hosted': '0450d9964e9b833c94082034a952ed847199ac4e98e239429b229fd4733fe619',
+            'hosted': 'b21c30ca9b4fd4aae8455c82f8eee441499a8883f00e1d879baf62c3ed97575b',
         }
         for mode, text in (('local', LOCAL), ('hosted', HOSTED)):
             with self.subTest(mode=mode):
                 self.assertEqual(identity(mode), {
-                    'prompt_version': '2026-11-03.1', 'prompt_mode': mode,
+                    'prompt_version': '2026-11-09.1', 'prompt_mode': mode,
                     'prompt_sha256': expected[mode],
                 })
                 self.assertEqual(sha256(text.encode('utf-8')).hexdigest(), expected[mode])

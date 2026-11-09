@@ -8,6 +8,7 @@ TOOLS = [*READ_TOOLS, UPDATE_TOOL]
 from m2.provider.model_capacity import resolve_capacity
 from m2.chat.prompting import HOSTED
 from m2.provider.siwc import ProviderFailure
+from m2.chat.web_tools import NAMES as WEB_NAMES, valid_arguments as valid_web_arguments
 
 MAX_RESPONSE_TEXT_BYTES = 512 * 1024
 MAX_RESPONSE_FOOTER_BYTES = 2 * 1024 * 1024
@@ -171,6 +172,8 @@ def _valid_read_arguments(name, serialized):
         arguments = json.loads(serialized)
     except (TypeError, ValueError):
         return False
+    if name in WEB_NAMES:
+        return valid_web_arguments(name, arguments)
     def valid(value, field):
         allowed = field['type'] if isinstance(field['type'], list) else [field['type']]
         if 'object' in allowed:
@@ -269,7 +272,8 @@ class ResponsesModel:
         serialized = json.dumps(self._continuation_input + outputs,
                                 ensure_ascii=False, separators=(',', ':')).encode('utf-8')
         return (len(self.tokenize(serialized)) +
-                len(self.tokenize((self._instructions + json.dumps(self.tools)).encode())))
+                len(self.tokenize((self._instructions + json.dumps(
+                    self.tools, ensure_ascii=False, separators=(',', ':'))).encode())))
 
     def continue_completion(self, outputs):
         """Stateless provider continuation; outputs must already be durably archived."""

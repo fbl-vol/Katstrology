@@ -12,6 +12,8 @@ from hashlib import sha256
 from m2.chat.agent_reads import project_transit_view
 from m2.chat.evidence_links import project_read_links
 from m2.archive.store import MAX_TOOL_RESULT_BYTES
+from m2.chat.web_tools import NAMES as WEB_NAMES
+from m2.chat.web_evidence import WEB_MODEL_BYTES, WEB_RESULT_BYTES, project_web
 
 MAX_MODEL_RESULT_BYTES = 256 * 1024
 MAX_MODEL_EVIDENCE_BYTES = 2 * 1024 * 1024
@@ -26,6 +28,8 @@ def encoded(value):
 
 def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
     """Preserve identifying qualifications; mark every model-only reduction."""
+    if name in WEB_NAMES:
+        return project_web(result, available_bytes), True
     if name == 'get_true_solar_arc' and result.get('status') == 'supported':
         projection = {key: value for key, value in result.items() if key not in
                       ('positions', 'natal_positions', 'directed_natal_aspects')}
@@ -158,7 +162,7 @@ def project(name, result, available_bytes=MAX_MODEL_RESULT_BYTES):
     return result, False
 
 
-def prepare(name, call_id, result, round_count, prior_bytes, model, budget):
+def prepare(name, call_id, result, round_count, prior_bytes, model, budget, web_prior_bytes=0):
     """Return an archived owner result and one bounded, honest provider output."""
     archived = {'id': call_id, 'name': name, 'result': result}
     archived.update(project_read_links(name, result))
@@ -170,9 +174,14 @@ def prepare(name, call_id, result, round_count, prior_bytes, model, budget):
                     'result': limit_result(scope, used, limit, round_count)}
 
     remaining = MAX_MODEL_EVIDENCE_BYTES - LIMIT_RESPONSE_RESERVE - prior_bytes
-    projection, reduced = project(name, archived['result'],
-                                  max(0, min(MAX_MODEL_RESULT_BYTES, remaining)))
+    allowance = min(MAX_MODEL_RESULT_BYTES, remaining)
+    if name in WEB_NAMES:
+        allowance = min(allowance, WEB_RESULT_BYTES,
+                        WEB_MODEL_BYTES - LIMIT_RESPONSE_RESERVE - web_prior_bytes)
+    projection, reduced = project(name, archived['result'], max(0, allowance))
     projection_bytes = len(encoded(projection))
+    if scope is None and name in WEB_NAMES and projection_bytes > allowance:
+        scope, used, limit = 'web_allowance', web_prior_bytes + projection_bytes, WEB_MODEL_BYTES
     if scope is None and projection_bytes > MAX_MODEL_RESULT_BYTES:
         scope, used, limit = 'per_call', projection_bytes, MAX_MODEL_RESULT_BYTES
     if scope is None and projection_bytes > remaining:
@@ -188,14 +197,16 @@ def prepare(name, call_id, result, round_count, prior_bytes, model, budget):
         projection = limit_result(scope, used, limit, round_count)
         reduced = True
     output = encoded(projection)
-    if prior_bytes + len(output) > MAX_MODEL_EVIDENCE_BYTES:
+    if (prior_bytes + len(output) > MAX_MODEL_EVIDENCE_BYTES or
+            (name in WEB_NAMES and web_prior_bytes + len(output) > WEB_MODEL_BYTES)):
         # The native result remains authoritative, but even the small refusal
         # cannot fit this operation's model-evidence envelope. Do not send an
         # unmatched call to the provider or mislabel a byte guard as a round cap.
+        web_exhausted = name in WEB_NAMES and web_prior_bytes + len(output) > WEB_MODEL_BYTES
         archived.update({'model_projection_status': 'unavailable',
-            'model_projection_limit': {'scope': 'cumulative',
-                'used_bytes': prior_bytes + len(output),
-                'limit_bytes': MAX_MODEL_EVIDENCE_BYTES,
+            'model_projection_limit': {'scope': 'web_allowance' if web_exhausted else 'cumulative',
+                'used_bytes': (web_prior_bytes if web_exhausted else prior_bytes) + len(output),
+                'limit_bytes': WEB_MODEL_BYTES if web_exhausted else MAX_MODEL_EVIDENCE_BYTES,
                 'read_count': round_count, 'projected': True}})
         return archived, None
     archived.update({'model_projection_sha256': sha256(output).hexdigest(),
