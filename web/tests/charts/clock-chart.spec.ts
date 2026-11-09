@@ -116,6 +116,51 @@ for (const viewport of [
   });
 }
 
+for (const viewport of [{ name: 'desktop', width: 1440, height: 1024 },
+                        { name: 'mobile', width: 390, height: 844 }]) {
+  test(`Settings return preserves typing across pending native restoration on ${viewport.name}`, async ({ page, context }) => {
+    await page.setViewportSize(viewport);
+    await connect(page, context, `reader-clock-retained-${viewport.name}`, viewport.name === 'mobile');
+    await selectPerson(page, viewport.name === 'mobile');
+    if (viewport.name === 'mobile') await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page.getByRole('button', { name: 'Settings' }).click();
+
+    // The real native traversal validates the session asynchronously. Let the
+    // reader start typing before that response, then finish it between the
+    // actual Shift and Enter events. No locator refocus may mask stolen input.
+    let releaseSession!: () => void;
+    let sawSession!: () => void;
+    const sessionSeen = new Promise<void>(resolve => { sawSession = resolve; });
+    const sessionGate = new Promise<void>(resolve => { releaseSession = resolve; });
+    await page.route('**/api/session', async route => {
+      sawSession();
+      await sessionGate;
+      await route.continue();
+    }, { times: 1 });
+    const composer = page.getByLabel('Message Kat');
+    try {
+      await page.getByRole('button', { name: 'Back to workspace' }).click();
+      await sessionSeen;
+      await expect(page.getByText('Opening saved view…', { exact: true })).toBeVisible();
+      await composer.fill('Keep this newer draft');
+      await page.keyboard.down('Shift');
+      releaseSession();
+      await expect(page.getByText('Opening saved view…', { exact: true })).toBeHidden();
+      // Cross the native restoration's paint boundary before completing the chord.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Shift');
+      await expect(composer).toHaveValue('Keep this newer draft\n');
+      await expect(composer).toBeFocused();
+      await page.keyboard.type('Still typing');
+      await expect(composer).toHaveValue('Keep this newer draft\nStill typing');
+      await page.screenshot({ path: `../.local/clock-chart/renders/pending-history-${viewport.name}.png` });
+    } finally {
+      releaseSession();
+    }
+  });
+}
+
 test('normal chat keeps a centred chart rail, composer and draft across ultrawide-to-mobile resize', async ({ page, context }) => {
   await page.setViewportSize({ width: 2560, height: 1080 });
   await connect(page, context, 'reader-clock-retained-desktop', false);
