@@ -122,10 +122,16 @@ test('normal thinking indicator keeps reduced motion and survives a settings rou
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const origin = new URL(test.info().project.use.baseURL!).origin;
   let heldStream: Promise<void> | null = null;
+  let heldArchiveReads = 0;
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (!['127.0.0.1', '127.0.0.2'].includes(url.hostname)) return route.abort();
-    if (/\/api\/conversations\/[^/]+\/turns\/[^/]+\/events$/.test(url.pathname) && heldStream) await heldStream;
+    // Returning from settings also reads the archive. Hold both delivery paths
+    // while checking pending artwork, not just the EventSource transport.
+    if (route.request().method() === 'GET' && /\/api\/conversations\/[^/]+\/turns(?:\/.*)?$/.test(url.pathname) && heldStream) {
+      if (/\/turns$/.test(url.pathname)) heldArchiveReads++;
+      await heldStream;
+    }
     await route.continue();
   });
   await page.goto(origin);
@@ -155,6 +161,7 @@ test('normal thinking indicator keeps reduced motion and survives a settings rou
     await expect(status).toHaveCount(0); // Unmounted artwork has no hidden animation or timer.
     await page.evaluate(() => { Math.random = () => .99; });
     await page.getByRole('button', { name: 'Back to workspace' }).click();
+    await expect.poll(() => heldArchiveReads).toBeGreaterThan(0);
     await expect(status).toHaveAttribute('data-artwork', 'celestial-sigil');
     await expect(status).toBeVisible();
   } finally {
