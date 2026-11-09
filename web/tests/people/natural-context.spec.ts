@@ -99,11 +99,18 @@ for (const viewport of [
     await summary.scrollIntoViewIfNeeded();
     const summaryBox = await summary.boundingBox();
     const dock = await page.locator('.composer-wrap').boundingBox();
-    if (summaryBox && dock && summaryBox.y + summaryBox.height > dock.y) {
-      const header = await page.locator('.header').boundingBox();
+    const header = await page.locator('.header').boundingBox();
+    if (summaryBox && dock && (summaryBox.y < (header?.height ?? 78) || summaryBox.y + summaryBox.height > dock.y)) {
       await page.mouse.move(viewport.width - 20, 100);
       await page.mouse.wheel(0, summaryBox.y - ((header?.height ?? 78) + 16));
     }
+    // Explicit user scrolling must expose the summary below the header as well
+    // as above the composer; a shorter reply footer can put it behind either.
+    await expect.poll(() => summary.evaluate(node => {
+      const r = node.getBoundingClientRect();
+      return node.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    })).toBe(true);
+    await capture(`outcome-${state}-before-open`);
     await summary.click({ timeout: 10_000 });
     if (state === 'saved') await expect(disclosure.locator('summary')).toContainText('1 saved');
     if (state === 'omitted') await expect(disclosure).toContainText('No personal-context update was proposed');
