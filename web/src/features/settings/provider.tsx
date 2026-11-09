@@ -101,7 +101,7 @@ function ProviderHelp() {
     <button ref={button} type="button" aria-label="About ChatGPT plan connection" aria-expanded={open}
       aria-controls="provider-help-text" onClick={() => setOpen(true)}>ⓘ</button>
     {open && <span id="provider-help-text" className="provider-help-text" role="note">
-      Your local workspace account and archive remain separate. ChatGPT sign-in does not import your ChatGPT history or provide an API key. Plan use requires a separate permission.
+      Your local workspace account and archive remain separate. ChatGPT sign-in does not import your ChatGPT history or provide an API key. Plan use requires a separate permission. When needed, Kat sends focused public search queries through your connected plan and reads public pages without cookies. The model chooses the query, so avoid requesting searches for private details. Public sites receive the requested URL and the server’s network address, not your chart or conversation.
       <button type="button" onClick={() => setOpen(false)}>Close explanation</button>
     </span>}
   </span>;

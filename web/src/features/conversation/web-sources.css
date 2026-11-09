@@ -1,0 +1,12 @@
+.web-sources {
+  color: var(--muted);
+  font-size: var(--text-support);
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.web-sources summary { cursor: pointer; min-height: 32px; align-content: center; }
+.web-sources ul { padding-left: 20px; }
+.web-sources li { margin: 8px 0; }
+.web-sources a { color: var(--link); }
+.web-sources small { display: block; margin-top: 3px; }
+.web-sources p { line-height: 1.5; }
