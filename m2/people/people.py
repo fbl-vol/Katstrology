@@ -116,7 +116,14 @@ class People:
 
     def get(self, session, person_id):
         owner = self.store.owner(session)
-        person = self._person(session, person_id)
+        # Rank all owned names before resolving this ID, just like picker pages.
+        row = self.store.db.execute(OWNED_CHOICES_CTE +
+            'SELECT * FROM person_choices WHERE id=%s',
+            (owner, self.store._id(person_id))).fetchone()
+        if row is None:
+            raise KeyError('Person not found')
+        person = {key: row[key] for key in ('id', 'name', 'created_at')}
+        person['picker_label'] = picker_label(row)
         person['active_chart_id'] = self.active_chart_id(session, person_id)
         # Only a generation request proves which draft produced the active chart.
         # Older manually created charts have no such link; do not infer one from timestamps.

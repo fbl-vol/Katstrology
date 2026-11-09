@@ -87,6 +87,12 @@ self/consent revocations apply only to accounts present in that restored databas
 creating ghost accounts or removing journal records. The same retained revocations still
 apply when restoring another backup that contains the account. Person/account deletion
 uses existing foreign keys and deletion replay. Old facts and archives are never retagged.
+The single-person read returns the same canonical owner-scoped `picker_label` as
+picker pages, so saved-self recognition survives reopening, reload and failure refresh.
+Duplicate-name ranking happens before the ID filter; other owners never contribute.
+This is a current display label, not stored authority or a version change. The UI keeps
+its name/ID fallback when a descriptive label is unavailable; it does not enumerate
+all people or reconstruct label rules in the client.
 
 Turn acknowledgement freezes the consent version and exact entry/detail versions
 in the original user event. Selection considers only explicitly selected people,

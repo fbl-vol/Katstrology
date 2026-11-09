@@ -67,6 +67,43 @@ class PersonalProfileTests(DatabaseCase):
             'id': 'unique', 'other_person_id': 'parent', 'label': 'Friend', 'dates': ''})
         self.assertEqual(profile.get(self.alice, 'z-target')['links'][0]['picker_label'], 'Unique parent')
 
+    def test_single_person_read_retains_canonical_self_label_without_changing_authority(self):
+        from m2.chat.personal_context import preference
+        from m2.people.self_association import association, set_association
+
+        people = People(self.store)
+        profile = PersonalProfile(self.store)
+        people.charts.add_person(self.bob, 'foreign', 'Casey')
+        for person, occupation in (('z-teacher', 'Teacher'), ('a-artist', 'Artist')):
+            people.charts.add_person(self.alice, person, 'Casey')
+            profile.change(self.alice, person, 'describe-' + person, {
+                'kind': 'details', 'expected_version': 0,
+                'details': {'pronouns': '', 'home': '', 'occupation': occupation, 'about': ''}})
+        # The saved identity need not occur on the first picker page.
+        for index in range(51):
+            people.charts.add_person(self.alice, f'b-{index:02}', 'Other person')
+        self.assertNotIn('z-teacher', {row['id'] for row in people.picker(self.alice)['people']})
+        saved = set_association(self.store, self.alice, 'z-teacher', 0)
+        for person, expected in (('z-teacher', 'Casey · Teacher (profile 1)'),
+                                 ('a-artist', 'Casey · Artist (profile 2)')):
+            self.assertEqual(people.get(self.alice, person).get('picker_label'), expected)
+            self.assertEqual(next(row['picker_label'] for row in people.picker(self.alice, 'Casey')['people']
+                                  if row['id'] == person), expected)
+        self.assertEqual(association(self.store, self.alice), saved)
+        self.assertEqual(preference(self.store, self.alice), {'enabled': False, 'version': 0})
+        self.assertEqual(people.get(self.bob, 'foreign')['picker_label'], 'Casey')
+        with self.assertRaises(KeyError):
+            people.get(self.bob, 'z-teacher')
+        with self.assertRaises(KeyError):
+            people.get(self.alice, 'missing')
+        # Missing descriptive details still use the canonical date/ordinal label.
+        profile.change(self.alice, 'z-teacher', 'clear-details', {
+            'kind': 'details', 'expected_version': 1,
+            'details': {'pronouns': '', 'home': '', 'occupation': '', 'about': ''}})
+        self.assertRegex(people.get(self.alice, 'z-teacher')['picker_label'],
+                         r'^Casey · added \d{2} \w{3} \d{4} \(profile 1\)$')
+        self.assertEqual(association(self.store, self.alice), saved)
+
     def test_details_links_colliding_names_and_owner_boundaries(self):
         people = People(self.store)
         for owner, person in ((self.alice, 'one'), (self.alice, 'two'), (self.bob, 'private')):
