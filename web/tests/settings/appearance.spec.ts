@@ -148,7 +148,12 @@ for (const viewport of [{ name: 'short-mobile', size: { width: 390, height: 560 
       await dialog.getByLabel('Name').focus();
       await expect(dialog.getByLabel('Name')).toBeFocused();
       await page.screenshot({ path: resolve(renders, `${theme.id}-${viewport.name}-form.png`) });
+      // Cancel traverses native history asynchronously. Await that traversal
+      // before the next palette reload, rather than aborting it mid-navigation.
+      const returned = page.waitForEvent('framenavigated', frame => frame === page.mainFrame());
       await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await returned;
+      await expect(dialog).toBeHidden();
       expect(await page.evaluate(() => document.documentElement.scrollWidth), theme.id)
         .toBeLessThanOrEqual(viewport.size.width + 1);
     }
