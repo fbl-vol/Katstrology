@@ -343,7 +343,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
       </>}
       {skyOpen && <TransitView workspace={workspace} people={people}
         initialPersonId={skyFromHub ? navigation.chartOriginId || undefined : person?.id || selection[0]?.person_id}
-        returnLabel={skyFromHub ? 'Back to chart choices' : 'Return to conversation'}
+        returnLabel={skyFromHub ? 'Back to chart choices' : person ? 'Return to person' : 'Return to conversation'}
         onClose={navigation.closeSky} />}
       <div className={`reader-content${skyOpen || chartHub ? ' sky-hidden' : ''}`} inert={skyOpen || !!chartHub}>
       {person ? <PersonDetail key={person.id} workspace={workspace} person={person} refresh={refreshPeople} memory={personMemory(person.id)}
@@ -353,7 +353,7 @@ export function WorkspaceShell({ workspace, onSignedOut }: { workspace: Workspac
             if (navigation.isCurrent(version)) navigation.showSidebarPerson(selected);
           }).catch(() => setNotice('Person could not be opened.'));
         }}
-        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={() => openChartHub(person.id)} libraryRevision={navigation.libraryRevision}
+        discussSavedResult={(selected, label) => discussSavedResult(person.id, selected, label)} createChart={() => openChartHub(person.id)} openSky={navigation.openPersonSky} libraryRevision={navigation.libraryRevision}
         initialEditorOpen={profileEditorPersonId === person.id} initialTab={profileChartFocus && profileFromHub ? 'charts' : 'overview'} editorRequest={profileEditorRequest}
         childFocus={profileChildFocus && profileFromHub} returnLabel={conversation ? 'conversation' : 'workspace'}
         onReturn={profileFromHub ? () => {

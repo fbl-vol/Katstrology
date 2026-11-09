@@ -75,12 +75,12 @@ export function CreatePersonDialog({ open, workspace, onClose, onCreated }: {
 
 export function PersonDetail({ workspace, person, refresh, startConversation, openConversation, onDeleted,
   initialEditorOpen = false, initialTab = 'overview', editorRequest = 0, childFocus = false, onReturn, returnLabel = 'workspace',
-  discussSavedResult, createChart, openPerson, memory, libraryRevision = 0 }: {
+  discussSavedResult, createChart, openSky, openPerson, memory, libraryRevision = 0 }: {
   workspace: Workspace; person: Person; refresh: () => Promise<void>; openPerson: (id: string) => void; memory: PersonMemory;
   startConversation: () => void; openConversation: (id: string) => void;
   discussSavedResult: (result: SelectedResult, label: string) => void;
   onDeleted: () => void; initialEditorOpen?: boolean; initialTab?: 'overview' | 'context' | 'charts'; editorRequest?: number;
-  libraryRevision?: number; childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void;
+  libraryRevision?: number; childFocus?: boolean; onReturn?: () => void; returnLabel?: string; createChart?: () => void; openSky?: () => void;
 }) {
   const tabsId = useId();
   const tabNavigation = useNestedNavigation(`person-tab:${person.id}`);
@@ -203,13 +203,13 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
     </section>
     <section id={`${tabsId}-charts-panel`} role="tabpanel" aria-labelledby={`${tabsId}-charts-tab`} hidden={tab !== 'charts'} className="profile-panel">
       {!editorOpen && <ChartLibrary key={person.id} memory={memory.charts} workspace={workspace} personId={person.id} refreshRevision={libraryRevision} activeChartId={activeChart?.id || person.active_chart_id}
-        enabled={tab === 'charts'} natalRequest={natalRequest} onCreate={createChart || openEditor} onCreateNatal={openEditor} onDiscuss={discussSavedResult} />}
+        enabled={tab === 'charts'} natalRequest={natalRequest} onCreate={createChart || openEditor} onCreateNatal={openEditor} onDiscuss={discussSavedResult} onSky={openSky} />}
       {editorOpen && <>
       <div className="profile-chart-heading"><div><h2>{activeChart?.source_status !== 'current' ? 'Saved birth chart' : 'Current birth chart'}</h2>
         <p>{activeChart ? <>Calculated from saved birth details{savedDate && ` · ${savedDate}`} · {savedTime === 'unknown' ? 'birth time unknown' : savedTime === 'not recorded' ? 'birth time not recorded' : `saved birth time ${savedTime}`}. Earlier versions stay below.</> :
           'No active generated natal. Nothing is guessed from a draft or an earlier chart.'}</p></div>
       </div>
-      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion explorationEnabled={tab === 'charts'} /> :
+      {activeChart ? <div className="profile-active-chart">{activeChart.result.natal ? <NatalChart chart={activeChart} allowMotion explorationEnabled={tab === 'charts'} onSky={openSky} /> :
         <p>This generated chart has only supported partial/solar information. Birth time or houses were not inferred.</p>}</div> :
         <div className="profile-chart-empty"><p>Supply the birth details below to generate the first chart.</p></div>}
       </>}
@@ -219,7 +219,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
         <BirthWorkflow person={person} workspace={workspace} refresh={refresh}
           onGenerated={(result, draft) => setGenerated({ result, draft })} compact discussChart={startConversation} />
       </div>
-      <details className="detail-section chart-history"><summary>Earlier charts and birth details</summary>
+      <details className="reference-disclosure chart-history"><summary>Earlier charts and birth details</summary>
         <p>Earlier versions stay here. They do not replace the current chart in a new conversation.</p>
         {person.drafts.length > 0 && <ul>{person.drafts.map((item, index) => <li key={item.revision}>Supplied details {index + 1} · {item.details.birth_date || 'Date not supplied'} · {item.details.time_unknown ? 'Time unknown' : item.details.birth_time || 'Time not supplied'} · {item.details.birthplace || 'Place not supplied'}</li>)}</ul>}
         {person.birth_records.length > 0 && <ul>{person.birth_records.map(item => <li key={item.id}>Recorded birth · {item.wall_time?.replace('T', ' ') || (item.earliest_utc && item.latest_utc ? `${item.earliest_utc} to ${item.latest_utc}` : 'Time unavailable')} · {item.zone_name}</li>)}</ul>}

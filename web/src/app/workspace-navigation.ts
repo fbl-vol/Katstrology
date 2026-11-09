@@ -304,6 +304,7 @@ export function useWorkspaceNavigation(effects: { resetArchive: () => void; inva
   return { ...view, restoring, nestedNavigation: { state: view.nested, change: changeNested }, version, focusProfile, isCurrent, signOut, allConversations, newConversation,
     beginConversation, showConversation, openChartHub, selectChart, backToChartChoices,
     closeChartHub, closeTechnique, closeSky, openConversationPerson, beginHubPerson, showHubPerson,
+    openPersonSky: () => setView(current => ({ ...current, skyOpen: true, skyFromHub: false })),
     abandonReturn, createNatalForTechnique, createNatalFromAdvanced, createNatalFromPlanetary, returnFromPerson,
     beginSidebarPerson, showSidebarPerson, createdPerson, personDeleted, discussResult,
     openDrawer: () => setView(current => ({ ...current, drawer: true })),

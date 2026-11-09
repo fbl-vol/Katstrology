@@ -11,9 +11,9 @@ type Saved = { id: string; technique: string; source_status: string;
   result: SavedCalculation | Derived | SynastryData };
 
 /** Mount with the immutable result ID as key; reads never resolve a newer active result. */
-export function ChartLibraryReader({ workspace, selected, onBack, onDiscuss, isActiveNatal }: {
+export function ChartLibraryReader({ workspace, selected, onBack, onDiscuss, isActiveNatal, onSky }: {
   workspace: Workspace; selected: LibraryResult; onBack: () => void; isActiveNatal: boolean;
-  onDiscuss: (result: SelectedResult, label: string) => void;
+  onDiscuss: (result: SelectedResult, label: string) => void; onSky?: () => void;
 }) {
   const [chart, setChart] = useState<Chart | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
@@ -49,7 +49,7 @@ export function ChartLibraryReader({ workspace, selected, onBack, onDiscuss, isA
       <button type="button" onClick={() => setAttempt(n => n + 1)}>Retry saved result</button></div> :
       !chart && !saved && <p role="status">Loading saved result…</p>}
     {chart && <div className="profile-active-chart">
-      {chart.result.natal ? <NatalChart chart={chart} allowMotion /> :
+      {chart.result.natal ? <NatalChart chart={chart} allowMotion onSky={onSky} /> :
         <p role="status">{chart.source_status !== 'current' && 'Historical source. '}This saved version contains only solar information. A full natal wheel is unavailable.</p>}</div>}
     {saved && <><SavedResultDetail result={saved.result as SavedCalculation} resultId={saved.id}
       technique={saved.technique} sourceStatus={saved.source_status} />

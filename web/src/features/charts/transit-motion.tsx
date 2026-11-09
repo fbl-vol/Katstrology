@@ -152,8 +152,9 @@ export function TransitMotion({ chart }: { chart: Chart }) {
   }
 
   return <details className="transit-motion" onToggle={event => { if (!event.currentTarget.open) setRunning(false); }}>
-    <summary>Transits over time</summary>
-    <p>Choose 1–7 UTC days to see transiting planets move around the fixed birth chart. Nothing loads or sends a message until you choose Show transits.</p>
+    <summary>Animate transits <span className="reference-label">Optional · up to 7 days</span></summary>
+    <p>Choose 1–7 UTC days to see transiting planets move around the fixed birth chart. Motion between 15-minute samples is approximate; no aspect events or sky houses are calculated. Use Sky at a date for exact positions at a selected time.</p>
+    <p>Nothing loads until you choose Show transits. This illustration does not send a message.</p>
     <form onSubmit={event => void load(event)}><label>From (UTC)<input type="date" required min="1900-01-01" max="2099-12-30"
       value={from} onChange={event => changeDate('from', event.target.value)} /></label>
       <label>To (UTC)<input type="date" required min="1900-01-02" max="2099-12-31"

@@ -128,8 +128,8 @@ export function CompactNatalWheel({ chart }: { chart: Chart }) {
     natal.houses.angles.length > 0 ? <Wheel chart={chart} natal={natal} compact /> : null;
 }
 
-export function NatalChart({ chart, allowMotion = false, explorationEnabled = true }: {
-  chart: Chart; allowMotion?: boolean; explorationEnabled?: boolean;
+export function NatalChart({ chart, allowMotion = false, explorationEnabled = true, onSky }: {
+  chart: Chart; allowMotion?: boolean; explorationEnabled?: boolean; onSky?: () => void;
 }) {
   const natal = chart.result.natal;
   if (!natal) return null;
@@ -153,7 +153,7 @@ export function NatalChart({ chart, allowMotion = false, explorationEnabled = tr
       <td>{item.kind}</td><td>{bodyLabel(item.second)}</td><td>{item.orb_degrees.toFixed(3)}°</td></tr>)}</tbody></table>
     {!natal.aspects.length && <p>No aspects fall within this profile’s selected orbs.</p>}</div>;
 
-  const chartData = <details className="chart-supporting-data"><summary>All chart tables</summary>
+  const chartData = <details className="chart-supporting-data chart-exact-data"><summary><span>All chart tables</span> <span className="reference-label">Exact data</span></summary>
     {positions}{houses}{aspects}</details>;
 
   return <div className="natal-detail">
@@ -165,12 +165,16 @@ export function NatalChart({ chart, allowMotion = false, explorationEnabled = tr
     {chart.source_status !== 'current' ? <p className="error">Historical source: do not use these calculated degrees as current chart evidence.</p> :
       natal.status === 'unsupported_uncertain_birth_time' ?
         <p role="status">Unknown or uncertain birth time: no full natal positions, houses, angles or aspects were calculated. Use a validated exact birth record for a full chart. The earlier Sun-only interval remains separate.</p> : <>
-        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled} hasWheel={hasWheel}
+        <NatalExplorer key={`${chart.id}:${chart.source_status}`} chart={chart} natal={natal} enabled={explorationEnabled} hasWheel={hasWheel} chartData={chartData}
           wheel={(overlay, selected, preview) => hasWheel ? <Wheel chart={chart} natal={natal} overlay={overlay} selected={selected} preview={preview} /> :
             <p role="status">Houses and angles unavailable ({natal.houses.status.replaceAll('_', ' ')}). No substitute system or ascendant was invented; planetary placements and aspects remain available.</p>} />
-        {chartData}
-        {allowMotion && <TransitMotion chart={chart} />}
-        <details className="chart-supporting-data"><summary>How this chart was calculated</summary>
+        {allowMotion && <section className="chart-timing" aria-label="Explore timing">
+          <h3>Explore timing</h3>
+          <p>A precise moment, or a short illustration of motion.</p>
+          {onSky && <button type="button" className="quiet-action" onClick={onSky}>Sky at a date</button>}
+          <TransitMotion chart={chart} />
+        </section>}
+        <details className="reference-disclosure chart-method"><summary>How this chart was calculated</summary>
           <p>House membership uses ecliptic-projected longitude. The south node is the north node’s antipode; it is not a second node calculation or an aspect participant. Aspects use ecliptic longitude, not applying/separating motion. {natal.lilith_method ? `${natal.lilith_method}. “True” does not mean more accurate; not asteroid 1181 or Waldemath. ` : ''}No interpretation, synastry, rectification or future prediction is calculated.</p>
         </details>
       </>}

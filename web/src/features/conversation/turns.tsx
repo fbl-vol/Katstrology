@@ -168,14 +168,18 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
       <button className="quiet-action" onClick={() => actions.current.onRetryEvents(turn)}>Retry loading saved reply</button></p> :
       loadingEvents && <p className="turn-state" role="status">Loading the rest of this saved reply…</p>}
     {turn.corrections.map(item => <p key={item.id} className="correction-note">{item.action === 'withdraw' ? 'This turn was withdrawn.' : `Correction: ${item.replacement}`}</p>)}
-    <div className="turn-actions">
-      {turn.status === 'complete' && <>{showRevisionActions && <><button onClick={() => actions.current.onEdit(turn)}>Edit input</button>
-        <button onClick={() => actions.current.onRegenerate(turn)}>Regenerate</button></>}
-        <button onClick={() => actions.current.onBranch(turn.id)} disabled={activeHead === turn.id}>Use this branch</button>
-        {turn.on_active_branch !== false && !turn.corrections.length && people.length > 0 &&
-          <SaveInsight turn={turn} conversationId={conversationId} workspace={workspace} people={people} />}
-        <button onClick={() => setCorrection(value => !value)}>Correct or withdraw</button></>}
-    </div>
+    {turn.status === 'complete' && <div className="reply-support">
+      {turn.on_active_branch !== false && !turn.corrections.length && people.length > 0 &&
+        <div className="turn-actions"><SaveInsight turn={turn} conversationId={conversationId} workspace={workspace} people={people} /></div>}
+      <details className="reference-disclosure reply-maintenance"><summary>Reply actions</summary>
+        <div className="turn-actions">
+          {showRevisionActions && <><button onClick={() => actions.current.onEdit(turn)}>Edit input</button>
+            <button onClick={() => actions.current.onRegenerate(turn)}>Regenerate</button></>}
+          <button onClick={() => actions.current.onBranch(turn.id)} disabled={activeHead === turn.id}>Use this branch</button>
+          <button onClick={() => setCorrection(value => !value)}>Correct or withdraw</button>
+        </div>
+      </details>
+    </div>}
     {correction && <div className="correction-form"><label>Correct the record<textarea value={replacement} onChange={e => setReplacement(e.target.value)} placeholder="State the correction without overwriting the original" /></label>
       <div><button disabled={!replacement.trim()} onClick={() => { actions.current.onCorrect(turn, 'correct', replacement); setCorrection(false); }}>Save correction</button>
         <button onClick={() => { actions.current.onCorrect(turn, 'withdraw', null); setCorrection(false); }}>Withdraw turn</button></div></div>}

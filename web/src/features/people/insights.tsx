@@ -137,7 +137,7 @@ export function InsightNotebook({ workspace, personId, active, openConversation 
       <p className="insight-source">{entry.epistemic_status === 'saved_assistant_passage' ? 'Kat’s wording · not verified facts' : 'Your original wording'} · {entry.source_status === 'current' ? 'Current source' : 'Historical source · excluded from current recall'}</p>
       <blockquote>{entry.statement}</blockquote>
       {entry.note && <p className="insight-note">Your note: {entry.note}</p>}
-      <details className="insight-source"><summary>Source details · saved {new Date(entry.created_at).toLocaleDateString()}</summary>
+      <details className="insight-source reference-disclosure"><summary>Source details · saved {new Date(entry.created_at).toLocaleDateString()}</summary>
         <p>Discussion {entry.conversation_id} · message {entry.source_turn_id}</p></details>
       <div className="insight-actions"><button type="button" onClick={() => openConversation(entry.conversation_id)}>Open original discussion</button>
         <button type="button" disabled={busy} onClick={() => { setEditing(entry.id); setNote(entry.note); actionId.current = null; }}>Edit note</button>

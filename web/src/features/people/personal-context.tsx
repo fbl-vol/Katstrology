@@ -52,7 +52,7 @@ function ContextCollection({ workspace, endpoint, active, revision, memory, sect
   const shown = page?.entries.filter(entry => keys.includes(entry.content.group)).length ?? 0;
   return <section className="context-collection" aria-label={label}>
     <div className="profile-editor-heading"><h2>{label}{page && <> <span className="context-count" aria-label={`${total} entries`}>{total}</span></>}</h2><button type="button" onClick={() => open(keys[0])}>Add</button></div>
-    <label className="field">Search {label}<input ref={search} type="search" value={query} onChange={event => { setPage(null); setQuery(event.target.value); }} /></label>
+    <label className="field context-search">Search {label}<input ref={search} type="search" value={query} onChange={event => { setPage(null); setQuery(event.target.value); }} /></label>
     {state === 'loading' && <p role="status">Opening context…</p>}
     {state === 'error' && <p role="alert">Context could not be refreshed. This is not an empty collection. <button type="button" onClick={() => void load()}>Try again</button></p>}
     {keys.map(group => {
@@ -64,7 +64,7 @@ function ContextCollection({ workspace, endpoint, active, revision, memory, sect
         {entries.map(entry => <button type="button" key={entry.id} className="profile-quiet-row context-row" onClick={() => open(group, entry)}>
           <span><strong>{entry.content.title}</strong>
             {(entry.content.date.text || entry.content.date.start) && <small>{entry.content.date.text || entry.content.date.start}</small>}
-            {entry.content.notes && <small>{entry.content.notes}</small>}</span><span aria-hidden="true">›</span>
+            {entry.content.notes && <span className="context-entry-text">{entry.content.notes}</span>}</span><span aria-hidden="true">›</span>
         </button>)}
       </section>;
     })}
@@ -140,7 +140,8 @@ export function PersonalContextPane({ workspace, personId, active, memory }: {
     finally { setBusy(false); }
   }
   return <div className="personal-context">
-    <p>Details you choose to keep for more relevant conversations. No birth chart or chat connection is needed to edit them.</p>
+    <p>Details you choose to keep. Open an entry to read its source or make a change.</p>
+    <p className="context-privacy">Private to your account. Use in chat depends on your Personal context settings. No birth chart or chat connection is needed to edit these entries.</p>
     {notice && <p role="status">{notice}</p>}
     <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.life} section="life" keys={life} label="Life & plans" open={open} />
     <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.learning} section="learning" keys={learning} label="Interests & learning" open={open} />

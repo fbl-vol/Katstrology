@@ -194,7 +194,7 @@ export function SynastryView({ workspace, people, onClose, onCreate, onDiscuss, 
           </div>;
         })}
       </section>}
-      <details className="chart-supporting-data"><summary>How this comparison works</summary>
+      <details className="reference-disclosure"><summary>How this comparison works</summary>
         <p>The rings show separate tropical positions, not a composite. House overlays are labelled in their own tables, not drawn as sectors. A new discussion uses the current charts when a message is sent; it does not attach this manual result.</p>
       </details>
       {discussionDisabled && <p role="status">Finish or check the pending conversation before starting a different discussion. This chart did not change your draft.</p>}

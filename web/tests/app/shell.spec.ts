@@ -159,6 +159,9 @@ test('committed hosted fixture reply, archive reload, edit and correction preser
   await page.reload();
   await page.getByRole('navigation', { name: 'Recent conversations' }).getByRole('button', { name: /Chart conversation topics|New conversation/ }).click();
   await expect(turns.first().getByText('Synthetic hello. Reply in one sentence.')).toBeVisible();
+  await expect(turns.first().getByRole('button', { name: 'Edit input' })).not.toBeVisible();
+  await turns.first().getByText('Reply actions', { exact: true }).focus();
+  await page.keyboard.press('Enter');
   await turns.first().getByRole('button', { name: 'Edit input' }).click();
   await expect(page.locator('.edit-note')).toContainText('The original remains saved.');
   await expect(page.locator('.edit-note')).not.toContainText((await turns.first().getAttribute('data-kat-turn-id'))!);

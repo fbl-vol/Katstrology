@@ -82,6 +82,9 @@ async def main():
                 for view in ('desktop', 'wide', 'mobile', 'short-mobile', 'tablet'):
                     store.register_local('reader-context-' + view, 'synthetic-browser-password')
                     store.register_local('reader-link-label-' + view, 'synthetic-browser-password')
+                hierarchy_owners = tuple('reader-hierarchy-' + view for view in ('desktop', 'mobile', 'short-dark', 'reflow'))
+                for owner in hierarchy_owners:
+                    store.register_local(owner, 'synthetic-browser-password')
                 store.register_local('reader-escaped-boundary', 'synthetic-browser-password')
                 from m2.people.people import People
                 from tests.support.database import seed_legacy_person_file
@@ -529,6 +532,17 @@ async def main():
                                  'call_id': f'call_grounded_{number}', 'name': name,
                                  'arguments': json.dumps(arguments)}]}}, 'req-grounded'
                             return
+                        if 'I am finding a rhythm at ExampleWorks. Where could I begin?' in parts[0]['text']:
+                            yield {'type': 'response.output_text.delta', 'delta': (
+                                '### Start with one dependable thing\n\n'
+                                'This is a synthetic reply for layout verification. Choose one small part of '
+                                'the day you can make familiar, and let that give the rest a little structure.\n\n'
+                                'That might mean a short walk before work, a lunch away from your desk, '
+                                'or a clear time to stop for the evening. Pick what feels useful rather than impressive.\n\n'
+                                'Notice what makes the day easier. The aim is not a perfect routine; '
+                                'it is a rhythm you can actually live with.')}, 'req-hierarchy-fixture'
+                            yield {'type': 'response.completed'}, 'req-hierarchy-fixture'
+                            return
                         if 'Synthetic markdown reading fixture' in parts[0]['text']:
                             from time import sleep
                             yield {'type': 'response.output_text.delta', 'delta': (
@@ -598,7 +612,7 @@ async def main():
                                           'reader-clock-retained-desktop', 'reader-clock-retained-mobile',
                                           'reader-clock-manual', 'reader-advanced', 'reader-advanced-ux', 'reader-return-created', 'reader-chiron', 'reader-lilith', 'reader-motion', 'reader-motion-conjunction', 'reader-thinking-normal',
                                           'reader-thinking-reduced', 'reader-browse-mobile',
-                                          'reader-browse-wide', 'reader-notebook') + layout_owners + scroll_owners:
+                                          'reader-browse-wide', 'reader-notebook') + layout_owners + scroll_owners + hierarchy_owners:
                                 self.credentials.save(owner, {'selected': 'synthetic-browser',
                                     'accounts': {'synthetic-browser': {
                                         'scopes': ['chatgpt.tokens.use.direct'],

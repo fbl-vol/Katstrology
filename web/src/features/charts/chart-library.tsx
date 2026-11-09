@@ -67,9 +67,9 @@ function ChartLibraryHistory({ personId, technique, onOpen, onBack }: {
   </section>;
 }
 
-export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, natalRequest = 0, refreshRevision = 0, memory }: {
+export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCreate, onDiscuss, onCreateNatal, onSky, natalRequest = 0, refreshRevision = 0, memory }: {
   workspace: Workspace; personId: string; activeChartId: string | null; enabled: boolean; memory: LibraryMemory;
-  onCreate: () => void; onCreateNatal: () => void; onDiscuss: (result: SelectedResult, label: string) => void; natalRequest?: number; refreshRevision?: number;
+  onCreate: () => void; onCreateNatal: () => void; onSky?: () => void; onDiscuss: (result: SelectedResult, label: string) => void; natalRequest?: number; refreshRevision?: number;
 }) {
   const [layout, setLayout] = useState(preferredLayout);
   const [summary, setSummary] = useState<LibrarySummary | null>(null);
@@ -169,6 +169,6 @@ export function ChartLibrary({ workspace, personId, activeChartId, enabled, onCr
       onOpen={open} onBack={() => { setHistory(null); requestAnimationFrame(() => historyOpener.current?.focus()); }} /></div>}
     {selected && <ChartLibraryReader key={`${selected.technique}:${selected.id}`} workspace={workspace} selected={selected}
       isActiveNatal={!loading && !error && selected.id === summary?.entries.find(entry => entry.technique === 'natal')?.representative?.id}
-      onBack={backToCollection} onDiscuss={onDiscuss} />}
+      onBack={backToCollection} onDiscuss={onDiscuss} onSky={onSky} />}
   </div>;
 }

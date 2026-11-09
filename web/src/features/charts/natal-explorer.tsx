@@ -19,7 +19,7 @@ function focusHeading(heading: HTMLHeadingElement | null) {
     heading.scrollIntoView({ block: 'start' });
 }
 
-export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { chart: Chart; natal: NatalResult; enabled: boolean; hasWheel: boolean;
+export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel, chartData }: { chart: Chart; natal: NatalResult; enabled: boolean; hasWheel: boolean; chartData: ReactNode;
   wheel: (overlay: WheelOverlay, selected: boolean, preview?: ReactNode) => ReactNode }) {
   const [opened, setOpened] = useState(enabled);
   useEffect(() => { if (enabled) setOpened(true); }, [enabled]);
@@ -177,6 +177,7 @@ export function NatalExplorer({ chart, natal, wheel, enabled, hasWheel }: { char
       {hasWheel && <p className="explorer-note">Choose a symbol, house number or connection. Inside a formation, choose a pattern. Concentrations and whole-chart shapes use the inner ring, not polygons. The directory offers the same details without precise pointing.</p>}
       <div className="explorer-selection"><span>{choices ? 'Choose at this point' : selected?.title ?? 'Nothing selected'}<small>{choices ? 'Several details share this location.' : selected?.subtitle ?? 'Choose a detail from the directory.'}</small></span>
         <button type="button" onClick={browse}>Browse all</button></div>
+      {chartData}
     </div>
     <section ref={panel} className="explorer-panel" aria-label="Chart browser and selected detail">
       {choices && !compact ? <>

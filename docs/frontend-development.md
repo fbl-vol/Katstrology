@@ -55,6 +55,30 @@ or failure text. Do not add menu roles requiring arrow-key behavior to a disclos
 Keep the existing SVG sanitization, palette policies, embedded fonts and captured
 result provenance. A single CSV or JSON export stays a direct action.
 
+### Task-relative attention
+
+Natal exploration keeps complete tables beside the wheel, in a single disclosure,
+not after the entire directory. Explore timing separates the exact **Sky at a date**
+route from optional **Animate transits**. The animation remains limited to 1–7 UTC
+days, with interpolated motion and no aspect events or sky houses; these limits
+appear before date entry. Calculation method and earlier versions use quiet,
+keyboard-operable reference disclosures. Do not replace native expert readers or
+truncate tables to match a schematic design study.
+
+Reading keeps the complete reply and composer visible. **Reply actions** discloses
+edit, regenerate, branch and correction controls; saved-passage access remains
+beside it. Sources retain actual archived excerpts and their caveat without a
+competing card. Failures, interruptions, incomplete replies and context outcomes
+remain outside the maintenance disclosure.
+
+Context previews give entry wording a reading-sized role, while collection counts,
+search and management support it. Independent search, expansion and paging remain
+unchanged. Saved passages keep attribution and source status visible; source detail
+is one step away. Result-family history uses restrained links after current results,
+without hiding precision, symbolic/real-sky distinctions or coverage warnings.
+Catalogue choices, birth forms, settings and authentication retain their existing
+task-oriented structure; hierarchy is not a reason to redesign them uniformly.
+
 ## Phone navigation and retained-page continuity
 
 `workspace-navigation.ts` is still the view authority. `browser-history.ts` journals
