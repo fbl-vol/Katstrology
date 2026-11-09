@@ -20,6 +20,8 @@ from m2.chat.prompting import LOCAL, identity
 from m2.chat.tone_profiles import archived_instructions
 from m2.references.references import References
 from m2.provider.steps import ProviderFlush, ProviderStep
+from m2.chat.web_tools import EXTERNAL as WEB_EXTERNAL, NAMES as WEB_NAMES
+from m2.chat.web_evidence import external_result, validate_page_sources, WEB_MODEL_BYTES
 from m2.archive.store import MAX_EVENT_BYTES
 from m2.calculation.core_calc import solar_longitude
 
@@ -123,7 +125,9 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         updates_enabled = bool(payload.get('personal_context', {}).get('consent', {}).get('enabled'))
         if hasattr(model, 'context_updates_enabled'):
             model.context_updates_enabled = updates_enabled
-        tool_definitions = json.dumps(TOOLS if updates_enabled else READ_TOOLS) if getattr(model, 'read_tools', False) else ''
+        tool_definitions = (json.dumps(TOOLS if updates_enabled else READ_TOOLS,
+                                      ensure_ascii=False, separators=(',', ':'))
+                            if getattr(model, 'read_tools', False) else '')
         tool_result_reserve = (min(4096, max(512, model.context_limit // 32))
                                if tool_definitions and getattr(model, 'context_limit', None) else 0)
         # Metadata discovery is not a passage read or an interpretation. Keep it
@@ -203,7 +207,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         stream = model.create_completion(prompt, max_tokens=budget['reply_reserve'],
                                          temperature=0, stop=['<|im_end|>'], stream=True,
                                          **({'instructions': instructions} if prompt_mode == 'hosted' else {}))
-        chunks, rounds, evidence_bytes = 0, 0, 0
+        chunks, rounds, evidence_bytes, web_bytes = 0, 0, 0, 0
         meaningful_chunks = 0
         seen_calls = set()
         pending_text, pending_bytes, first_text = '', 0, False
@@ -269,16 +273,49 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                         try:
                             if call['name'] == 'stage_personal_context':
                                 result = stage_context(store, session, conversation_id, turn_id, args)
+                            elif call['name'] in WEB_EXTERNAL:
+                                if call['name'] == 'fetch_web_page':
+                                    validate_page_sources(store, session, conversation_id, args)
+                                if web_bytes >= WEB_MODEL_BYTES - 512:
+                                    result = {'status': 'unavailable', 'reason': 'web_evidence_allowance_exhausted'}
+                                else:
+                                    work = external_result(model, call['name'], args,
+                                                           cancelled or (lambda: False))
+                                    try:
+                                        if defer_provider:
+                                            available, result = yield ProviderStep(work)
+                                            if not available:
+                                                raise ValueError('Web work ended without a result')
+                                        else:
+                                            result = next(work)
+                                    finally:
+                                        if not defer_provider:
+                                            work.close()
+                                if cancelled and cancelled():
+                                    yield 'interrupted', {'reason': 'local cancellation'}
+                                    return
+                                if hasattr(model, 'verify_binding'):
+                                    model.verify_binding()
+                                result.update({'conversation_id': conversation_id, 'turn_id': turn_id})
                             else:
-                                result = execute_read(store, session, call['name'], args,
-                                    {row['chart_id'] for row in selected_versions if row['chart_id']})
+                                # Discovery must survive history compaction without a model-
+                                # remembered handle. Keep the archived native call unchanged.
+                                read_args = args
+                                if (call['name'] == 'read_web_content' and isinstance(args, dict)
+                                        and args.get('conversation_id') == ''):
+                                    read_args = {**args, 'conversation_id': conversation_id}
+                                result = execute_read(store, session, call['name'], read_args,
+                                    {row['chart_id'] for row in selected_versions if row['chart_id']},
+                                    current_turn=(conversation_id, turn_id))
                         except (KeyError, PermissionError, ValueError) as exc:
                             result = {'error': type(exc).__name__, 'reason': str(exc)[:120]}
                         archived_result, result_text = prepare_read_evidence(
                             call['name'], call['call_id'], result, rounds, evidence_bytes,
-                            model if prompt_mode == 'hosted' else None, budget)
+                            model if prompt_mode == 'hosted' else None, budget, web_bytes)
                         if result_text is not None:
                             evidence_bytes += len(result_text.encode('utf-8'))
+                            if call['name'] in WEB_NAMES:
+                                web_bytes += len(result_text.encode('utf-8'))
                         yield 'tool_result', archived_result
                         if cancelled and cancelled():
                             yield 'interrupted', {'reason': 'local cancellation'}
@@ -288,7 +325,7 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
                                 'reason': 'Even an incomplete-result notice exceeds the model evidence budget',
                                 'read_count': rounds,
                                 'used_bytes': archived_result['model_projection_limit']['used_bytes'],
-                                'limit_bytes': MAX_MODEL_EVIDENCE_BYTES}
+                                'limit_bytes': archived_result['model_projection_limit']['limit_bytes']}
                             return
                         if (prompt_mode == 'hosted' and getattr(model, 'capacity', None)):
                             estimated = model.estimate_read_continuation([{

@@ -109,16 +109,35 @@ class OpenAITransport:
                                response.headers.get('x-request-id') or
                                response.headers.get('openai-request-id'))
 
+    @staticmethod
+    def _search_lines(response):
+        """Bound search SSE before line assembly/JSON, including heartbeat waits."""
+        pending, total, started = b'', 0, time.monotonic()
+        for chunk in response.iter_bytes():
+            total += len(chunk)
+            if total > 256 * 1024 or time.monotonic() - started > 45:
+                raise ProviderFailure('search_response_limit')
+            pending += chunk
+            while b'\n' in pending:
+                line, pending = pending.split(b'\n', 1)
+                yield line.rstrip(b'\r').decode('utf-8')
+        if pending:
+            yield pending.decode('utf-8')
+
     def response_events(self, token, body):
+        searching = any(tool.get('type') == 'web_search' for tool in body.get('tools', []))
         with self.client.stream('POST', RESPONSES, json=body, headers={
                 'Authorization': 'Bearer ' + token,
                 'Accept': 'text/event-stream'}) as response:
             if response.status_code != 200:
+                if searching:
+                    raise ProviderFailure('search_provider_request_failed', response.status_code)
                 response.read()
                 raise self.failure(response)
             request_id = (response.headers.get('x-request-id') or
                           response.headers.get('openai-request-id'))
-            for line in response.iter_lines():
+            lines = self._search_lines(response) if searching else response.iter_lines()
+            for line in lines:
                 if not line.startswith('data: '):
                     continue
                 if line[6:] == '[DONE]':

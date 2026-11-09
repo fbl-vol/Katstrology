@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 import { AssistantMarkdown } from './assistant-markdown';
 import { ThinkingIndicator } from './thinking';
+import { WebSources, webActivity } from './web-sources';
 import { ContextOutcomes } from './context-outcomes';
 import type { Person } from '../people/people';
 import { TransitResult, type TransitResultData } from '../charts/transit-result';
@@ -107,6 +108,7 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
     event.kind === 'compaction' && event.payload.status === 'starting') &&
     !turn.events.some(event => event.kind === 'compaction' && event.payload.status !== 'starting');
   const waiting = turn.status === 'open' && !chunks;
+  const publicActivity = turn.status === 'open' ? webActivity(turn.events) : null;
   const terminalVisible = turn.events.some(event => ['complete', 'interrupted', 'error'].includes(event.kind));
   const loadingEvents = turn.next_event_offset !== null || (turn.status !== 'open' && !terminalVisible);
   const hasAnswer = waiting || chunks.length > 0 ||
@@ -128,7 +130,9 @@ export const TurnCard = memo(function TurnCard({ turn, people, workspace, conver
       {savedFile && ' · Saved file supplied with this turn'}</p>}
     {displayBody && <><p className="user-bubble">{String(user?.payload.content || 'Archived input on another event page')}</p>
       {hasAnswer && <div className="assistant-answer"><span className="assistant-signature">kat.</span>
-        {waiting ? <ThinkingIndicator waitId={turn.id} /> : <AssistantMarkdown text={chunks || 'No text returned.'} />}</div>}</>}
+        {waiting ? publicActivity ? <p role="status">{publicActivity}</p> : <ThinkingIndicator waitId={turn.id} /> : <AssistantMarkdown text={chunks || 'No text returned.'} />}</div>}</>}
+    {publicActivity && !waiting && <p className="compaction-status" role="status">{publicActivity}</p>}
+    <WebSources events={turn.events} />
     {calculatedViews.map(item => <TransitDisclosure key={item.sequence} item={item} turn={turn} people={people} />)}
     <SourceEvidence passages={passages} />
     {compacting && <p className="compaction-status" role="status">Summarizing earlier conversation before responding…</p>}

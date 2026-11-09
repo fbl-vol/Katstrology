@@ -267,7 +267,8 @@ class SiwcUnitTests(unittest.TestCase):
                           'get_secondary_progression', 'find_progressed_mc_contacts',
                           'get_midpoint_composite', 'get_uncorrected_davison',
                           'get_true_solar_arc', 'find_progressed_lunar_phases',
-                          'find_actual_lunations_eclipses', 'get_planetary_returns'})
+                          'find_actual_lunations_eclipses', 'get_planetary_returns',
+                          'web_search', 'fetch_web_page', 'read_web_content'})
         self.transport.events = [({'type': 'response.output_text.delta', 'delta': 'Prefix'}, 'req-fixture')]
         with self.assertRaisesRegex(ProviderFailure, 'provider_stream_ended_without_completion'):
             list(model.create_completion('synthetic'))

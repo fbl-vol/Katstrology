@@ -17,6 +17,7 @@ from m2.calculation.transit_views import view as transit_view
 from m2.calculation.transits import Transits
 from m2.calculation.synastry import Synastry
 from m2.chat.tool_answers import _chart_prompt_evidence
+from m2.chat.web_tools import TOOLS as WEB_TOOLS
 
 
 def _tool(name, description, properties, required):
@@ -109,6 +110,9 @@ TOOLS = [
 ]
 
 
+TOOLS.extend(WEB_TOOLS)
+
+
 def project_transit_view(result):
     """Bound provider text without trimming the authoritative archived chart."""
     if result.get('status') != 'supported':
@@ -152,8 +156,11 @@ def _args(store, arguments, keys):
             store._id(value)
 
 
-def execute(store, session, name, arguments, selected_charts):
+def execute(store, session, name, arguments, selected_charts, *, current_turn=None):
     """All reads are owner-scoped at the Store boundary; returns a bounded JSON value."""
+    if name == 'read_web_content':
+        from m2.chat.web_evidence import read_content
+        return read_content(store, session, arguments, current_turn=current_turn)
     if name == 'search_conversations':
         if not isinstance(arguments, dict) or set(arguments) != {'query', 'person_id'}:
             raise ValueError('Invalid conversation search arguments')

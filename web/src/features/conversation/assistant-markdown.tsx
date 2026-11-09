@@ -4,10 +4,10 @@ import remarkGfm from 'remark-gfm';
 
 // Model text is lower-trust content. No relative routes, executable URLs, raw
 // HTML or auto-loaded images belong in an assistant answer.
-function safeLink(url: string): string {
+export function safeLink(url: string): string {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || parsed.hostname === 'localhost' ||
+    if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hostname === 'localhost' ||
         parsed.hostname.endsWith('.localhost') || parsed.hostname.endsWith('.local') ||
         /^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) ||
         parsed.hostname.startsWith('[')) return '';

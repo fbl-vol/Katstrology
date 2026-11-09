@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Locator } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -466,6 +466,152 @@ test('return to the same archived thread after correcting a saved birth year ret
   const archived = await archivedTurn(page, page.locator('.turn-card').last());
   expect(archived.parent_id).toBe(original.id);
   expect(archived.selected_people[0].chart_id).toBe(chartId);
+});
+
+test('public web sources remain safe and replayable across responsive views', async ({ page, context }) => {
+  test.setTimeout(90000);
+  const { origin, provider, hostile } = origins();
+  await syntheticNavigation(context, origin, provider, hostile);
+  await openSyntheticSignIn(page, 'reader-budget-reads');
+  await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Budget synthetic reader/ }).click();
+  await page.getByRole('button', { name: 'Start conversation', exact: true }).click();
+  const renders = resolve('..', '.local', 'web-capability-renders');
+  mkdirSync(renders, { recursive: true });
+  async function revealAboveComposer(selector: string) {
+    await page.locator(selector).last().scrollIntoViewIfNeeded();
+    await page.evaluate(selector => {
+      const item = [...document.querySelectorAll(selector)].at(-1);
+      const composer = document.querySelector('.conversation .composer-wrap');
+      if (item && composer) window.scrollBy(0,
+        Math.max(0, item.getBoundingClientRect().bottom - composer.getBoundingClientRect().top + 18));
+    }, selector);
+  }
+  let turnId = '';
+  for (const view of [{ name: 'desktop', width: 1440, height: 1024 },
+                      { name: 'mobile', width: 390, height: 844 },
+                      { name: 'short-mobile', width: 390, height: 560 },
+                      { name: 'reflow', width: 320, height: 800 }]) {
+    await page.setViewportSize(view);
+    await page.getByLabel('Message Kat').fill(`SyntheticPublicWebNews: public reporting for ${view.name}`);
+    await page.getByRole('button', { name: 'Send message' }).click();
+    const turn = page.locator('.turn-card').last();
+    await expect(turn.getByRole('status')).toContainText('Searching public sources');
+    await page.getByLabel('Message Kat').fill('A draft kept while sources load');
+    await revealAboveComposer('.turn-card [role="status"]');
+    await page.screenshot({ path: resolve(renders, `searching-${view.name}.png`) });
+    await expect(turn).toHaveAttribute('data-kat-status', 'complete');
+    await expect(page.getByLabel('Message Kat')).toHaveValue('A draft kept while sources load');
+    await expect(turn.locator('.assistant-markdown')).toContainText('not evidence of causation');
+    await expect(turn.locator('a[href^="javascript:"]')).toHaveCount(0);
+    expect(await page.evaluate(() => 'webInjected' in window)).toBe(false);
+    await turn.locator('.web-sources summary').click();
+    await expect(turn.locator('.web-sources')).toContainText('Publication date unknown');
+    await expect(turn.locator('.web-sources a')).toHaveAttribute('href', 'https://news.example/story');
+    await turn.locator('.web-sources a').focus();
+    await revealAboveComposer('.web-sources');
+    expect(await page.evaluate(() => {
+      const sources = [...document.querySelectorAll('.web-sources')].at(-1)!;
+      const composer = document.querySelector('.conversation .composer-wrap')!;
+      return sources.getBoundingClientRect().bottom <= composer.getBoundingClientRect().top;
+    })).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: resolve(renders, `sources-${view.name}.png`) });
+    turnId = (await turn.getAttribute('data-kat-turn-id'))!;
+    const saved = await archivedTurn(page, turn);
+    expect(saved.events.filter(event => event.kind === 'tool_result' && event.payload.name === 'web_search')).toHaveLength(1);
+  }
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.reload();
+  await page.getByRole('navigation', { name: 'Recent conversations' }).getByRole('button',
+    { name: /Chart conversation topics.*Budget synthetic reader/ }).first().click();
+  const replay = page.locator(`[data-kat-turn-id="${turnId}"]`);
+  await expect(replay.locator('.assistant-markdown')).toContainText('public report');
+  await replay.locator('.web-sources summary').click();
+  await expect(replay.locator('.web-sources a')).toHaveAttribute('href', 'https://news.example/story');
+  await page.getByLabel('Message Kat').fill('SyntheticPublicWebFailure: use supported astrology if reporting fails');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  const failed = page.locator('.turn-card').last();
+  await expect(failed).toHaveAttribute('data-kat-status', 'complete');
+  await expect(failed.locator('.assistant-markdown')).toContainText('Public reporting is unavailable');
+  await failed.locator('.web-sources summary').click();
+  await expect(failed.locator('.web-sources')).toContainText('Limited results');
+  for (const view of [{ name: 'desktop', width: 1440, height: 1024 }, { name: 'mobile', width: 390, height: 560 }]) {
+    await page.setViewportSize(view);
+    await revealAboveComposer('.web-sources');
+    await page.screenshot({ path: resolve(renders, `unavailable-${view.name}.png`) });
+  }
+});
+
+test('keyboard web sources stay above the composer without stealing reading position', async ({ page, context }) => {
+  const { origin, provider, hostile } = origins();
+  await syntheticNavigation(context, origin, provider, hostile);
+  let intercepted = 0;
+  await context.route('https://news.example/story', route => {
+    intercepted++;
+    return route.fulfill({ contentType: 'text/html', body: '<p>Owned synthetic source, no external request.</p>' });
+  });
+  await openSyntheticSignIn(page, 'reader-budget-reads');
+  await returnFromProvider(page, 'Complete synthetic sign-in', 'connected');
+  await page.getByRole('navigation', { name: 'People' }).getByRole('button', { name: /Budget synthetic reader/ }).click();
+  await page.getByRole('button', { name: 'Start conversation', exact: true }).click();
+  await page.getByLabel('Message Kat').fill('SyntheticPublicWebNews: keyboard source evidence');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  const turn = page.locator('.turn-card').last();
+  await expect(turn).toHaveAttribute('data-kat-status', 'complete');
+  await page.getByLabel('Message Kat').fill('Keep this unsent draft');
+  const details = turn.locator('.web-sources'), summary = details.locator('summary'), link = details.locator('a');
+  const renders = resolve('..', '.local', 'web-remediation-keyboard');
+  mkdirSync(renders, { recursive: true });
+  async function tabTo(target: Locator) {
+    for (let index = 0; index < 120; index++) {
+      await page.keyboard.press('Tab');
+      if (await target.evaluate(node => node === document.activeElement)) return;
+    }
+    throw new Error('Source control unreachable by Tab');
+  }
+  async function visibleFocus(target: Locator, image: string) {
+    await expect(target).toBeFocused();
+    await expect(target).toHaveCSS('outline-style', 'solid');
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.screenshot({ path: resolve(renders, image) });
+    expect(await target.evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      const dock = document.querySelector('.conversation .composer-wrap')!.getBoundingClientRect();
+      const header = document.querySelector('.main .header')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return rect.top >= header.bottom + 4 && rect.bottom <= Math.min(dock.top, innerHeight) - 4 && node.contains(hit);
+    })).toBe(true);
+    await expect(page.getByLabel('Message Kat')).toHaveValue('Keep this unsent draft');
+  }
+  for (const view of [{ name: 'desktop', width: 1440, height: 1024 },
+                      { name: 'mobile', width: 390, height: 844 },
+                      { name: 'short-mobile', width: 390, height: 560 },
+                      { name: 'reflow', width: 320, height: 800 }]) {
+    await page.setViewportSize(view);
+    await details.evaluate(node => { (node as HTMLDetailsElement).open = false; });
+    await tabTo(summary);
+    await visibleFocus(summary, `summary-${view.name}.png`);
+    await page.keyboard.press('Enter');
+    await expect(details).toHaveAttribute('open', '');
+    await page.keyboard.press('Space');
+    await expect(details).not.toHaveAttribute('open', '');
+    await page.keyboard.press('Space');
+    await expect(details).toHaveAttribute('open', '');
+    await tabTo(link);
+    await visibleFocus(link, `link-${view.name}.png`);
+    const opened = page.waitForEvent('popup');
+    await page.keyboard.press('Enter');
+    const popup = await opened;
+    await expect(popup.getByText('Owned synthetic source, no external request.')).toBeVisible();
+    expect(popup.url()).toBe('https://news.example/story');
+    await popup.close();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(intercepted).toBe(4);
 });
 
 test('generated chart selection reaches actual synthetic model input on a new discussion', async ({ page, context }) => {

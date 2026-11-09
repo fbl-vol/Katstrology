@@ -60,12 +60,55 @@ only a missing suffix. Reasoning needed for continuation is transient, never
 archived or rendered. Unsupported-output diagnostics contain bounded categories,
 not private arguments/text/reasoning.
 
-Model projections allow up to 16 KiB per read and 32 KiB aggregate evidence with a
-limit-result reserve. Authoritative tool-result events allow up to 64 KiB; other
+Model projections allow up to 256 KiB per read and 2 MiB aggregate evidence with a
+limit-result reserve. Authoritative tool-result events allow up to 1 MiB; other
 events retain 16 KiB. Byte bounds are not token counts. Limited projections retain
 provenance and honest omission labels; originals remain readable. If even an
 incomplete-result notice cannot fit, the bounded result stays archived and the
 turn stops with `tool_result_capacity` before another provider call.
+
+## Public search and page evidence
+
+Hosted chat can request focused public searches for current reporting or source
+research. Ordinary astrology does not force a search. The separate search request
+contains only the chosen public query and filters, not the conversation, selected
+people, charts or files. The model chooses query text, so do not request searches
+for private details: instruction guidance is not an automatic privacy classifier.
+Search uses the selected connected plan, without a fallback or automatic retry.
+Provider-written search summaries are not article text; coverage, recency and
+publication dates may be incomplete. Public reporting never overrides calculated
+chart geometry or establishes astrological causation. Selected-library grounding
+and personal-context consent retain their separate authority.
+
+The public reader accepts user-supplied or conversation-discovered HTTP(S) URLs.
+It sends no cookies, authorization or proxy credentials, pins a validated public
+address and rechecks redirects. It does not bypass login/paywalls, run scripts or
+analyze media. Static HTML/plain-text reads have a 20-second total deadline,
+bounded framing/Stop polling, at most 256 KiB response bytes and 24,000 UTF-8 text
+bytes per page; at most two URLs are fetched sequentially. Static extraction is
+not proof of complete article coverage. Sites receive the requested URL and the
+server's network address. Page content is untrusted evidence, never instructions.
+
+Calls and results commit through the existing archive before continuation.
+Public evidence has its own 3,072-byte per-result and 8,192-byte aggregate model
+allowance, subordinate to the unchanged global bounds. The complete bounded
+retrieval remains archived. `read_web_content` discovers source metadata, finds
+literal text and pages retained content without another network request. Empty
+conversation scope binds to the executing conversation; empty source ID discovers
+one source and returns a cursor. A committed result in the currently executing
+open turn is available only through trusted gateway context, never a model flag.
+Owner, active-lineage, correction, withdrawal and source-provenance checks still
+apply. Deep retrieval expires after seven days; original archive replay remains
+historical and follows ordinary deletion/backup ownership.
+
+Public source links and honest searching/unavailable states appear beside the
+reply. Reload uses saved results, not another search. Links open separately;
+unsafe schemes, embedded credentials and local-address links are not rendered.
+Capability guidance is versioned independently of tone expression: accepted
+version 1-3 instructions still reconstruct exactly, while new version 4 turns gain
+public-web guidance. Local and summary instruction text is unchanged. Synthetic
+checks establish transport, archive and UI behavior, not real-model judgment,
+provider acceptance or live public-network reliability.
 
 ## Personal context: consent, evidence and staged updates
 
