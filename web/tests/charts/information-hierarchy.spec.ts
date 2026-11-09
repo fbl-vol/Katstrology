@@ -91,6 +91,13 @@ for (const size of sizes) test(`information hierarchy content and reply actions 
   mkdirSync(renders, { recursive: true });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: resolve(renders, `context-${size.name}.png`), fullPage: true });
+  for (const add of await pane.getByRole('button', { name: 'Add', exact: true }).all()) {
+    expect(await add.evaluate(node => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getClientRects().length;
+    })).toBe(1);
+  }
   await pane.getByRole('searchbox', { name: 'Search Life & plans' }).fill('no match');
   await expect(pane.getByText('No matching entries.')).toBeVisible();
   await expect(pane.getByRole('button', { name: /Concrete examples/ })).toBeVisible();
@@ -117,13 +124,18 @@ for (const size of sizes) test(`information hierarchy content and reply actions 
   await page.getByLabel('Message Kat').fill('Keep this draft while I inspect the reply.');
   await turn.locator('.assistant-answer').evaluate(node => window.scrollTo(0, scrollY + node.getBoundingClientRect().top - 100));
   await page.screenshot({ path: resolve(renders, `reading-${size.name}.png`) });
-  await turn.locator('.assistant-answer p').last().evaluate(node => window.scrollTo(0, scrollY + node.getBoundingClientRect().top - 100));
+  await turn.locator('.assistant-answer p').last().evaluate(node => {
+    const composer = document.querySelector('.composer')!.getBoundingClientRect();
+    window.scrollBy(0, node.getBoundingClientRect().bottom - composer.top + 24);
+  });
   await page.screenshot({ path: resolve(renders, `reading-end-${size.name}.png`) });
   await turn.getByText('Reply actions', { exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(turn.getByRole('button', { name: 'Edit input' })).toBeVisible();
   await expect(turn.getByRole('button', { name: 'Correct or withdraw' })).toBeVisible();
-  await turn.locator('.reply-support').scrollIntoViewIfNeeded();
+  await turn.locator('.reply-maintenance .turn-actions').evaluate(node => window.scrollTo(0, scrollY + node.getBoundingClientRect().top - 100));
+  await expect(turn.getByRole('button', { name: 'Edit input' })).toBeInViewport();
+  await expect(turn.getByRole('button', { name: 'Correct or withdraw' })).toBeInViewport();
   await page.screenshot({ path: resolve(renders, `reply-actions-${size.name}.png`) });
   await turn.getByText('Reply actions', { exact: true }).click();
   await expect(page.getByLabel('Message Kat')).toHaveValue('Keep this draft while I inspect the reply.');
