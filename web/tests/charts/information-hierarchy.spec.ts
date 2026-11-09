@@ -75,6 +75,7 @@ for (const size of sizes) test(`information hierarchy content and reply actions 
   await page.getByRole('button', { name: 'Create person', exact: true }).click();
   await page.getByRole('tab', { name: 'Context', exact: true }).click();
   const pane = page.getByRole('tabpanel', { name: 'Context', exact: true });
+  await expect(page.getByRole('button', { name: 'Start conversation', exact: true })).not.toHaveClass(/primary/);
   for (const [collection, title, notes] of [
     ['Life & plans', 'Settling into ExampleWorks', 'I want to give myself time to find a rhythm.'],
     ['Interests & learning', 'Concrete examples', 'I prefer examples alongside unfamiliar terms.'],

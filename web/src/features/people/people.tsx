@@ -155,7 +155,7 @@ export function PersonDetail({ workspace, person, refresh, startConversation, op
       {newerDraft && <p className="profile-draft-notice" role="status"><strong>Latest details are not in the current chart.</strong> The saved chart still uses {savedTime === 'unknown' ? 'an unknown birth time' : savedTime === 'not recorded' ? 'birth inputs without a recorded time' : `the saved birth time of ${savedTime}`}{savedDate ? ` on ${savedDate}` : ''}. Start conversation still uses this saved chart until you calculate an updated version.</p>}
       <button ref={editButtonRef} type="button" className="profile-edit-action" onClick={openEditor} aria-controls={`${tabsId}-editor`} aria-expanded={editorOpen}>
         {hasActive ? 'Edit birth details' : 'Add birth details'}</button>
-    </div><button type="button" className={`${tab === 'charts' ? '' : 'primary '}profile-chat-action`} onClick={startConversation}>Start conversation</button></div>
+    </div><button type="button" className={`${tab === 'overview' ? 'primary ' : ''}profile-chat-action`} onClick={startConversation}>Start conversation</button></div>
     <div className="profile-tabs" role="tablist" aria-label="Person sections">
       {(['overview', 'context', 'charts', 'saved'] as const).map((item, index) => <button key={item} type="button" role="tab"
         id={`${tabsId}-${item}-tab`} aria-controls={`${tabsId}-${item}-panel`} aria-selected={tab === item}
