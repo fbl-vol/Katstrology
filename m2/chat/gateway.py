@@ -122,7 +122,9 @@ def turn_steps(store, session, conversation_id, turn_id, request, model, deliver
         if prompt_mode == 'hosted' and hasattr(model, 'validate'):
             model.validate()  # Resolve catalog/docs capacity before budgeting, never on replay.
         # Hosted instructions travel separately; reserve their estimated context cost.
-        updates_enabled = bool(payload.get('personal_context', {}).get('consent', {}).get('enabled'))
+        personal = payload.get('personal_context', {})
+        updates_enabled = bool(personal.get('consent', {}).get('enabled')) and (
+            personal.get('collection_mode') != 'background_v1')
         if hasattr(model, 'context_updates_enabled'):
             model.context_updates_enabled = updates_enabled
         tool_definitions = (json.dumps(TOOLS if updates_enabled else READ_TOOLS,

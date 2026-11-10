@@ -28,7 +28,7 @@ export function SelfAssociation({ workspace }: { workspace: Workspace }) {
   }
   useEffect(() => { void load(); return () => { request.current++; }; }, []);
   async function save(selected: Choice) {
-    if (!saved || busy || error) return;
+    if (!saved || saved.version !== 0 || !selected.id || busy || error) return;
     const version = ++request.current;
     setBusy(true);
     try {
@@ -42,19 +42,18 @@ export function SelfAssociation({ workspace }: { workspace: Workspace }) {
   }
   return <section className="self-association" aria-label="Who is me?">
     <h3>Who is me?</h3>
-    <p>Choose your own person once so ordinary “I” statements can be attributed to you. This does not turn on automatic context or select anyone for a conversation.</p>
-    {saved && <p>{person.id ? <>Saved association: <strong>{person.picker_label ?? `${person.name} · ${person.id}`}</strong></> : 'No self association saved.'}</p>}
-    {editing ? <fieldset disabled={busy || !!error}>
+    <p>You can choose your own person once so ordinary “I” statements can be attributed to you. This account is yours alone; the choice cannot be switched to someone else. It does not turn on automatic context or select anyone for a conversation.</p>
+    {saved && <p>{person.id ? <>Saved association: <strong>{person.picker_label ?? `${person.name} · ${person.id}`}</strong></> : saved.version > 0 ? 'Your previously chosen person is unavailable. The one-time choice cannot be reassigned.' : 'No self association saved.'}</p>}
+    {editing && saved?.version === 0 ? <fieldset disabled={busy || !!error}>
       <legend>Explicitly identify yourself</legend>
       <OwnedPersonPicker workspace={workspace} excludedId="" selected={choice} onSelect={setChoice} purpose="self" />
       <div className="form-actions"><button type="button" className="self-confirm" disabled={!choice.id} onClick={() => void save(choice)}>Use this person as me</button>
         <button type="button" onClick={() => { setChoice(person); setEditing(false); }}>Cancel</button></div>
-    </fieldset> : saved && <div className="form-actions">
-      <button type="button" disabled={busy || !!error} onClick={() => setEditing(true)}>{person.id ? 'Change who is me' : 'Choose who is me'}</button>
-      {person.id && <button type="button" disabled={busy || !!error} onClick={() => void save(empty)}>Clear self association</button>}
+    </fieldset> : saved?.version === 0 && <div className="form-actions">
+      <button type="button" disabled={busy || !!error} onClick={() => setEditing(true)}>Choose who is me</button>
     </div>}
     {busy && <p role="status">Checking or saving your self association…</p>}
     {error && <p role="alert">{error} <button type="button" disabled={busy} onClick={() => void load()}>Refresh association</button></p>}
-    <p>With automatic context enabled, keep that person selected when discussing your life. Changing or clearing this association stops in-flight self updates; it does not move old entries or change archived replies.</p>
+    <p>This helps Kat understand “I” and “my” when remembering your life. You do not need to select that person’s chart. Naming someone else does not change this choice. Earlier messages are not reinterpreted as yours when you make this choice. Saved entries and archived replies are not moved.</p>
   </section>;
 }

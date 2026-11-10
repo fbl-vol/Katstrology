@@ -25,6 +25,7 @@ class BrowserRuntime:
         self.auth = None
         self.active_tokens = {}
         self.chat = None
+        self.memory = None
         self.siwc = None
         self.admission = Admission(Path(files).parent / 'release-fence.json' if maintenance else None)
         self.maintenance = maintenance
@@ -45,9 +46,14 @@ class BrowserRuntime:
             self.chat = ChatJobs(self)
             if self.siwc_factory:
                 self.siwc = await self.execute(lambda: self.siwc_factory(self.siwc_root))
+            from m2.chat.memory_jobs import MemoryJobs
+            self.memory = MemoryJobs(self)
             if self.maintenance:
                 self.control_server = await serve_control(self.admission)
+            self.memory.notify()
         except BaseException:
+            if self.memory:
+                await self.memory.close()
             if self.store:
                 await self.execute(self.store.close)
             await asyncio.to_thread(self.executor.shutdown, True)
@@ -76,6 +82,8 @@ class BrowserRuntime:
         return None
 
     async def stop(self):
+        if self.memory:
+            self.memory.stop()
         if self.control_server:
             self.control_server.close()
             await self.control_server.wait_closed()
@@ -91,4 +99,6 @@ class BrowserRuntime:
                                             self.store.close()))
         finally:
             self.active_tokens.clear()
+            if self.memory:
+                await self.memory.close()
             await asyncio.to_thread(self.executor.shutdown, True)

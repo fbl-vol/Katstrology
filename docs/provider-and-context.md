@@ -4,7 +4,7 @@
 
 ## Routes and authority
 
-The browser selects `gpt-6.1-sol` server-side on the direct ChatGPT-plan Responses
+The browser selects `gpt-6-luna` server-side on the direct ChatGPT-plan Responses
 route, with Copenhagen reporting dates. Optional Sign in with ChatGPT is
 default-off. Identity authorization and `chatgpt.tokens.use.direct` permission are
 separate. Missing model/grant fails without a silent model, provider or billing
@@ -33,8 +33,12 @@ local overflow; that is not a product-quality memory or interpretation guarantee
 Hosted preflight uses approximately one estimated unit per two UTF-8 bytes, not
 provider tokenization or measured media cost. Optional catalogue context/output
 bounds are validated independently. The public Models API does not promise them.
-For the named model only, missing bounds use the source-documented API fallbacks
-(1,050,000 context; 128,000 maximum output). A present malformed field fails closed;
+For `gpt-6-luna`, missing bounds use its independently documented
+[API specification](https://developers.openai.com/api/docs/models/gpt-6-luna)
+(1,050,000 context; 128,000 maximum output). Historical `gpt-6.1-sol` retains its
+own documented bounds. The [direct-plan contract](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+requires the chosen slug in the current account's catalogue; API documentation
+alone does not establish account eligibility. A present malformed field fails closed;
 other slugs require both advertised bounds. Catalogue and fallback provenance are
 recorded separately and neither verifies the direct-plan grant.
 
@@ -105,12 +109,82 @@ Public source links and honest searching/unavailable states appear beside the
 reply. Reload uses saved results, not another search. Links open separately;
 unsafe schemes, embedded credentials and local-address links are not rendered.
 Capability guidance is versioned independently of tone expression: accepted
-version 1-3 instructions still reconstruct exactly, while new version 4 turns gain
-public-web guidance. Local and summary instruction text is unchanged. Synthetic
+version 1–4 instructions still reconstruct exactly. Version 4 introduced public-web
+guidance; version 5 retains it and adds quiet deferred-memory guidance. Local and
+summary instruction text is unchanged. Synthetic
 checks establish transport, archive and UI behavior, not real-model judgment,
 provider acceptance or live public-network reliability.
 
-## Personal context: consent, evidence and staged updates
+## Automatic personal memory
+
+One default-off account setting permits collection and use for existing and future
+owned people. Chart/conversation selection is not collection authority: named owned
+people and an explicit self association can be considered without a selected chart.
+Foreground context retrieval remains selected-person scoped. Accounts are not shared:
+Who is me is optional and chosen once, enforced by both the UI and server. Existing
+bindings remain; any nonzero generation consumes the choice even if deletion or
+independent-ledger restore clears the person ID. Same-choice acknowledgement retries
+are idempotent. There is no migration, guessed replacement or ordinary switch/clear
+operation. Historical first-person evidence must carry a compatible nonzero input-time
+generation/status; a later first choice or legacy identity change cannot relabel it.
+The final apply snapshot still rechecks current authority. The journal retains only
+revocation generations, not identity, so an older backup cannot reconstruct a later
+choice. Such a missing identity is unavailable, not permission to assign another.
+
+New browser turns archive
+`collection_mode: background_v1` and do not advertise foreground context-write tools.
+Replies do not ask users to enable memory, select a person or confirm each fact.
+
+After successful terminal publication, a small durable queue reference becomes eligible
+for idle processing. Analysis uses the connected account's Luna route, without tools,
+credential refresh or paid-request retries. Its separate single-worker executor does
+not consume foreground network capacity. The Store worker prepares and applies bounded
+snapshots only; it never waits for inference. New foreground work fences application.
+This scheduling is not a guarantee of real-provider latency or memory freshness.
+
+Evidence is limited to eight recent original user messages (24 KB total, 8 KB each),
+eight eligible owned people, 32 active entries per person and a 32 KB snapshot.
+Excess targets or existing-entry counts cause omission, not blind insertion without
+comparing prior records. There is no journal scan, archive sweep or historical backfill.
+At least one accepted statement must come from the newest completed turn. The model
+selects up to four semantic add/merge/replace actions; the server constructs prose from
+complete literal user sentences and validates identity, versions and provenance.
+For associated self, established server-owned assertion clauses can precede a question
+or form a compound sentence. The full original message remains available for assertion
+assessment and source provenance; arbitrary trimmed negations/qualifiers and quoted
+sources remain ineligible. This does not make punctuation a semantic truth verifier.
+Inactive/source-invalidated rows neither consume the active inventory allowance nor
+suppress fresh duplicates. New original evidence may establish a new entry without
+reactivating the old record or importing its withdrawn sources.
+Complementary evidence can merge under a stable entry ID; unchanged proposals are
+no-ops. Manual entries cannot be replaced automatically. Semantic attribution remains
+fallible; tests do not establish real-model extraction quality.
+
+Snapshots fence owner/session, connected account, consent/self-association generation,
+active ancestry, source revisions, person identity and entry versions. Manual edits,
+source corrections/withdrawals, disconnect, revocation, deletion and release drain can
+invalidate results. Merged entries retain constituent source references. An owner-wide
+context revision invalidates cached summaries after a committed automatic update.
+
+The queue coalesces by conversation (64 total/16 per owner), waits three idle seconds,
+and spaces attempts by 300 seconds per owner and 30 seconds globally. A marked running
+attempt abandoned by restart is not retried; genuinely newer queued work remains.
+Migrations 033–036 add separate tables without changing retained-table schemas or
+widening release authority.
+
+Deleting a Context entry records a conservative per-person cutoff in the independent
+deletion journal: **all original input units already recorded at that time** become
+ineligible for future automatic updates to that person. This prevents reconstruction
+under another span, paraphrase or entry ID, including after manual rewrites and older
+backup restore. It does not delete unrelated existing entries or the conversation;
+genuinely new original inputs remain eligible. Turning consent off fences pending
+updates but cannot recall already transmitted provider data or rewrite archives.
+
+The following contracts describe historical foreground staging and the shared consent,
+source and manual-control machinery. Historical archived outcomes remain readable;
+new deferred turns do not display a routine saved/not-saved status panel.
+
+## Historical personal context: consent, evidence and staged updates
 
 Personal context is off by default. Settings has one explicit control for both
 collection and use. Manual Context editing and personal details/links work without

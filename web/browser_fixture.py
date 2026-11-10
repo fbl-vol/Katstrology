@@ -89,7 +89,9 @@ async def main():
                 from m2.people.people import People
                 from tests.support.database import seed_legacy_person_file
                 from tests.support.natural_context import seed_capture_views
+                from tests.support.automatic_memory import seed_memory_views
                 seed_capture_views(store)
+                seed_memory_views(store)
                 legacy_session = store.authenticate('reader-handoff-file', 'synthetic-browser-password')
                 People(store).charts.add_person(legacy_session, 'legacy-file-person', 'Synthetic file-only person')
                 seed_legacy_person_file(store, legacy_session, 'legacy-file-person', 'existing-file',
@@ -205,7 +207,7 @@ async def main():
                         catalog = super().models(token)
                         # Mirror the reachable direct-plan shape: a context bound
                         # without an advertised output maximum.
-                        next(row for row in catalog['models'] if row['slug'] == 'gpt-6.1-sol')[
+                        next(row for row in catalog['models'] if row['slug'] == 'gpt-6-luna')[
                             'context_window'] = 500_000
                         catalog['models'].append({'slug': 'synthetic-compact',
                                                   'display_name': 'Synthetic compact-window fixture',
@@ -235,7 +237,7 @@ async def main():
                         from m2.chat.prompting import SUMMARY
                         from m2.chat.title_work import TITLE_INSTRUCTIONS
                         if body['instructions'] == TITLE_INSTRUCTIONS:
-                            if len(parts) != 1 or 'tools' in body or body.get('model') != 'gpt-6.1-sol' or body.get('max_output_tokens') != 80:
+                            if len(parts) != 1 or 'tools' in body or body.get('model') != 'gpt-6-luna' or body.get('max_output_tokens') != 80:
                                 raise AssertionError('Title work must be fixed-model, bounded and tool-free')
                             if len(parts[0]['text']) > 800:
                                 raise AssertionError('Title work leaked unbounded context')

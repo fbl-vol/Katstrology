@@ -33,7 +33,11 @@ bounded failure locations, skipped/unrun profiles and cleanup. Detailed syntheti
 logs/renders remain ignored under `.local/`. Zero matches, skips, a stopped suite
 or dirty-source evidence are not exact committed-tip qualification. Confirm
 collection counts before and after moving suites; imported fixture classes must
-not silently duplicate or hide cases.
+not silently duplicate or hide cases. Preserve frozen review renders as well as
+receipts. When tests use fixed screenshot paths, execute a fresh owned ordinary
+qualification copy at the exact committed head rather than overwrite old images.
+Keep the same whole-invocation lock and ownership rules; never use another reviewer's
+clone. A prior receipt does not qualify a later policy-only or corrective commit.
 
 For provider continuation use the repository
 [regression selector](../.agents/skills/kat-provider-continuation-regression/SKILL.md).
@@ -50,4 +54,7 @@ and exact source identity. A passing unit fixture is not a native recovery test.
 Never replace missing prerequisites with port 8765, the current service/archive,
 a real provider, private fixtures or served assets. Local results do not establish
 physical-device, external-host, live-provider or deployed acceptance. Activation,
-publication and private-data access remain separate scoped actions.
+publication and private-data access remain separately scoped. The Kat-specific standing
+authority in `AGENTS.md` covers coordinated review, ordinary remediation and guarded
+publication/deployment of agreed work; it does not authorize provider/private-account
+tests or bypass security dispositions, migration integrity or native release guards.

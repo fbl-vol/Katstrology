@@ -10,8 +10,10 @@ from psycopg.conninfo import make_conninfo
 from m2.archive.backup import backup, restore
 from m2.chat.personal_context import preference, set_preference
 from m2.people.people import People
+from m2.people.personal_context import ContextConflict
 from m2.people.self_association import association, set_association
 from tests.support.database import DatabaseCase
+from tests.support.self_association import legacy_association
 
 
 class RevocationRestoreTests(DatabaseCase):
@@ -42,7 +44,7 @@ class RevocationRestoreTests(DatabaseCase):
 
         def revoke(session):
             if kind == 'self':
-                set_association(self.store, session, None, 1)
+                legacy_association(self.store, session, None)
             else:
                 set_preference(self.store, session, False, 1)
 
@@ -84,6 +86,20 @@ class RevocationRestoreTests(DatabaseCase):
                 assert_revoked(recovered, recovered.authenticate(owner, password))
             recovered.ledger.reconcile(recovered)
             assert_revoked(recovered, recovered.authenticate('later-owner', 'synthetic-later-password'))
+        self.assertEqual(self.ledger.path.read_bytes(), journal)
+
+    def test_backup_before_first_choice_cannot_offer_another_identity(self):
+        People(self.store).charts.add_person(self.alice, 'casey', 'Casey')
+        before = Path(self.directory.name) / 'before-first-choice'
+        backup(self.store, before)
+        set_association(self.store, self.alice, 'casey', 0)
+        journal = self.ledger.path.read_bytes()
+        with self.restored(before) as recovered:
+            alice = recovered.authenticate('alice', 'synthetic-password-alice')
+            self.assertEqual(association(recovered, alice), {'person_id': None, 'version': 1})
+            with self.assertRaises(ContextConflict):
+                set_association(recovered, alice, 'casey', 1)
+            self.assertFalse(recovered._blocked)
         self.assertEqual(self.ledger.path.read_bytes(), journal)
 
     def test_self_revocation_for_later_enrollment_survives_both_older_backups(self):

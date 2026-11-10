@@ -16,7 +16,7 @@ from tests.support.database import DatabaseCase, synthetic_web_dist
 from m2.http_boundary.app import create_app
 
 
-class ChatHttpTests(DatabaseCase):
+class ChatHttpFixture(DatabaseCase):
     def setUp(self):
         super().setUp()
         self.directory_http = TemporaryDirectory(prefix='kat-chat-http-')
@@ -62,6 +62,8 @@ class ChatHttpTests(DatabaseCase):
     def responses(self):
         return [call for call in self.transport.calls if call[0] == 'responses']
 
+
+class ChatHttpTests(ChatHttpFixture):
     def test_committed_ack_reconnect_cursor_retry_and_owner_scope(self):
         created = self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
         self.assertEqual(created.status_code, 201)
@@ -129,7 +131,8 @@ class ChatHttpTests(DatabaseCase):
 
         def malformed(token):
             catalog = original(token)
-            catalog['models'][1]['context_window'] = 'untrusted-large-window'
+            next(row for row in catalog['models'] if row['slug'] == 'gpt-6-luna')[
+                'context_window'] = 'untrusted-large-window'
             return catalog
 
         self.transport.models = malformed
@@ -144,6 +147,22 @@ class ChatHttpTests(DatabaseCase):
                          (409, 'chatgpt_plan_permission_required'))
         self.assertEqual(self.client.get('/api/conversations/thread/turns').json()['turns'], [])
         self.assertEqual(len(self.responses()), 0)
+
+    def test_missing_luna_never_falls_back_to_available_sol(self):
+        self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
+        original = self.transport.models
+
+        def sol_only(token):
+            catalog = original(token)
+            catalog['models'] = [row for row in catalog['models'] if row['slug'] != 'gpt-6-luna']
+            return catalog
+
+        self.transport.models = sol_only
+        response = self.post('/api/conversations/thread/turns', self.message('no-luna'))
+        self.assertEqual((response.status_code, response.json()['error']),
+                         (409, 'fixed_model_unavailable'))
+        self.assertEqual(self.client.get('/api/conversations/thread/turns').json()['turns'], [])
+        self.assertEqual(self.responses(), [])
 
     def test_gated_catalog_does_not_hold_store_or_grant_another_owner(self):
         self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})

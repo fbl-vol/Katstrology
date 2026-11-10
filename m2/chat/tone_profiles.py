@@ -5,9 +5,10 @@ from hashlib import sha256
 from m2.chat import tone_profiles_v1 as v1, tone_profiles_v2 as v2, tone_profiles_v3 as v3
 from m2.chat.prompting import HOSTED, identity
 from m2.chat.tone_profiles_v4 import with_web_guidance
+from m2.chat.tone_profiles_v5 import MEMORY_GUIDANCE
 
 DEFAULT = 'quiet-wonder'
-CURRENT_VERSION = 4
+CURRENT_VERSION = 5
 BY_ID = {profile[0]: profile for profile in v1.PROFILES}
 
 
@@ -61,6 +62,10 @@ def _versioned_instructions(tone_id, version):
         previous, _ = _versioned_instructions(tone_id, 3 if tone_id in v3.LANDINGS else 1)
         text = with_web_guidance(previous)
         prompt_version = '2026-11-09.1.tone4'
+    elif version == 5:
+        previous, _ = _versioned_instructions(tone_id, 4)
+        text = previous + '\n\n' + MEMORY_GUIDANCE
+        prompt_version = '2026-11-10.1.tone5'
     else:
         raise ValueError('Archived tone version is unavailable')
     return text, {'tone_id': tone_id, 'tone_version': version,

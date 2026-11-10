@@ -110,6 +110,7 @@ class Tombstones:
                           {'owner', 'person', 'watch_item'},
                           {'owner', 'person', 'journal_entry'},
                           {'owner', 'person', 'context_entry'},
+                          {'owner', 'person', 'context_entry', 'source_before'},
                           {'owner', 'person', 'person_link'},
                           {'owner', 'context_consent_revoked'}, {'owner', 'context_self_revoked'})
                 if not isinstance(record, dict) or (set(record) not in single and
@@ -119,6 +120,11 @@ class Tombstones:
                      any(not isinstance(item, str) for item in record['conversations']) or
                      len(set(record['conversations'])) != len(record['conversations']))):
                     raise RuntimeError('Invalid deletion journal')
+                if 'source_before' in record:
+                    cutoff = record['source_before']
+                    if (not isinstance(cutoff, str) or not cutoff.isascii() or not cutoff.isdigit()
+                            or not 1 <= int(cutoff) < 2**63):
+                        raise RuntimeError('Invalid memory source suppression')
                 yield record
 
     def contains(self, owner, conversation, attachment=None):
@@ -180,6 +186,18 @@ class Tombstones:
                     store.db.execute('DELETE FROM person_links WHERE owner_id=%s AND person_id=%s AND id=%s',
                                      (owner, store._id(record['person']), store._id(record['person_link'])))
                 elif 'context_entry' in record:
+                    if 'source_before' in record:
+                        cutoff = int(record['source_before'])
+                        store.db.execute('''INSERT INTO memory_source_suppressions
+                            SELECT owner_id,id,%s FROM people WHERE owner_id=%s AND id=%s
+                            ON CONFLICT(owner_id,person_id) DO UPDATE SET
+                              source_before=greatest(memory_source_suppressions.source_before,
+                                                     excluded.source_before)''',
+                            (cutoff, owner, store._id(record['person'])))
+                        # A restored older sequence must not allocate a suppressed
+                        # identity to a genuinely new user input.
+                        store.db.execute('''SELECT setval('memory_source_units_id_seq',
+                            greatest(last_value,%s)) FROM memory_source_units_id_seq''', (cutoff,))
                     store.db.execute('''
                         DELETE FROM personal_context WHERE owner_id=%s AND person_id=%s AND id=%s
                     ''', (owner, store._id(record['person']), store._id(record['context_entry'])))
@@ -238,7 +256,10 @@ class Tombstones:
                     store.db.execute('DELETE FROM conversations WHERE owner_id=%s AND id=%s',
                                      (owner, store._id(record['conversation'])))
         from m2.chat.personal_context import invalidate_sources
-        for source in store.db.execute("SELECT DISTINCT owner_id,source->>'conversation_id' AS conversation_id FROM personal_context WHERE source->>'kind'='conversation'").fetchall():
+        for source in store.db.execute('''SELECT DISTINCT owner_id,s->>'conversation_id' AS conversation_id
+            FROM personal_context,LATERAL jsonb_array_elements(
+                coalesce(source->'sources',jsonb_build_array(source))) s
+            WHERE source->>'kind'='conversation' ''').fetchall():
             invalidate_sources(store, source['owner_id'], source['conversation_id'])
         files = Attachments(store)
         files.prune_unreferenced()
@@ -326,8 +347,13 @@ class Tombstones:
             SELECT 1 FROM {table} WHERE owner_id=%s AND person_id=%s AND id=%s
         ''', (owner, person_id, record_id)).fetchone():
             raise KeyError('Person record not found')
+        record = {'owner': owner, 'person': person_id, kind: record_id}
+        if kind == 'context_entry':
+            cutoff = store.db.execute('SELECT max(id) AS id FROM memory_source_units').fetchone()['id']
+            if cutoff:
+                record['source_before'] = str(cutoff)
         store._blocked = True
-        self._append({'owner': owner, 'person': person_id, kind: record_id})
+        self._append(record)
         self.reconcile(store)
 
     def delete_person_attachment(self, store, session, person_id, attachment_id):

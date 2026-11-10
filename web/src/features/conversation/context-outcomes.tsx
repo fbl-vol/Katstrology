@@ -16,7 +16,10 @@ export function ContextOutcomes({ turn, people, inspect }: {
   const rejected = turn.events.filter(event => event.kind === 'tool_result' &&
     event.payload.name === 'stage_personal_context' && (event.payload.result as { error?: string } | undefined)?.error).length;
   const context = turn.events.find(event => event.kind === 'user')?.payload.personal_context as
-    { consent?: { enabled?: boolean } } | undefined;
+    { consent?: { enabled?: boolean }; collection_mode?: string } | undefined;
+  // New background work has no per-reply save promise or status card. Retain
+  // actual historical tool outcomes, including on mixed/legacy archive records.
+  if (context?.collection_mode === 'background_v1' && !updates.length && !rejected) return null;
   // An absent proposal has no success signal. Keep the explanation quiet and
   // opt-in-only, not a success banner on ordinary greetings.
   if (!updates.length && !rejected && !context?.consent?.enabled) return null;

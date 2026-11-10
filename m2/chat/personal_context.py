@@ -44,8 +44,12 @@ def source_current(store, session, source):
     if source['kind'] == 'manual':
         return True
     from m2.archive.provenance import source_turn_current
+    from m2.chat.memory_sources import references
     try:
-        return source_turn_current(store, session, source['conversation_id'], source['turn_id'])
+        sources = references(source)
+        return bool(sources) and all(
+            source_turn_current(store, session, item['conversation_id'], item['turn_id'])
+            for item in sources)
     except KeyError:
         return False
 
@@ -66,10 +70,12 @@ def invalidate_sources(store, owner, conv_id):
         UNION SELECT t.id FROM turns t JOIN stale s ON t.parent_id=s.id
           WHERE t.owner_id=%s AND t.conversation_id=%s
     ) UPDATE personal_context SET lifecycle='source_invalidated'
-      WHERE owner_id=%s AND source->>'kind'='conversation' AND source->>'conversation_id'=%s
-      AND (source->>'turn_id' NOT IN (SELECT id FROM active) OR source->>'turn_id' IN (SELECT id FROM stale) OR EXISTS (
-        SELECT 1 FROM corrections WHERE owner_id=%s AND conversation_id=%s
-          AND source_turn_id=personal_context.source->>'turn_id'))''',
+      WHERE owner_id=%s AND source->>'kind'='conversation' AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(coalesce(source->'sources',jsonb_build_array(source))) s
+        WHERE s->>'conversation_id'=%s AND
+          (s->>'turn_id' NOT IN (SELECT id FROM active) OR s->>'turn_id' IN (SELECT id FROM stale) OR EXISTS (
+            SELECT 1 FROM corrections WHERE owner_id=%s AND conversation_id=%s
+              AND source_turn_id=s->>'turn_id')))''',
         (owner, conv_id, owner, conv_id, owner, conv_id, owner, conv_id,
          owner, conv_id, owner, conv_id))
 
@@ -105,6 +111,11 @@ def projection(store, session, selected, prompt, clock_anchor):
               'selection': 'Selected people only; newest 500 candidates per person ranked by topic words, ongoing circumstances and nearby dates; maximum 8 entries / 8000 bytes'}
     if not consent['enabled']:
         return result
+    revision = store.db.execute('SELECT context_revision FROM memory_budget WHERE owner_id=%s',
+                                (store.owner(session),)).fetchone()
+    # This travels in selected-context hashing, invalidating old compaction
+    # summaries without scanning every conversation in a background commit.
+    result['memory_revision'] = revision['context_revision'] if revision else 0
     speaker = association(store, session)
     eligible = speaker['person_id'] in {person_id for person_id, _ in selected}
     result['self_association'] = {**speaker, 'person_id': speaker['person_id'] if eligible else None,
@@ -157,6 +168,8 @@ def stage(store, session, conv_id, turn_id, args):
     turn = store.read_turn(session, conv_id, turn_id, event_limit=1)
     payload = turn['events'][0]['payload']
     snapshot = payload.get('personal_context', {})
+    if snapshot.get('collection_mode') == 'background_v1':
+        raise PermissionError('Automatic memory is deferred until after completion')
     consent = preference(store, session)
     if not consent['enabled'] or snapshot.get('consent') != consent or turn['status'] != 'open':
         raise PermissionError('Current explicit personal-context consent required')

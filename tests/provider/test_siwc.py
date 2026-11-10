@@ -66,10 +66,12 @@ class FakeOpenAI:
                             'visibility': 'list', 'context_window': 500000,
                             'max_output_tokens': 128000}, {'slug': 'gpt-6.1-sol',
                             'display_name': 'Synthetic vision-capable Sol fixture',
+                            'visibility': 'list'}, {'slug': 'gpt-6-luna',
+                            'display_name': 'Synthetic Luna fixture',
                             'visibility': 'list'}, {'slug': 'hidden-model',
                             'display_name': 'Hidden', 'visibility': 'hidden'}]}
 
-    def response_events(self, token, body):
+    def response_events(self, token, body, *, bounded=False):
         self.calls.append(('responses', token, body))
         if body.get('max_output_tokens') == 80:
             self.title_started.set()
@@ -104,6 +106,37 @@ class SiwcUnitTests(unittest.TestCase):
                     'client_id': 'oaiapp_synthetic'}, lambda _owner, _digest: True)
         return state, params, result
 
+    def test_background_access_never_refreshes_or_waits_for_foreground_credentials(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        self.connect()
+        binding = self.bridge.binding('alice')
+        self.assertEqual(self.bridge.background_access('alice', binding), 'synthetic-access')
+        entered, release = Event(), Event()
+
+        def foreground_refresh():
+            with self.bridge._owner_lock('alice'):
+                entered.set()
+                release.wait(5)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            held = executor.submit(foreground_refresh)
+            try:
+                self.assertTrue(entered.wait(2))
+                with self.assertRaises(ProviderFailure) as unavailable:
+                    self.bridge.background_access('alice', binding)
+                self.assertEqual(unavailable.exception.reason, 'background_capacity_unavailable')
+                self.assertFalse(held.done())
+            finally:
+                release.set()
+        record = self.bridge.credentials.load('alice')
+        record['accounts']['oaiapp_synthetic']['expires_at'] = 0
+        self.bridge.credentials.save('alice', record)
+        before = len(self.transport.calls)
+        with self.assertRaises(ProviderFailure):
+            self.bridge.background_access('alice', binding)
+        self.assertEqual(len(self.transport.calls), before)
+
     def test_pkce_host_client_identity_scopes_refresh_and_account_isolation(self):
         first, params, result = self.connect()
         self.assertEqual(result['status'], 'connected')
@@ -119,7 +152,9 @@ class SiwcUnitTests(unittest.TestCase):
                                                        'context_window': 500000,
                                                        'max_output_tokens': 128000},
                                                       {'slug': 'gpt-6.1-sol',
-                                                       'display_name': 'Synthetic vision-capable Sol fixture'}])
+                                                       'display_name': 'Synthetic vision-capable Sol fixture'},
+                                                      {'slug': 'gpt-6-luna',
+                                                       'display_name': 'Synthetic Luna fixture'}])
         record = self.bridge.credentials.load('alice')
         record['accounts']['oaiapp_synthetic']['expires_at'] = 0
         self.bridge.credentials.save('alice', record)
@@ -326,7 +361,7 @@ class SiwcHttpTests(DatabaseCase):
                 title_calls = [item[2] for item in transport.calls if item[0] == 'responses' and
                                item[2].get('max_output_tokens') == 80]
                 self.assertEqual(len(title_calls), 1)
-                self.assertEqual(title_calls[0]['model'], 'gpt-6.1-sol')
+                self.assertEqual(title_calls[0]['model'], 'gpt-6-luna')
                 self.assertEqual(title_calls[0]['store'], False)
                 self.assertNotIn('tools', title_calls[0])
                 self.assertNotIn('Hello!', str(title_calls[0]['input']))

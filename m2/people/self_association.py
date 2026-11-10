@@ -19,12 +19,18 @@ def set_association(store, session, person_id, expected_version):
     with store.db.transaction():
         current = association(store, session)
         desired = {'person_id': person_id, 'version': expected_version + 1}
-        if current == desired:
-            return current
-        if current['version'] != expected_version:
-            raise ContextConflict('Self association changed; refresh before choosing again')
+        if person_id is not None and current['person_id'] == person_id and expected_version in (
+                current['version'], current['version'] - 1):
+            return current  # Same-choice acknowledgement recovery, not a new generation.
+        if current['version']:
+            # Deletion/older restore may clear the ID, but never consume the choice twice.
+            raise ContextConflict('Your self association has already been chosen')
+        if expected_version != 0:
+            raise ContextConflict('Self association changed; refresh the saved choice')
+        if person_id is None:
+            raise ValueError('Choose an owned person for your one-time self association')
         # Journal only the authority generation, never a name or replacement
-        # identity. An older restored database must require a fresh explicit choice.
+        # identity. An older restored database retains a consumed choice, not a new identity.
         store.ledger.revoke_context_self(store, session, desired['version'])
         store.db.execute('''INSERT INTO personal_context_self VALUES (%s,%s,%s)
             ON CONFLICT(owner_id) DO UPDATE SET person_id=excluded.person_id,version=excluded.version''',
