@@ -55,6 +55,6 @@ export function SelfAssociation({ workspace }: { workspace: Workspace }) {
     </div>}
     {busy && <p role="status">Checking or saving your self association…</p>}
     {error && <p role="alert">{error} <button type="button" disabled={busy} onClick={() => void load()}>Refresh association</button></p>}
-    <p>With automatic context enabled, keep that person selected when discussing your life. Changing or clearing this association stops in-flight self updates; it does not move old entries or change archived replies.</p>
+    <p>This helps Kat understand “I” and “my” when remembering your life. You do not need to select that person’s chart. Naming someone else does not change this choice. Changing or clearing it stops pending self updates, but does not move saved entries or change archived replies.</p>
   </section>;
 }

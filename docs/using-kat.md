@@ -119,24 +119,28 @@ navigation retains the pane, search/disclosure and pending context edits within
 the signed-in workspace. Reload retrieves durable saved entries, not unsaved drafts.
 
 Use Settings → Personal context to explicitly enable automatic collection/use.
-It starts off even when a provider is connected. Selected relevant details may
-then be sent to that provider; no chart is required. Separately choose **Who is me?**
-once to explicitly associate yourself with an owned person. This does not enable
-automatic context or select anyone. Keep that person selected in the conversation,
-then speak naturally: facts alongside a chart question can become separate entries
-without repeating your name. Clear or change the association in the same settings;
-in-flight self updates will not be saved to the old target. Old entries are not moved.
+It starts off even when a provider is connected and applies to all your existing
+people and people you add later. Recent messages and relevant saved context may be
+sent to your connected provider after a reply. No chart selection or separate save
+request is required. You can keep chatting while this deferred work runs.
+Separately choose **Who is me?** once to explicitly associate yourself with an owned
+person. This does not enable automatic context or select anyone. Clear or change
+the association in the same settings; in-flight self updates will not be saved to
+the old target. Old entries are not moved.
 
 You can still explicitly introduce yourself in a message or name another uniquely
-identified selected person. Matching names or selecting a chart never establishes
+identified person in your account. Matching names or selecting a chart never establishes
 who “I” refers to. Kat should omit or clarify ambiguous, quoted, hypothetical,
 retracted or inferred statements and uncertain correction targets.
 Automatic interpretation can occasionally be wrong; inspect and correct entries in Context.
-Clear updates do not require a separate confirmation each time. The reply's quiet
-**Personal context** disclosure shows durable saved/not-saved outcomes and a button
-to inspect Context. No proposal is not a save, and does not mean the profile is empty.
-A saved outcome records that attempt, not a guarantee that every fact was found or
-that an entry has not since been edited, removed or invalidated.
+Updates do not require a separate confirmation each time. New replies have no
+memory status panel or promise that every fact was saved. Inspect each person's
+Context to see committed entries. Related facts can consolidate into an existing
+entry rather than accumulate duplicates; manual entries stay under your control.
+Work is deliberately bounded and may be skipped when busy, stale or too large.
+It does not scan private journals or backfill old conversation archives. Historical
+replies retain their original saved/not-saved disclosures; those describe that old
+attempt, not the entry's current state.
 You still control birth details, people and relationships. Plans do not become
 completed events merely because a date passes. See the [provider contract](provider-and-context.md)
 for exact accepted statement and source-lifecycle boundaries.
@@ -144,7 +148,12 @@ for exact accepted statement and source-lifecycle boundaries.
 Source details are available inside the entry editor. Removing an entry removes
 structured context, not the original conversation, archived answers or information
 already sent to a provider. Conversation history may still contain the same facts.
-Turning the setting off changes subsequent turns without erasing archives.
+To prevent deleted facts from returning under another wording or entry ID, deletion
+also excludes all earlier original conversation inputs from future automatic updates
+to that person, even after restoring an older backup. Other existing entries remain;
+new messages can supply new eligible information. Turning the setting off stops
+future automatic updates, including pending ones, without erasing saved context or
+archives or recalling information already sent to a provider.
 
 ## Manual charts and timing
 

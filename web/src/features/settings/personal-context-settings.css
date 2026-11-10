@@ -1,0 +1,9 @@
+.personal-context-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  min-height: 44px;
+  padding: .5rem 0;
+  font-size: var(--text-support);
+}
+.personal-context-consent input { flex: none; width: 1em; height: 1em; margin: .3em 0 0; }

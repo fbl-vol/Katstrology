@@ -131,7 +131,7 @@ export function PersonalContextPane({ workspace, personId, active, memory }: {
     } finally { setBusy(false); }
   }
   async function remove() {
-    if (!draft || busy || !window.confirm('Remove this context entry? Original conversations, archived answers and information already sent to a provider remain.')) return;
+    if (!draft || busy || !window.confirm('Remove this context entry? Earlier conversation inputs will no longer supply automatic updates for this person; new messages can. Other saved entries, original conversations, archived answers and information already sent to a provider remain.')) return;
     setBusy(true); setError('');
     try {
       await api(`${endpoint}/${draft.id}`, workspace.csrf, 'DELETE', { expected_version: draft.version });
@@ -145,7 +145,7 @@ export function PersonalContextPane({ workspace, personId, active, memory }: {
     {notice && <p role="status">{notice}</p>}
     <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.life} section="life" keys={life} label="Life & plans" open={open} />
     <ContextCollection workspace={workspace} endpoint={endpoint} active={active} revision={revision} memory={memory.learning} section="learning" keys={learning} label="Interests & learning" open={open} />
-    <p className="profile-overview-note">Removing an entry removes structured context, not its original conversation, past answers or information already sent to a provider.</p>
+    <p className="profile-overview-note">Removing an entry also stops earlier conversation inputs from supplying future automatic updates for this person. New messages can still supply context. Other saved entries, original conversations, past answers and information already sent to a provider remain.</p>
     <dialog ref={dialog} onCancel={event => { if (busy) event.preventDefault(); else setDraft(null); }} aria-label={draft?.version ? 'Edit entry' : 'Add context'}>
       {draft && <form className="dialog-body" onSubmit={event => void save(event)}>
         <div className="dialog-top"><h2 id={`${id}-title`}>{draft.version ? 'Edit entry' : 'Add context'}</h2><button type="button" disabled={busy} onClick={() => setDraft(null)} aria-label="Close entry">×</button></div>

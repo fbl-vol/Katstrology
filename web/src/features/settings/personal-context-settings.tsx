@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Workspace } from '../../shared/api';
 import { SelfAssociation } from './self-association';
+import './personal-context-settings.css';
 
 type Preference = { enabled: boolean; version: number };
 export function PersonalContextSettings({ workspace }: { workspace: Workspace }) {
@@ -21,13 +22,13 @@ export function PersonalContextSettings({ workspace }: { workspace: Workspace })
     finally { setBusy(false); setPending(null); }
   }
   return <section aria-label="Personal context settings">
-    <p>Allow Kat to use and collect personal context in conversations. Relevant details for selected people can be sent to your connected provider.</p>
-    <p>Manual editing is always available. Journals, unselected people, relationship links and birth details are never collected automatically.</p>
-    {saved ? <label><input type="checkbox" checked={pending ?? saved.enabled} disabled={busy || !!error} onChange={event => void change(event.target.checked)} /> Use and collect personal context automatically</label> : !error && <p role="status">Loading choice…</p>}
+    <p>Let Kat remember useful facts you share about anyone saved in your account, including people you add later. You do not need to select a chart or ask to save each fact.</p>
+    <p>With this on, recent messages and relevant saved context can be sent to your connected provider for processing after a reply. You can keep chatting while it runs.</p>
+    {saved ? <label className="personal-context-consent"><input type="checkbox" checked={pending ?? saved.enabled} disabled={busy || !!error} onChange={event => void change(event.target.checked)} /><span>Use and collect personal context automatically</span></label> : !error && <p role="status">Loading choice…</p>}
     {busy && <p role="status">Saving your choice…</p>}
     <SelfAssociation workspace={workspace} />
-    <p>Speak naturally about your life, including facts alongside a question. You can also explicitly name another selected person or introduce yourself in the message. Selecting a chart or matching a name never establishes who you are. Ambiguous, quoted or hypothetical material should be omitted or clarified; interpretation can still be wrong. Saved outcomes do not mean every fact was found. Inspect and correct entries in Context.</p>
-    <p>Turning this off affects subsequent turns, not archived answers. Removing context does not erase original conversations or information already sent to a provider; retained conversation history may still contain it.</p>
+    <p>Inspect, edit or remove saved details in each person’s Context. Memory can miss or misunderstand things; ambiguous names, quotes and hypothetical examples are skipped. This uses conversation, not your journals, and does not change birth details or relationship links.</p>
+    <p>Turning this off stops future automatic updates, including pending ones. It does not remove saved context or conversations, or recall information already sent to your provider.</p>
     {error && <p role="alert">{error} <button type="button" onClick={() => void load()}>Refresh choice</button></p>}
   </section>;
 }
