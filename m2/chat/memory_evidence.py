@@ -109,7 +109,7 @@ def snapshot(store, auth, work):
         if work['turn_id'] not in eligible:
             continue
         entries = store.db.execute('''SELECT id,version,content,source,lifecycle FROM personal_context
-            WHERE owner_id=%s AND person_id=%s ORDER BY id LIMIT %s''',
+            WHERE owner_id=%s AND person_id=%s AND lifecycle='active' ORDER BY id LIMIT %s''',
             (owner, person['id'], MAX_ENTRIES + 1)).fetchall()
         if len(entries) > MAX_ENTRIES:
             continue  # Hidden records could be semantic duplicates; do not append blindly.

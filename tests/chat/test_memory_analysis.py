@@ -40,6 +40,16 @@ class MemoryAnalysisTests(unittest.TestCase):
         self.assertEqual(self.parse(), [])
         self.assertEqual(candidates(self.evidence, '{"actions":[]}'), [])
 
+    def test_inactive_duplicate_is_not_reused_or_reactivated(self):
+        self.existing()
+        self.evidence['people'][0]['entries'][0]['lifecycle'] = 'source_invalidated'
+        fresh, = self.parse()
+        self.assertIsNone(fresh['entry_id'])
+        self.assertEqual({source['turn_id'] for source in fresh['source']['sources']}, {'new'})
+        self.action.update(entry_id='stable', expected_version=3, intent='merge')
+        with self.assertRaises(ValueError):
+            self.parse()
+
     def test_semantic_replacement_requires_version_not_a_shared_phrase(self):
         self.existing()
         changed = 'Frederik now prefers painting instead.'

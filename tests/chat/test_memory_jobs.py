@@ -39,7 +39,8 @@ class MemoryJobsFixture(ChatHttpFixture):
                 'identity_turn_id': message['turn_id'], 'statements': [{'turn_id': message['turn_id'],
                     'start': 0, 'end': len(text), 'text': text}], 'state': None, 'date': None}
             action = self.action_transform(action, evidence)
-            yield {'type': 'response.output_text.delta', 'delta': json.dumps({'actions': [action]})}, 'synthetic-memory'
+            actions = action if isinstance(action, list) else [action]
+            yield {'type': 'response.output_text.delta', 'delta': json.dumps({'actions': actions})}, 'synthetic-memory'
             self.entered.set()
             if not self.release.wait(15):
                 raise RuntimeError('Synthetic memory watchdog')
