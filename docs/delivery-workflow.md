@@ -61,8 +61,15 @@ unsupported/destructive SQL requires a real migration decision, not a wider flag
 instruction and exact lane/policy/installed-helper/host pins, existing release
 lock/no active attempt, running native schema/image, durable exclusive backup,
 installed candidate validation and read-back. Ambiguity leaves evidence and stops;
-no rollback, replay, app restart or DDL is performed. Independent read-back remains
-necessary before release. Native deployment still owns transactional migration,
+no rollback, replay, app restart or DDL is performed. Supply `--lane`,
+`--expectations` and the reviewed `--expectations-sha256`. The expectations object
+has exactly `request`, `hostname`, `lane_sha256`, `policy_sha256`,
+`native_policy_sha256`, and `helper_sha256` (hashes for `release_access.py`,
+`release_remote.py`, `release_pipeline.py`, `release_ci_access.py`). Obtain these
+from separately authorized inspection, never guessed defaults. The offline plan
+reads only those supplied files; execution fixes the installed policy/helper paths
+and derives the exclusive backup name from `request`. A flag/hash is not approval.
+Independent read-back remains necessary before release. Native deployment still owns transactional migration,
 snapshot, retained-data/deletion checks and admission.
 
 ## One local receipt, short recovery checkpoints
