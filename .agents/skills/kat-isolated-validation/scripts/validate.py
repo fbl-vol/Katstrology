@@ -16,17 +16,20 @@ from time import perf_counter
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 from deploy.qualification_inventory import read_json, check_execution
+from deploy.validation_budget import (budget, COMMAND_SECONDS, CONTROL_SECONDS,
+                                     INTERRUPT_SECONDS, KILL_WAIT_SECONDS, READINESS_SECONDS)
 
 PROFILES = ('backend', 'probes', 'browser', 'siwc', 'clock')
 PASSWORD = 'synthetic_test_only'  # disposable test container, never a user credential
 
 
-def command(argv, *, env=None, cwd=ROOT, log=None, timeout=900):
+def command(argv, *, env=None, cwd=ROOT, log=None, timeout=None):
+    timeout = timeout if timeout is not None else COMMAND_SECONDS if log else CONTROL_SECONDS
     if log is None:
         return subprocess.check_output(argv, cwd=cwd, env=env, text=True, timeout=timeout).strip()
-    with log.open('x') as output, subprocess.Popen(
-            argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
-            start_new_session=True) as process:
+    with log.open('x') as output:
+        process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
         try:
             try:
                 process.wait(timeout=timeout)
@@ -38,13 +41,13 @@ def command(argv, *, env=None, cwd=ROOT, log=None, timeout=900):
                 except ProcessLookupError:
                     pass
                 try:
-                    process.wait(timeout=10)
+                    process.wait(timeout=INTERRUPT_SECONDS)
                 except subprocess.TimeoutExpired:
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                    process.wait()
+                    process.wait(timeout=KILL_WAIT_SECONDS)
                 raise  # Preserve the original timeout/interrupt, never a pass.
             if process.returncode:
                 raise subprocess.CalledProcessError(process.returncode, argv)
@@ -53,6 +56,7 @@ def command(argv, *, env=None, cwd=ROOT, log=None, timeout=900):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            process.wait(timeout=KILL_WAIT_SECONDS)
 
 
 @contextmanager
@@ -173,7 +177,8 @@ def start_fixture(env):
             raise RuntimeError('Fixture identity mismatch')
         for _ in range(40):
             ready = subprocess.run(['pg_isready', '-h', '127.0.0.1', '-p', str(port),
-                '-U', 'kat_test', '-d', 'kat_test'], env=env, capture_output=True)
+                '-U', 'kat_test', '-d', 'kat_test'], env=env, capture_output=True,
+                timeout=READINESS_SECONDS)
             if ready.returncode == 0:
                 env['KAT_ISOLATED_TEST_CONTAINER'] = name
                 env['KAT_ISOLATED_TEST_DSN'] = ('host=127.0.0.1 port=' + str(port) +
@@ -402,7 +407,7 @@ def main():
     if args.inventory_only and (selected != ('browser',) or args.browser_grep or args.tests or args.private_layout_reference):
         parser.error('--inventory-only requires only the complete main browser profile')
     report = {'action': 'execute' if args.execute else 'plan', 'git': git_state(),
-              'tree': git_tree(),
+              'tree': git_tree(), 'budget': budget(selected, inventory_only=args.inventory_only),
               'browser_shard': args.browser_shard, 'inventory_only': args.inventory_only,
               'selected': selected, 'unrun': list(selected), 'results': {}, 'timings': [],
               'status': 'stopped',
@@ -430,6 +435,10 @@ def main():
                 with timed_stage(report['timings'], 'fixture-start'):
                     fixture = start_fixture(env)
                 report['fixture'] = 'owned-isolated-loopback'
+                report['fixture_identity'] = dict(zip(('container_id', 'name', 'port'), fixture))
+                # Keep identity available even if an outer harness kills before final JSON.
+                with (out / 'fixture-identity.json').open('x') as identity_file:
+                    json.dump(report['fixture_identity'], identity_file, sort_keys=True)
             if 'backend' in selected:
                 env['KAT_ISOLATED_TEST_TEMPLATE'] = 'kat_m2_template_' + secrets.token_hex(6)
                 env['KAT_ISOLATED_TEST_RUN_DIR'] = str(out)

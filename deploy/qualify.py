@@ -14,12 +14,30 @@ from time import perf_counter
 from deploy.release_pipeline import ROOT, artifact
 from deploy.qualification_evidence import LANES, PROFILES, assemble, write_lane
 from deploy.qualification_inventory import read_json
+from deploy.validation_budget import budget, KILL_WAIT_SECONDS
 
 VALIDATOR = '.agents/skills/kat-isolated-validation/scripts/validate.py'
 
 
-def run(*argv, timeout=3600, output=None):
-    return subprocess.run(argv, cwd=ROOT, timeout=timeout, check=True, stdout=output)
+def run(*argv, timeout=3600, output=None, cleanup_grace=0):
+    if not cleanup_grace:
+        return subprocess.run(argv, cwd=ROOT, timeout=timeout, check=True, stdout=output)
+    process = subprocess.Popen(argv, cwd=ROOT, stdout=output)
+    try:
+        process.wait(timeout=timeout)
+    except BaseException:
+        # The validator already owns SIGTERM -> interruption -> fixture cleanup.
+        # Never substitute subprocess.run's immediate SIGKILL for that path.
+        process.terminate()
+        try:
+            process.wait(timeout=cleanup_grace)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=KILL_WAIT_SECONDS)
+        raise
+    result = subprocess.CompletedProcess(argv, process.returncode)
+    result.check_returncode()
+    return result
 
 
 def identity():
@@ -61,7 +79,9 @@ def run_lane(lane, source):
             if lane.startswith('browser-'):
                 argv.extend(['--browser-shard', lane.removeprefix('browser-') + '/4'])
             with report_path.open('x') as output:
-                run(*argv, output=output)
+                deadline = budget(selected)
+                run(*argv, output=output, timeout=deadline['execution_seconds'],
+                    cleanup_grace=deadline['cleanup_grace_seconds'])
             write_lane(folder, lane, source, report_path)
         summary['status'] = 'passed'
     finally:
@@ -100,7 +120,9 @@ def join(evidence, receipt):
     reports = ROOT / '.local/qualification-discovery'
     reports.mkdir(parents=True, exist_ok=False)
     with (reports / 'report.json').open('x') as output:
-        run(sys.executable, VALIDATOR, '--profile', 'browser', '--inventory-only', '--execute', output=output)
+        deadline = budget(('browser',), inventory_only=True)
+        run(sys.executable, VALIDATOR, '--profile', 'browser', '--inventory-only', '--execute', output=output,
+            timeout=deadline['execution_seconds'], cleanup_grace=deadline['cleanup_grace_seconds'])
     discovered = read_json(reports / 'report.json')
     if (discovered['git'] != {'sha': source['commit'], 'dirty': False}
             or discovered['tree'] != source['tree'] or discovered['status'] != 'ok'
