@@ -66,7 +66,7 @@ v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
 v.ROOT=pathlib.Path({directory!r})
 v.git_state=lambda: {{'sha':'a'*40,'dirty':False}}
 v.git_tree=lambda: 'b'*40
-v.start_fixture=lambda env: ('synthetic-owned-id','synthetic-owned-name',12345)
+v.start_fixture=lambda env,out: ('synthetic-owned-id','synthetic-owned-name',12345)
 v.owned_container=lambda *args: args == ('synthetic-owned-id','synthetic-owned-name',12345)
 original=v.command
 def command(argv,**kwargs):

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 from deploy.qualification_inventory import read_json, check_execution
 from deploy.validation_budget import (budget, COMMAND_SECONDS, CONTROL_SECONDS,
-                                     INTERRUPT_SECONDS, KILL_WAIT_SECONDS, READINESS_SECONDS)
+                                     INTERRUPT_SECONDS, KILL_WAIT_SECONDS, READINESS_SECONDS, STARTUP_SECONDS)
 
 PROFILES = ('backend', 'probes', 'browser', 'siwc', 'clock')
 PASSWORD = 'synthetic_test_only'  # disposable test container, never a user credential
@@ -161,20 +161,53 @@ def owned_container(container_id, name, port):
             mapped == f'127.0.0.1:{port}')
 
 
-def start_fixture(env):
-    name = 'kat-origin-isolated-' + secrets.token_hex(7)
-    container_id = command(['docker', 'run', '-d', '--name', name,
-        '--label', 'kat.siwc.test=isolated', '-e', 'POSTGRES_USER=kat_test',
-        '-e', 'POSTGRES_PASSWORD=' + PASSWORD, '-e', 'POSTGRES_DB=kat_test',
-        '-p', '127.0.0.1::5432', '--memory', '512m', '--cpus', '2',
-        'postgres:16.14-alpine'], env=env)
+def startup_evidence(path, record):
+    with path.open('x') as output:
+        json.dump(record, output, sort_keys=True)
+        output.flush()
+        os.fsync(output.fileno())
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        mapped = command(['docker', 'port', container_id, '5432/tcp'], env=env)
-        if not re.fullmatch(r'127\.0\.0\.1:[0-9]+', mapped):
-            raise RuntimeError('Fixture port is not loopback-only')
-        port = int(mapped.rsplit(':', 1)[1])
-        if not owned_container(container_id, name, port):
-            raise RuntimeError('Fixture identity mismatch')
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def started_identity(cidfile, name, env):
+    # A planned name is not ownership. Only Docker's run-local ID file can
+    # resolve an ambiguous response, followed by the existing ownership fences.
+    if cidfile.is_symlink():
+        raise RuntimeError('Indirect fixture identity')
+    with cidfile.open() as source:
+        container_id = source.read(129).strip()
+    if not re.fullmatch(r'[a-f0-9]{64}', container_id):
+        raise RuntimeError('Missing exact fixture identity')
+    mapped = command(['docker', 'port', container_id, '5432/tcp'], env=env)
+    if not re.fullmatch(r'127\.0\.0\.1:[0-9]+', mapped):
+        raise RuntimeError('Fixture port is not loopback-only')
+    port = int(mapped.rsplit(':', 1)[1])
+    if not owned_container(container_id, name, port):
+        raise RuntimeError('Fixture identity mismatch')
+    return container_id, name, port
+
+
+def start_fixture(env, out):
+    name = 'kat-origin-isolated-' + secrets.token_hex(7)
+    cidfile = out / 'fixture.cid'
+    if cidfile.exists() or cidfile.is_symlink():
+        raise RuntimeError('Fixture identity path already exists; no replay')
+    startup_evidence(out / 'fixture-start-plan.json', {
+        'status': 'planned-not-proved-owned', 'name': name,
+        'cidfile': cidfile.name, 'startup_seconds': STARTUP_SECONDS})
+    try:
+        response = command(['docker', 'run', '-d', '--name', name, '--cidfile', str(cidfile),
+            '--label', 'kat.siwc.test=isolated', '-e', 'POSTGRES_USER=kat_test',
+            '-e', 'POSTGRES_PASSWORD=' + PASSWORD, '-e', 'POSTGRES_DB=kat_test',
+            '-p', '127.0.0.1::5432', '--memory', '512m', '--cpus', '2',
+            'postgres:16.14-alpine'], env=env, timeout=STARTUP_SECONDS)
+        container_id, name, port = started_identity(cidfile, name, env)
+        if response != container_id:
+            raise RuntimeError('Fixture response differs from recorded identity')
         for _ in range(40):
             ready = subprocess.run(['pg_isready', '-h', '127.0.0.1', '-p', str(port),
                 '-U', 'kat_test', '-d', 'kat_test'], env=env, capture_output=True,
@@ -183,15 +216,24 @@ def start_fixture(env):
                 env['KAT_ISOLATED_TEST_CONTAINER'] = name
                 env['KAT_ISOLATED_TEST_DSN'] = ('host=127.0.0.1 port=' + str(port) +
                     ' dbname=kat_test user=kat_test password=' + PASSWORD)
+                startup_evidence(out / 'fixture-start-result.json', {
+                    'status': 'ready', 'container_id': container_id, 'name': name, 'port': port})
                 return container_id, name, port
             import time
             time.sleep(0.5)
         raise RuntimeError('Isolated fixture did not become ready')
-    except BaseException:
-        # Never remove an unverified container; report its ID without credentials.
-        if 'port' in locals() and owned_container(container_id, name, port):
+    except BaseException as failure:
+        result = {'status': 'stopped', 'error_type': type(failure).__name__,
+                  'cleanup': 'manual-inspection-required', 'name': name}
+        try:
+            container_id, name, port = started_identity(cidfile, name, env)
+            result.update(container_id=container_id, port=port)
             command(['docker', 'rm', '-f', container_id], env=clean_environment())
-        raise
+            result['cleanup'] = 'owned-container-removed'
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as cleanup:
+            result['cleanup_error_type'] = type(cleanup).__name__
+        startup_evidence(out / 'fixture-start-result.json', result)
+        raise  # No startup replay, name adoption, or conversion of timeout into pass.
 
 
 def browser_env(base, profile, dist):
@@ -432,8 +474,11 @@ def main():
                     'inventory': discover_browser('browser', browser, out, shard=args.browser_shard)}
                 report['unrun'] = []
             if not args.inventory_only and any(profile != 'probes' for profile in selected):
+                report['fixture_startup'] = {
+                    'plan': str((out / 'fixture-start-plan.json').relative_to(ROOT)),
+                    'result': str((out / 'fixture-start-result.json').relative_to(ROOT))}
                 with timed_stage(report['timings'], 'fixture-start'):
-                    fixture = start_fixture(env)
+                    fixture = start_fixture(env, out)
                 report['fixture'] = 'owned-isolated-loopback'
                 report['fixture_identity'] = dict(zip(('container_id', 'name', 'port'), fixture))
                 # Keep identity available even if an outer harness kills before final JSON.
