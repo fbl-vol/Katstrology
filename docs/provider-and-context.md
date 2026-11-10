@@ -4,7 +4,7 @@
 
 ## Routes and authority
 
-The browser selects `gpt-6.1-sol` server-side on the direct ChatGPT-plan Responses
+The browser selects `gpt-6-luna` server-side on the direct ChatGPT-plan Responses
 route, with Copenhagen reporting dates. Optional Sign in with ChatGPT is
 default-off. Identity authorization and `chatgpt.tokens.use.direct` permission are
 separate. Missing model/grant fails without a silent model, provider or billing
@@ -33,8 +33,12 @@ local overflow; that is not a product-quality memory or interpretation guarantee
 Hosted preflight uses approximately one estimated unit per two UTF-8 bytes, not
 provider tokenization or measured media cost. Optional catalogue context/output
 bounds are validated independently. The public Models API does not promise them.
-For the named model only, missing bounds use the source-documented API fallbacks
-(1,050,000 context; 128,000 maximum output). A present malformed field fails closed;
+For `gpt-6-luna`, missing bounds use its independently documented
+[API specification](https://developers.openai.com/api/docs/models/gpt-6-luna)
+(1,050,000 context; 128,000 maximum output). Historical `gpt-6.1-sol` retains its
+own documented bounds. The [direct-plan contract](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+requires the chosen slug in the current account's catalogue; API documentation
+alone does not establish account eligibility. A present malformed field fails closed;
 other slugs require both advertised bounds. Catalogue and fallback provenance are
 recorded separately and neither verifies the direct-plan grant.
 

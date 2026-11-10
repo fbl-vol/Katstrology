@@ -189,7 +189,7 @@ automatic recall. Glossary explanations distinguish geometry from interpretation
 
 ## Provider and context limits
 
-The browser uses the server-selected `gpt-6.1-sol` ChatGPT-plan Responses route;
+The browser uses the server-selected `gpt-6-luna` ChatGPT-plan Responses route;
 there is no client model selector, billing fallback, upload or composer-zone
 selector. Optional Sign in with ChatGPT is default-off. Connection alone does not
 grant direct inference permission. Unsupported/unavailable plan/model access

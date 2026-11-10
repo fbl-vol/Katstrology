@@ -1,6 +1,6 @@
 """Fixed browser product defaults; CLI/legacy archive records keep their own provenance."""
 
-MODEL = 'gpt-6.1-sol'  # Existing selected ChatGPT-plan direct Responses route.
+MODEL = 'gpt-6-luna'  # Direct Responses; account catalog admission is still required.
 REPORTING_ZONE = 'Europe/Copenhagen'
 
 

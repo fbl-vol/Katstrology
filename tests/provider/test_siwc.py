@@ -66,6 +66,8 @@ class FakeOpenAI:
                             'visibility': 'list', 'context_window': 500000,
                             'max_output_tokens': 128000}, {'slug': 'gpt-6.1-sol',
                             'display_name': 'Synthetic vision-capable Sol fixture',
+                            'visibility': 'list'}, {'slug': 'gpt-6-luna',
+                            'display_name': 'Synthetic Luna fixture',
                             'visibility': 'list'}, {'slug': 'hidden-model',
                             'display_name': 'Hidden', 'visibility': 'hidden'}]}
 
@@ -119,7 +121,9 @@ class SiwcUnitTests(unittest.TestCase):
                                                        'context_window': 500000,
                                                        'max_output_tokens': 128000},
                                                       {'slug': 'gpt-6.1-sol',
-                                                       'display_name': 'Synthetic vision-capable Sol fixture'}])
+                                                       'display_name': 'Synthetic vision-capable Sol fixture'},
+                                                      {'slug': 'gpt-6-luna',
+                                                       'display_name': 'Synthetic Luna fixture'}])
         record = self.bridge.credentials.load('alice')
         record['accounts']['oaiapp_synthetic']['expires_at'] = 0
         self.bridge.credentials.save('alice', record)
@@ -326,7 +330,7 @@ class SiwcHttpTests(DatabaseCase):
                 title_calls = [item[2] for item in transport.calls if item[0] == 'responses' and
                                item[2].get('max_output_tokens') == 80]
                 self.assertEqual(len(title_calls), 1)
-                self.assertEqual(title_calls[0]['model'], 'gpt-6.1-sol')
+                self.assertEqual(title_calls[0]['model'], 'gpt-6-luna')
                 self.assertEqual(title_calls[0]['store'], False)
                 self.assertNotIn('tools', title_calls[0])
                 self.assertNotIn('Hello!', str(title_calls[0]['input']))
