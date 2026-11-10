@@ -71,7 +71,7 @@ class FakeOpenAI:
                             'visibility': 'list'}, {'slug': 'hidden-model',
                             'display_name': 'Hidden', 'visibility': 'hidden'}]}
 
-    def response_events(self, token, body):
+    def response_events(self, token, body, *, bounded=False):
         self.calls.append(('responses', token, body))
         if body.get('max_output_tokens') == 80:
             self.title_started.set()

@@ -5,6 +5,7 @@ A real sign-in/request needs a separate explicit user authorization and opt-in.
 """
 
 from base64 import b64decode, b64encode, urlsafe_b64encode
+from contextlib import contextmanager
 from hashlib import scrypt, sha256
 import hmac
 import json
@@ -323,7 +324,12 @@ class ProviderBridge:
             return token, self._binding(owner)  # Own refresh may rotate the token.
 
     def background_access(self, owner, binding):
-        """Never wait behind a foreground credential refresh or initiate another one."""
+        with self.background_guard(owner, binding) as token:
+            return token
+
+    @contextmanager
+    def background_guard(self, owner, binding):
+        """Nonwaiting credential fence, also held across the short memory commit."""
         lock = self._owner_lock(owner)
         if not lock.acquire(blocking=False):
             raise ProviderFailure('background_capacity_unavailable')
@@ -335,7 +341,7 @@ class ProviderBridge:
             expires = account.get('expires_at')
             if (type(expires) not in (int, float) or expires < time.time() + 120):
                 raise ProviderFailure('background_capacity_unavailable')
-            return account['access_token']
+            yield account['access_token']
         finally:
             lock.release()
 
