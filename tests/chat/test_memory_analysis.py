@@ -8,7 +8,8 @@ from m2.chat.memory_analysis import candidates
 class MemoryAnalysisTests(unittest.TestCase):
     def setUp(self):
         self.text = 'Frederik enjoys gardening.'
-        self.evidence = {'turn_id': 'new', 'self_association': {'person_id': None, 'version': 0},
+        self.evidence = {'turn_id': 'new', 'pending_turns': ['new'],
+            'self_association': {'person_id': None, 'version': 0},
             'messages': [{'conversation_id': 'thread', 'turn_id': 'new', 'source_unit': 2,
                           'text': self.text}],
             'people': [{'id': 'frederik', 'name': 'Frederik', 'named_eligible': True,
@@ -39,6 +40,35 @@ class MemoryAnalysisTests(unittest.TestCase):
         self.existing()
         self.assertEqual(self.parse(), [])
         self.assertEqual(candidates(self.evidence, '{"actions":[]}'), [])
+
+    def test_repeated_add_or_update_target_rejects_whole_batch(self):
+        with self.assertRaisesRegex(ValueError, 'One coherent action per target'):
+            candidates(self.evidence, json.dumps({'actions': [self.action, self.action]}))
+        self.existing()
+        text = 'Frederik grows tomatoes too.'
+        self.evidence['messages'][0]['text'] = text
+        self.action.update(intent='merge', entry_id='stable', expected_version=3,
+                           statements=[self.span('new', text)])
+        with self.assertRaisesRegex(ValueError, 'One coherent action per target'):
+            candidates(self.evidence, json.dumps({'actions': [self.action, self.action]}))
+
+    def test_merge_anchor_is_pending_source_not_same_turn_id_in_another_conversation(self):
+        self.existing()
+        prior = self.evidence['people'][0]['entries'][0]['source']
+        prior.update(conversation_id='other', turn_id='new', source_unit=99)
+        prior['sources'][0].update(conversation_id='other', turn_id='new', source_unit=99)
+        text = 'Frederik grows tomatoes too.'
+        self.evidence['messages'][0]['text'] = text
+        self.action.update(intent='merge', entry_id='stable', expected_version=3,
+                           statements=[self.span('new', text)])
+        source = self.parse()[0]['source']
+        self.assertEqual((source['conversation_id'], source['source_unit']), ('thread', 2))
+        self.assertEqual({item['source_unit'] for item in source['sources']}, {2, 99})
+
+    def test_nonpending_history_cannot_be_promoted_by_model_assertion(self):
+        self.evidence['pending_turns'] = []
+        with self.assertRaisesRegex(ValueError, 'Historical evidence alone'):
+            self.parse()
 
     def test_inactive_duplicate_is_not_reused_or_reactivated(self):
         self.existing()

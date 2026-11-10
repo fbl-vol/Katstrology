@@ -1,6 +1,12 @@
 """Small durable reference queue, coalescing and no paid-attempt replay."""
+from pathlib import Path
+import shutil
 from unittest.mock import patch
 
+import psycopg
+
+from deploy.prepare_migration import prepare
+from m2.release_schema import migrate
 from m2.archive.store import Store
 from m2.chat.memory_work import MemoryWork
 from m2.chat.personal_context import set_preference
@@ -46,6 +52,33 @@ class MemoryWorkTests(DatabaseCase):
         self.work.enqueue(self.alice, 'thread', 'two', initial, self.origin)
         self.assertEqual(self.work.due()['generation'], 2)
         self.assertNotIn('prompt', work)
+        first = self.store.db.execute("SELECT id FROM memory_source_units WHERE turn_id='one'").fetchone()['id']
+        self.assertEqual(work['pending_source_unit'], first)
+
+    def test_preclaim_deferral_rotates_owners_without_claim_or_new_generation(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.complete('one')
+        work = self.work.due()
+        self.store.create_conversation(self.bob, 'other')
+        set_preference(self.store, self.bob, True, 0)
+        self.store.memory_origins[('bob', 'other', 'two')] = {
+            'session_digest': 'synthetic-bob', 'admission': CatalogAdmission(
+                'bob', 'gpt-6-luna', 'synthetic-bob-binding', self.origin['admission'].capacity)}
+        self.store.begin(self.bob, 'other', 'two', 'Synthetic pending input.', None)
+        self.store.append(self.bob, 'other', 'two', 'complete', {})
+        self.store.db.execute("UPDATE memory_work SET queued_at=queued_at-interval '10 seconds'")
+        self.assertEqual(self.work.due()['owner_id'], 'alice')
+        self.work.defer(work)
+        self.assertEqual(self.work.due()['owner_id'], 'bob')
+        retained = self.store.db.execute("SELECT * FROM memory_work WHERE owner_id='alice'").fetchone()
+        self.assertEqual((retained['generation'], retained['pending_source_unit'], retained['state']),
+                         (work['generation'], work['pending_source_unit'], 'pending'))
+        self.assertIsNone(retained['attempted_generation'])
+        self.assertEqual(self.store.db.execute('SELECT count(*) AS count FROM memory_budget').fetchone()['count'], 0)
+        self.complete('new', 'one')
+        queued = self.store.db.execute("SELECT queued_at FROM memory_work WHERE owner_id='alice'").fetchone()
+        self.work.defer(work)  # The obsolete generation must not delay genuinely new input.
+        self.assertEqual(self.store.db.execute("SELECT queued_at FROM memory_work WHERE owner_id='alice'").fetchone(), queued)
 
     def test_ambiguous_attempt_is_not_retried_after_recovery(self):
         set_preference(self.store, self.alice, True, 0)
@@ -72,6 +105,7 @@ class MemoryWorkTests(DatabaseCase):
         newer = self.work.due()
         self.assertEqual(newer['turn_id'], 'two')
         self.assertGreater(newer['delay'], 290)
+        self.assertEqual(newer['pending_source_unit'], work['pending_source_unit'])
 
     def test_newer_pending_work_survives_real_store_restart_without_replaying_attempt(self):
         set_preference(self.store, self.alice, True, 0)
@@ -85,6 +119,55 @@ class MemoryWorkTests(DatabaseCase):
         self.assertEqual((latest['turn_id'], latest['state'], latest['outcome']),
                          ('two', 'pending', 'abandoned'))
         self.assertGreater(latest['delay'], 290)
+        first = self.store.db.execute("SELECT id FROM memory_source_units WHERE turn_id='one'").fetchone()['id']
+        self.assertGreater(latest['pending_source_unit'], first)
+
+    def test_failed_paid_range_is_not_restored_for_newer_question(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.complete('one')
+        claimed = self.work.due()
+        self.work.claim(claimed)
+        self.complete('two', 'one')
+        self.work.finish(claimed, 'failed')
+        self.assertGreater(self.work.due()['pending_source_unit'], claimed['pending_source_unit'])
+
+    def test_no_new_generation_never_retries_even_known_unapplied_result(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.complete('one')
+        claimed = self.work.due()
+        self.work.claim(claimed)
+        self.work.finish(claimed, 'stale')
+        self.assertIsNone(self.work.due())
+        self.complete('two', 'one')
+        self.assertGreater(self.work.due()['pending_source_unit'], claimed['pending_source_unit'])
+
+    def test_exact_nullable_lane_preserves_legacy_pending_row_without_backfill(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.complete('one')
+        self.complete('two', 'one')
+        retained = self.store.db.execute(
+            "SELECT to_jsonb(w)-'pending_source_unit' AS value FROM memory_work w").fetchone()['value']
+        self.store.close()
+        # Reconstruct schema36 only in this freshly owned disposable database,
+        # retaining every legacy row/column. Never a live rollback operation.
+        with psycopg.connect(self.dsn) as db:
+            db.execute('ALTER TABLE memory_work DROP COLUMN pending_source_unit')
+            db.execute('DELETE FROM schema_migrations WHERE version=37')
+        migrations = Path(__file__).resolve().parents[2] / 'm2/migrations'
+        before = Path(self.directory.name) / 'schema36'
+        before.mkdir()
+        for file in migrations.glob('[0-9]*.sql'):
+            if int(file.name.split('_')[0]) <= 36:
+                shutil.copyfile(file, before / file.name)
+        lane = prepare(before, migrations)['lane']
+        self.assertEqual(lane['added_columns'], {'memory_work': ['pending_source_unit']})
+        self.assertEqual(migrate(self.dsn, lane, migrations), {'schema': 37, 'status': 'migrated'})
+        with psycopg.connect(self.dsn) as db:
+            row = db.execute("SELECT to_jsonb(w)-'pending_source_unit',pending_source_unit FROM memory_work w").fetchone()
+            self.assertEqual(row, (retained, None))
+        self.store = Store(self.dsn, self.store.files, self.ledger)
+        self.work = MemoryWork(self.store)
+        self.assertIsNone(self.work.due()['pending_source_unit'])
 
     def test_queue_failure_does_not_roll_back_completed_answer(self):
         set_preference(self.store, self.alice, True, 0)

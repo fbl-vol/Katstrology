@@ -1,5 +1,6 @@
 from hashlib import sha256
 
+from m2.archive.revisions import correct
 from m2.chat.memory_evidence import snapshot
 from m2.chat.personal_context import set_preference
 from m2.http_boundary.web_auth import WebAuth
@@ -51,6 +52,38 @@ class MemoryEvidenceTests(DatabaseCase):
         evidence = snapshot(self.store, self.auth, work)
         self.assertEqual([item['turn_id'] for item in evidence['messages']], ['one', 'two'])
         self.assertEqual(evidence['people'][0]['eligible_turns'], ['one', 'two'])
+        self.assertEqual(evidence['pending_turns'], ['two'])  # Legacy NULL/missing watermark is newest-only.
+        first_unit = evidence['messages'][0]['source_unit']
+        coalesced = snapshot(self.store, self.auth, work | {'pending_source_unit': first_unit})
+        self.assertEqual(coalesced['pending_turns'], ['one', 'two'])
+
+    def test_pending_watermark_does_not_expand_bounded_original_window(self):
+        previous = None
+        for index in range(10):
+            turn = f'turn-{index}'
+            work = self.complete(turn, parent=previous)
+            previous = turn
+        evidence = snapshot(self.store, self.auth, work | {'pending_source_unit': 1})
+        self.assertEqual(evidence['pending_turns'], [f'turn-{index}' for index in range(2, 10)])
+        self.assertEqual(len(evidence['messages']), 8)
+
+    def test_oversized_intermediate_input_fences_older_pending_facts(self):
+        self.complete('one')
+        self.complete('qualifier', 'That was fiction. ' + 'x' * 8200, 'one')
+        work = self.complete('question', 'What should I consider?', 'qualifier')
+        # A recent unsupported message may contain a retraction. Never skip it
+        # and silently recover older facts on the other side of the gap.
+        evidence = snapshot(self.store, self.auth, work | {'pending_source_unit': 1})
+        self.assertIsNone(evidence)  # No known person remains in the safe suffix.
+
+    def test_revised_intermediate_input_fences_older_pending_facts(self):
+        self.complete('one')
+        self.complete('qualifier', 'Frederik was speaking hypothetically.', 'one')
+        correct(self.store, self.alice, 'thread', 'correct-qualifier', 'qualifier',
+                'correct', 'That marriage was a fictional example.')
+        later = self.complete('later', 'Frederik asks about his chart.', 'qualifier')
+        evidence = snapshot(self.store, self.auth, later | {'pending_source_unit': 1})
+        self.assertEqual(evidence['pending_turns'], ['later'])
 
     def test_session_owner_consent_and_deletion_fences(self):
         work = self.complete('one')

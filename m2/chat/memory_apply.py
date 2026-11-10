@@ -20,8 +20,10 @@ def apply(store, auth, bridge, work, evidence, actions):
                 return 'stale'
             session, _, _ = auth.resolve_digest(work['session_digest'])
             for action in actions:
+                target = (['entry', action['entry_id']] if action['entry_id'] else
+                          ['add', action['content']['group'], action['source']['sources']])
                 identity = json.dumps([work['owner_id'], work['conversation_id'], work['turn_id'],
-                    action['person_id'], action['entry_id'] or action['content']['group']], separators=(',', ':'))
+                    action['person_id'], target], sort_keys=True, separators=(',', ':'))
                 operation = 'memory-' + sha256(identity.encode()).hexdigest()
                 PersonalContext(store).save(session, action['person_id'], action['entry_id'] or operation,
                     operation, action['expected_version'], action['content'], action['source'])

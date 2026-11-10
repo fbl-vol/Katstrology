@@ -34,8 +34,11 @@ each {turn_id,start,end,text}),
 state (planned/tentative/ongoing/completed/cancelled/null),
 date (null or {text,precision,start,end}). Dates must preserve literal precision/qualifiers;
 normalize only explicitly present ISO dates, months or years; otherwise use unknown/null bounds.
-Each statement must be eligible for that person. At least one statement must be from the newest
-turn. Named statements start with the person's unique name. Self statements use the explicitly
+Each statement must be eligible for that person. At least one statement must be from a turn
+listed in pending_turns: unprocessed original evidence coalesced for this attempt. Older messages
+provide context but cannot alone authorize an action. Later questions need not repeat earlier
+pending facts; later qualifiers/retractions still govern the whole interpretation.
+Named statements start with the person's unique name. Self statements use the explicitly
 associated self, never a different named speaker. Reference statements use an unambiguous
 he/she/they reference to the unique named person in identity_turn_id. Include full sentence
 boundaries, not selected fragments that strip qualifications. For self only, complete assertion
@@ -134,14 +137,17 @@ def candidates(evidence, output):
         spans = action['statements']
         if not isinstance(spans, list) or not 1 <= len(spans) <= 4:
             raise ValueError('Bounded statements required')
-        if not any(span.get('turn_id') == evidence['turn_id'] for span in spans if isinstance(span, dict)):
+        if not any(span.get('turn_id') in evidence['pending_turns'] for span in spans if isinstance(span, dict)):
             raise ValueError('Historical evidence alone cannot publish new facts')
         prior = references(old['source']) if old and intent == 'merge' else []
         sources, statements = list(prior), [item['statement'] for item in prior if item.get('statement')]
+        pending_sources = []
         for span in spans:
             source, identity = _statement(action, span, messages, person, list(people.values()),
                                           evidence['self_association'])
             sources.append(source)
+            if source['turn_id'] in evidence['pending_turns']:
+                pending_sources.append(source)
             statements.append(source['statement'])
             if action['attribution'] == 'reference':
                 sources.append({**identity, 'statement': ''})  # Attribution, not additional fact prose.
@@ -167,12 +173,16 @@ def candidates(evidence, output):
         if any(_normalized(entry['content']['notes'] or entry['content']['title']) == _normalized(prose)
                for entry in person['entries'] if entry['lifecycle'] == 'active'):
             continue
-        target = (person['id'], action['entry_id'] or action['group'])
+        # Existing entries are single update targets; a group can contain several
+        # distinct new facts. Repeated literal ADDs still reject the whole batch.
+        target = ((person['id'], 'entry', action['entry_id']) if old else
+                  (person['id'], 'add', _normalized(prose)))
         if target in targets:
             raise ValueError('One coherent action per target')
         targets.add(target)
-        newest = next(item for item in reversed(sources)
-                      if item['turn_id'] == evidence['turn_id'] and item.get('statement'))
+        # Prior merge sources may reuse a turn ID in another conversation. Only
+        # this action's validated pending statements can anchor the new result.
+        newest = max(pending_sources, key=lambda item: item['source_unit'])
         source = {**newest, 'sources': sources}
         if action['attribution'] == 'self':
             source['self_association'] = evidence['self_association']

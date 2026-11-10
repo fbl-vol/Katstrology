@@ -33,24 +33,28 @@ def original_messages(store, session, conversation_id, turn_id, consent):
             (c.parent_id IS NULL OR p.id IS NOT NULL AND
              coalesce(c.parent_revision,0)=p.revision)) AS current
         FROM checked c LEFT JOIN checked p ON p.id=c.parent_id
-    ) SELECT c.id,c.depth,u.id AS source_unit,e.payload FROM checked c
+    ) SELECT c.id,c.depth,c.revision,u.id AS source_unit,e.payload FROM checked c
       JOIN valid ON valid.current JOIN events e ON e.owner_id=%s
         AND e.conversation_id=%s AND e.turn_id=c.id AND e.sequence=0
-      JOIN memory_source_units u ON u.owner_id=e.owner_id
+      LEFT JOIN memory_source_units u ON u.owner_id=e.owner_id
         AND u.conversation_id=e.conversation_id AND u.turn_id=e.turn_id
-      WHERE c.depth<%s AND c.revision=0 ORDER BY c.depth''',
+      WHERE c.depth<%s ORDER BY c.depth''',
         (owner, conversation_id, turn_id, owner, conversation_id, MAX_ANCESTRY,
          owner, conversation_id, MAX_ANCESTRY, owner, conversation_id, MAX_MESSAGES)).fetchall()
     messages = []
     size = 0
     for row in rows:
+        # Keep a contiguous recent suffix. A skipped/revised/unsupported input
+        # could qualify older facts; never promote those across a hidden gap.
+        if row['revision'] or row['source_unit'] is None:
+            break
         payload = row['payload']
         text = payload['content']
         if payload.get('personal_context', {}).get('consent') != consent:
-            continue
+            break
         length = len(text.encode())
         if length > 8192 or size + length > MAX_INPUT_BYTES:
-            continue  # Never trim a trailing qualifier/retraction to make text fit.
+            break  # Never trim or skip a trailing qualifier/retraction to fit.
         size += length
         messages.append({'conversation_id': conversation_id, 'turn_id': row['id'],
                          'source_unit': row['source_unit'], 'text': text,
@@ -98,6 +102,15 @@ def snapshot(store, auth, work):
     messages = original_messages(store, session, work['conversation_id'], work['turn_id'], consent)
     if not messages or messages[-1]['turn_id'] != work['turn_id']:
         return None
+    # NULL preserves newest-only authority for work retained across the additive
+    # migration; it never opens historical backfill. Claims carry this frozen
+    # pending range even after the durable row advances its paid-attempt fence.
+    first_unit = work.get('pending_source_unit')
+    if first_unit is None:
+        first_unit = messages[-1]['source_unit']
+    pending = [item['turn_id'] for item in messages if item['source_unit'] >= first_unit]
+    if not pending:
+        return None
     speaker = association(store, session)
     targets = owned_targets(store, session, messages, speaker)
     people = []
@@ -116,7 +129,7 @@ def snapshot(store, auth, work):
         people.append({**person, 'source_before': cutoff, 'eligible_turns': eligible, 'entries': entries})
     result = {'conversation_id': work['conversation_id'], 'turn_id': work['turn_id'],
               'epoch': conversation['epoch'], 'consent': consent, 'self_association': speaker,
-              'messages': messages, 'people': people}
+              'messages': messages, 'pending_turns': pending, 'people': people}
     if not people or len(json.dumps(result, ensure_ascii=False).encode()) > 32_000:
         return None
     return result
