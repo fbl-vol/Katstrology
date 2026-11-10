@@ -13,6 +13,7 @@ MAX_BACKLOG = 64
 MAX_OWNER_BACKLOG = 16
 IDLE_SECONDS = 3
 OWNER_INTERVAL_SECONDS = 300
+GLOBAL_INTERVAL_SECONDS = 30
 
 
 class MemoryWork:
@@ -41,16 +42,17 @@ class MemoryWork:
             if counts['total'] >= MAX_BACKLOG or counts['owned'] >= MAX_OWNER_BACKLOG:
                 return  # Backpressure drops optional freshness, never foreground work.
         db.execute('''INSERT INTO memory_work(owner_id,conversation_id,turn_id,
-            consent_version,session_digest,account_binding,capacity)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            consent_version,session_digest,account_binding,model_slug,capacity)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT(owner_id,conversation_id) DO UPDATE SET
               turn_id=excluded.turn_id,consent_version=excluded.consent_version,
               session_digest=excluded.session_digest,account_binding=excluded.account_binding,
-              capacity=excluded.capacity,generation=memory_work.generation+1,
+              model_slug=excluded.model_slug,capacity=excluded.capacity,generation=memory_work.generation+1,
               state=CASE WHEN memory_work.state='running' THEN 'running' ELSE 'pending' END,
               queued_at=clock_timestamp()''',
             (owner, conversation_id, turn_id, consent['version'], origin['session_digest'],
-             origin['admission'].binding, Jsonb(asdict(origin['admission'].capacity))))
+             origin['admission'].binding, origin['admission'].slug,
+             Jsonb(asdict(origin['admission'].capacity))))
 
     def recover_interrupted(self):
         self.store.db.execute('''UPDATE memory_work SET
@@ -62,9 +64,12 @@ class MemoryWork:
         return self.store.db.execute('''SELECT w.*,
             greatest(0,extract(epoch FROM (greatest(
                 w.queued_at + make_interval(secs => %s),
-                coalesce(b.next_attempt_at,w.queued_at))-clock_timestamp()))) AS delay
+                coalesce(b.next_attempt_at,w.queued_at),
+                coalesce((SELECT max(next_attempt_at) FROM memory_budget) -
+                    make_interval(secs => %s),w.queued_at))-clock_timestamp()))) AS delay
             FROM memory_work w LEFT JOIN memory_budget b ON b.owner_id=w.owner_id
-            WHERE w.state='pending' ORDER BY delay,w.queued_at LIMIT 1''', (IDLE_SECONDS,)).fetchone()
+            WHERE w.state='pending' ORDER BY delay,w.queued_at LIMIT 1''',
+            (IDLE_SECONDS, OWNER_INTERVAL_SECONDS - GLOBAL_INTERVAL_SECONDS)).fetchone()
 
     def claim(self, work):
         """Caller validates identity/source first; no provider retry follows this claim."""
@@ -76,7 +81,7 @@ class MemoryWork:
                 (work['owner_id'], work['conversation_id'], work['generation'])).fetchone()
             if not claimed:
                 return False
-            self.store.db.execute('''INSERT INTO memory_budget VALUES
+            self.store.db.execute('''INSERT INTO memory_budget(owner_id,next_attempt_at) VALUES
                 (%s,clock_timestamp()+make_interval(secs => %s))
                 ON CONFLICT(owner_id) DO UPDATE SET next_attempt_at=excluded.next_attempt_at''',
                 (work['owner_id'], OWNER_INTERVAL_SECONDS))

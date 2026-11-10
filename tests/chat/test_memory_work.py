@@ -1,6 +1,7 @@
 """Small durable reference queue, coalescing and no paid-attempt replay."""
 from unittest.mock import patch
 
+from m2.archive.store import Store
 from m2.chat.memory_work import MemoryWork
 from m2.chat.personal_context import set_preference
 from m2.provider.model_capacity import CatalogAdmission, resolve_capacity
@@ -16,8 +17,8 @@ class MemoryWorkTests(DatabaseCase):
             'alice', 'gpt-6-luna', 'synthetic-binding', resolve_capacity({'slug': 'gpt-6-luna'}))}
 
     def complete(self, turn, parent=None):
-        self.store.begin(self.alice, 'thread', turn, 'Frederik enjoys gardening.', parent)
         self.store.memory_origins[('alice', 'thread', turn)] = self.origin
+        self.store.begin(self.alice, 'thread', turn, 'Frederik enjoys gardening.', parent)
         if parent is None:
             self.assertIsNone(self.work.due())
         self.store.append(self.alice, 'thread', turn, 'complete', {})
@@ -52,7 +53,10 @@ class MemoryWorkTests(DatabaseCase):
         work = self.work.due()
         self.assertTrue(self.work.claim(work))
         self.assertFalse(self.work.claim(work))
-        self.work.recover_interrupted()
+        files = self.store.files
+        self.store.close()
+        self.store = Store(self.dsn, files, self.ledger)
+        self.work = MemoryWork(self.store)
         self.assertIsNone(self.work.due())
         row = self.store.db.execute('SELECT state,outcome FROM memory_work').fetchone()
         self.assertEqual(row, {'state': 'idle', 'outcome': 'abandoned'})
@@ -68,6 +72,19 @@ class MemoryWorkTests(DatabaseCase):
         newer = self.work.due()
         self.assertEqual(newer['turn_id'], 'two')
         self.assertGreater(newer['delay'], 290)
+
+    def test_newer_pending_work_survives_real_store_restart_without_replaying_attempt(self):
+        set_preference(self.store, self.alice, True, 0)
+        self.complete('one')
+        self.work.claim(self.work.due())
+        self.complete('two', 'one')
+        files = self.store.files
+        self.store.close()
+        self.store = Store(self.dsn, files, self.ledger)
+        latest = MemoryWork(self.store).due()
+        self.assertEqual((latest['turn_id'], latest['state'], latest['outcome']),
+                         ('two', 'pending', 'abandoned'))
+        self.assertGreater(latest['delay'], 290)
 
     def test_queue_failure_does_not_roll_back_completed_answer(self):
         set_preference(self.store, self.alice, True, 0)

@@ -346,6 +346,8 @@ class Store:
             clock_anchor = snapshot(clock, reporting_zone) if clock is not None else None
             from m2.chat.personal_context import projection
             personal_context = projection(self, session, selection, prompt, clock_anchor)
+            if (owner, conv_id, turn_id) in self.memory_origins:
+                personal_context['collection_mode'] = 'background_v1'
             personal_context['source_epoch'] = self._conversation(owner, conv_id)['epoch']
             tone = None
             if model_provider == 'chatgpt_plan':
@@ -371,6 +373,10 @@ class Store:
                                                    'personal_context': personal_context,
                                                    'revision_kind': revision_kind,
                                                    'replaces_turn_id': replaces_turn_id})))
+            if ((owner, conv_id, turn_id) in self.memory_origins and
+                    personal_context['consent']['enabled']):
+                self.db.execute('''INSERT INTO memory_source_units(owner_id,conversation_id,turn_id)
+                    VALUES (%s,%s,%s)''', (owner, conv_id, turn_id))
             if selected_row:
                 self.db.execute('''
                     INSERT INTO turn_selected_results(owner_id,conversation_id,turn_id,result_id,
