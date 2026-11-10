@@ -73,6 +73,16 @@ class DeliveryReceiptTests(unittest.TestCase):
         report = self.prepare({'status': 'ok'})
         self.assertNotEqual(report['states']['focused-tested']['state'], 'local-reported-pass')
 
+    def test_supporting_lint_or_preparation_evidence_is_bound_but_not_a_pass_claim(self):
+        path = self.root / 'lint.log'
+        path.write_text('All checks passed')
+        record = receipt.prepare(self.root, 'c' * 40, 'synthetic', supporting=[path])
+        self.assertEqual(record['states']['focused-tested']['state'], 'unrun')
+        self.assertEqual(len(list(receipt.evidence_refs(record))), 1)
+        path.write_text('changed')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            receipt.summary(record)
+
     def test_missing_evidence_and_outside_logs_fail_closed(self):
         self.log.unlink()
         with self.assertRaisesRegex(ValueError, 'Missing'):

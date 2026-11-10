@@ -89,7 +89,7 @@ def external_reference(path, kind, source):
     return ref
 
 
-def prepare(repository, base, request, reports=(), external=None, limits=(), selection_notes=()):
+def prepare(repository, base, request, reports=(), external=None, limits=(), selection_notes=(), supporting=()):
     source = source_identity(repository, base)
     runs = [focused(path, repository, source) for path in reports]
     state = ('unrun' if not runs else 'local-reported-pass' if all(
@@ -106,18 +106,20 @@ def prepare(repository, base, request, reports=(), external=None, limits=(), sel
     requests = list(dict.fromkeys([request] if isinstance(request, str) else request))
     return {'contract': 1, 'request': requests[0], 'requests': requests, 'status': 'LOCAL-ONLY HOLD',
             'source': source, 'states': states,
+            'supporting_evidence': [reference(path, 'local-supporting-evidence') for path in supporting],
             'validation_policy': {'local': 'focused-behavior-dependencies-neighbor-regressions',
                 'full_local': 'optional-diagnosis-or-ci-reproduction-not-a-release-prerequisite',
                 'full_ci_native': 'mandatory-when-delivery-authorized',
                 'selection_review': 'independent-review-when-authorized',
                 'selection_notes': list(selection_notes)},
             'limits': ['Independent review, mandatory full PR/main CI/native checks, trust enrollment and deployment held',
-                       'Full local suites unrun and optional, not an automatic release blocker',
+                       'Full local suites are optional, not an automatic release blocker; see actual selection and limits',
                        'Execution reports are unsigned; integrity/source checks are not release attestation',
                        'No measured hosted speedup or active production optimization', *limits]}
 
 
 def evidence_refs(record):
+    yield from record.get('supporting_evidence', [])
     for value in record['states'].values():
         yield from value.get('evidence', [])
         for run in value.get('runs', []):
@@ -158,6 +160,8 @@ def main():
     parser.add_argument('--base')
     parser.add_argument('--request', action='append', help='Approved scope key; repeat for additions')
     parser.add_argument('--focused', type=Path, action='append', default=[])
+    parser.add_argument('--supporting', type=Path, action='append', default=[],
+                        help='Hash-bound lint, selection, offline preparation or other supporting evidence')
     for name in STATES:
         parser.add_argument('--' + name, type=Path, action='append', default=[])
     parser.add_argument('--limit', action='append', default=[])
@@ -171,7 +175,8 @@ def main():
     if not args.base or not args.request:
         parser.error('--base and --request are required for preparation')
     record = prepare(args.repository.resolve(), args.base, args.request, args.focused,
-                     {name: getattr(args, name) for name in STATES}, args.limit, args.selection_note)
+                     {name: getattr(args, name) for name in STATES}, args.limit,
+                     args.selection_note, args.supporting)
     if args.output:
         with args.output.open('x') as output:
             json.dump(record, output, indent=2)
