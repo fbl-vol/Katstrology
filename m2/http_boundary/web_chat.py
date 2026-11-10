@@ -25,6 +25,15 @@ def _cursor(value):
 
 
 async def send(request):
+    memory = request.app.state.runtime.memory
+    memory.foreground_enter()
+    try:
+        return await _send(request)
+    finally:
+        memory.foreground_leave()
+
+
+async def _send(request):
     session = await authorized(request, mutate=True, fast=True)
     payload = await json_body(request, max_bytes=MAX_TEXT_JSON)
     required = {'id', 'text', 'selected_people', 'parent', 'revision_kind', 'replaces_turn_id'}

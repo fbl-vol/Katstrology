@@ -176,6 +176,8 @@ class ChatJobs:
                     pass
 
         job.finish(status)
+        if self.runtime.memory:
+            self.runtime.memory.notify()
         if (status == 'complete' and mode == 'chatgpt' and archived_selection is None
                 and not request.startswith((CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX))):
             self.runtime.spawn(self._title(session, job.conversation_id, job.turn_id))

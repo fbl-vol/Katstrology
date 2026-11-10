@@ -16,7 +16,7 @@ from tests.support.database import DatabaseCase, synthetic_web_dist
 from m2.http_boundary.app import create_app
 
 
-class ChatHttpTests(DatabaseCase):
+class ChatHttpFixture(DatabaseCase):
     def setUp(self):
         super().setUp()
         self.directory_http = TemporaryDirectory(prefix='kat-chat-http-')
@@ -62,6 +62,8 @@ class ChatHttpTests(DatabaseCase):
     def responses(self):
         return [call for call in self.transport.calls if call[0] == 'responses']
 
+
+class ChatHttpTests(ChatHttpFixture):
     def test_committed_ack_reconnect_cursor_retry_and_owner_scope(self):
         created = self.post('/api/conversations', {'id': 'thread', 'title': 'Synthetic thread', 'people': []})
         self.assertEqual(created.status_code, 201)
