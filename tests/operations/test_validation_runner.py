@@ -321,8 +321,14 @@ raise SystemExit(main())
                 redirect_stdout(stdout), redirect_stderr(stderr):
             self.assertEqual(validate.main(), 1)
         report = json.loads(stdout.getvalue())
-        # Remove only this test's freshly owned, empty output directory.
-        (ROOT / report['logs_dir']).rmdir()
+        # The runner now preserves identity evidence even when execution fails.
+        # Inspect/remove only this test's known artifact; unexpected files still fail.
+        out = ROOT / report['logs_dir']
+        identity = out / 'fixture-identity.json'
+        self.assertEqual(json.loads(identity.read_text()), {
+            'container_id': 'owned-id', 'name': 'owned-name', 'port': 1})
+        identity.unlink()
+        out.rmdir()
         public = json.loads(stderr.getvalue().split('kat validation stopped: ', 1)[1])
         self.assertEqual(public['unrun'], ['browser'])
         self.assertEqual(public['fixture_cleanup'], 'owned-container-removed')

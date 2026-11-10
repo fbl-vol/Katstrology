@@ -23,6 +23,31 @@ def workflow(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_lane_setup_covers_host_smoke_and_backend_playwright_dependencies(self):
+        setup = yaml.load((ROOT / '.github/actions/qualification-setup/action.yml').read_text(),
+                          Loader=yaml.BaseLoader)
+        def enabled(step, lane):
+            condition = step.get('if')
+            if condition is None:
+                return True
+            if condition == "inputs.lane != 'native'":
+                return lane != 'native'
+            if condition == "inputs.lane == 'browser' || inputs.lane == 'interaction'":
+                return lane in ('browser', 'interaction')
+            self.fail('Unexamined dependency condition: ' + condition)
+        for lane in ('backend', 'browser', 'interaction', 'native'):
+            steps = [step for step in setup['runs']['steps'] if enabled(step, lane)]
+            commands = '\n'.join(step.get('run', '') for step in steps)
+            with self.subTest(lane=lane):
+                self.assertIn('pip install -r probes/requirements-swiss.txt', commands)
+                self.assertEqual('npm ci --prefix web' in commands, lane != 'native')
+                self.assertEqual(any(step.get('uses', '').startswith('actions/setup-node@')
+                                     for step in steps), lane != 'native')
+                self.assertEqual('playwright install --with-deps chromium' in commands,
+                                 lane in ('browser', 'interaction'))
+                self.assertEqual('deploy.prepare_ci_inputs' in commands, lane != 'native')
+                self.assertNotIn('actions/cache@', str(steps))
+
     def test_parallel_qualification_requires_every_lane_before_candidate_upload(self):
         document = workflow('qualify.yml')
         jobs = document['jobs']
