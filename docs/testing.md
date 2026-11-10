@@ -50,6 +50,16 @@ qualification copy at the exact committed head rather than overwrite old images.
 Keep the same whole-invocation lock and ownership rules; never use another reviewer's
 clone. A prior receipt does not qualify a later policy-only or corrective commit.
 
+Automatic-memory regressions live in `tests/chat/test_memory_*.py`.
+`test_memory_transport` runs real browser-API/runtime/Store orchestration and the
+public Responses serializer/status/SSE parser against a strict `httpx.MockTransport`,
+not a real-provider exchange. It checks same-group milestones, coalesced questions,
+owner cooldown, preclaim credential contention, rejection/no retry and original-source
+Context publication. Work/evidence suites cover durable range consumption, legacy NULL,
+exact nullable migration, bounded qualifier gaps and queue fairness. Pair changes with
+identity, suppression, manual-edit and restore neighbors. Fake interpretation is not
+evidence of real-model extraction quality or an unidentified private incident's cause.
+
 For provider continuation use the repository
 [regression selector](../.agents/skills/kat-provider-continuation-regression/SKILL.md).
 For UI changes inspect actual desktop/mobile/short-height renders as described in

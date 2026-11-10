@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from m2.chat.memory_apply import apply
 from m2.chat.memory_evidence import snapshot
 from m2.chat.memory_provider import analyze
-from m2.chat.memory_work import IDLE_SECONDS, MemoryWork
+from m2.chat.memory_work import GLOBAL_INTERVAL_SECONDS, IDLE_SECONDS, MemoryWork
+from m2.provider.siwc import ProviderFailure
 
 
 class MemoryJobs:
@@ -70,7 +71,19 @@ class MemoryJobs:
                     return None
                 return evidence
 
-            evidence = await self.runtime.execute(prepare)
+            try:
+                evidence = await self.runtime.execute(prepare)
+            except ProviderFailure as failure:
+                # This availability failure is raised before claim/network. Leave
+                # the pending generation and paid-attempt budget untouched. The
+                # same exception after claim remains terminal below, never retried.
+                if failure.reason != 'background_capacity_unavailable':
+                    raise
+                # Rotate the queue position so one expired/unavailable account
+                # cannot indefinitely starve other owners' ready work.
+                await self.runtime.execute(lambda: MemoryWork(self.runtime.store).defer(work))
+                next_delay = GLOBAL_INTERVAL_SECONDS
+                return
             if evidence is None:
                 await self._finish(work, 'ineligible')
                 next_delay = IDLE_SECONDS

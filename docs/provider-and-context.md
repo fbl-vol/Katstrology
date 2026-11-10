@@ -146,8 +146,14 @@ Evidence is limited to eight recent original user messages (24 KB total, 8 KB ea
 eight eligible owned people, 32 active entries per person and a 32 KB snapshot.
 Excess targets or existing-entry counts cause omission, not blind insertion without
 comparing prior records. There is no journal scan, archive sweep or historical backfill.
-At least one accepted statement must come from the newest completed turn. The model
-selects up to four semantic add/merge/replace actions; the server constructs prose from
+A durable pending-source watermark retains unprocessed facts when later questions
+coalesce into the same job. At least one accepted statement must come from that bounded
+pending range; older context alone cannot authorize an action. A NULL legacy watermark
+is newest-only. Oversized, revised or otherwise unsupported intermediate inputs stop
+the eligible suffix: older facts cannot cross a hidden qualifier/retraction.
+The model selects up to four semantic add/merge/replace actions, including distinct
+facts in the same group; repeated ADD facts or duplicate update targets reject the
+batch. Each ADD has a source-specific operation identity. The server constructs prose from
 complete literal user sentences and validates identity, versions and provenance.
 For associated self, established server-owned assertion clauses can precede a question
 or form a compound sentence. The full original message remains available for assertion
@@ -157,7 +163,7 @@ Inactive/source-invalidated rows neither consume the active inventory allowance 
 suppress fresh duplicates. New original evidence may establish a new entry without
 reactivating the old record or importing its withdrawn sources.
 Complementary evidence can merge under a stable entry ID; unchanged proposals are
-no-ops. Manual entries cannot be replaced automatically. Semantic attribution remains
+no-ops. Manual entries cannot be replaced or merged automatically. Semantic attribution remains
 fallible; tests do not establish real-model extraction quality.
 
 Snapshots fence owner/session, connected account, consent/self-association generation,
@@ -167,10 +173,17 @@ invalidate results. Merged entries retain constituent source references. An owne
 context revision invalidates cached summaries after a committed automatic update.
 
 The queue coalesces by conversation (64 total/16 per owner), waits three idle seconds,
-and spaces attempts by 300 seconds per owner and 30 seconds globally. A marked running
-attempt abandoned by restart is not retried; genuinely newer queued work remains.
-Migrations 033–036 add separate tables without changing retained-table schemas or
-widening release authority.
+and spaces attempts by 300 seconds per owner and 30 seconds globally. Known preclaim
+credential unavailability requeues behind other work and schedules a 30-second idle
+recheck without consuming a generation or paid-attempt budget; it never refreshes
+credentials itself.
+Claim durably consumes the observed source range before a possible request. A marked
+running attempt abandoned by restart or an ambiguous paid failure is not retried;
+genuinely newer queued work remains. Only a known unapplied/fenced result can retain
+the old range for an already-newer generation, never for the same attempt.
+Migrations 033–036 add separate tables. Migration 037 adds nullable
+`memory_work.pending_source_unit`, without a default or backfill. Native exact-lane
+enrollment and preservation checks remain required; source preparation is not enrollment.
 
 Deleting a Context entry records a conservative per-person cutoff in the independent
 deletion journal: **all original input units already recorded at that time** become

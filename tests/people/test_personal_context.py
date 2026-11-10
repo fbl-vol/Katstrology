@@ -86,21 +86,21 @@ class PersonalContextTests(DatabaseCase):
         for query in ('precision', 'month', 'start', 'end', 'text', 'unknown'):
             self.assertEqual(self.context.list(self.alice, 'one', query=query)['counts'], {}, query)
 
-    def test_schema24_to36_preserves_existing_people_in_additive_lane(self):
+    def test_schema24_to37_preserves_existing_people_in_additive_lane(self):
         self.store.create_conversation(self.alice, 'retained')
         self.store.close()
         with psycopg.connect(self.dsn) as db:
             remove_personal_context_schema(db)
         migrations = Path(__file__).resolve().parents[2] / 'm2/migrations'
         paths = [path for path in sorted(migrations.glob('*.sql')) if int(path.name.split('_')[0]) >= 25]
-        lane = {'from': 24, 'to': 36,
+        lane = {'from': 24, 'to': 37,
                 'migrations': {path.name: sha256(path.read_bytes()).hexdigest() for path in paths},
                 'added_tables': ['personal_context', 'personal_context_actions', 'personal_details',
                                  'person_links', 'personal_profile_actions', 'context_update_stages',
                                  'personal_context_consent', 'personal_context_self',
                                  'memory_work', 'memory_budget', 'memory_source_units',
                                  'memory_source_suppressions'], 'added_columns': {}}
-        self.assertEqual(migrate(self.dsn, lane), {'schema': 36, 'status': 'migrated'})
+        self.assertEqual(migrate(self.dsn, lane), {'schema': 37, 'status': 'migrated'})
         with psycopg.connect(self.dsn) as db:
             self.assertEqual(db.execute('SELECT count(*) FROM people').fetchone(), (2,))
             self.assertEqual(db.execute('SELECT id FROM conversations').fetchall(), [('retained',)])
