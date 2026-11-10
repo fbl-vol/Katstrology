@@ -3,14 +3,25 @@
 [Documentation index](README.md) · [Review readiness and delivery ordering](delivery-workflow.md)
 
 Run from the repository root with existing locked dependencies and public test
-inputs. Planning does not start containers or build assets. Execution is for
-explicitly authorized local synthetic work only:
+inputs. Choose local checks by changed behavior, dependencies and neighboring
+regressions, with relevant lint/typecheck and affected UI checks. Record selection
+rationale/results/unrun limits; independent reviewers assess sufficiency when
+authorized. Broaden relevant selection for shared provider, persistence, security
+or migration changes without automatically choosing every suite. Full PR/main CI
+inventories, all lanes and native source/image/migration/preservation checks remain
+mandatory when delivery is authorized. Full local suites are optional diagnosis/CI
+reproduction, **not** automatic pre-review or final-release prerequisites.
+
+Planning does not start containers or build assets. Plan the identical selection,
+read `budget.recommended_outer_seconds` and allow that timeout plus any bounded
+lock wait. Execution is for explicitly authorized local synthetic work only:
 
 ```sh
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile all
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile all --execute
+python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile backend --tests tests.chat.test_agent_reads
 python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile backend --tests tests.chat.test_agent_reads --execute
-python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profiles browser siwc clock --execute
+python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profiles browser siwc --browser-grep 'affected shared behavior' --execute
+# Optional broad diagnosis/CI reproduction: plan first; execute only when selected/authorized.
+python3 .agents/skills/kat-isolated-validation/scripts/validate.py --profile all
 ```
 
 `--help` lists selectors. Profiles run sequentially in one owned invocation:

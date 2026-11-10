@@ -89,7 +89,7 @@ def external_reference(path, kind, source):
     return ref
 
 
-def prepare(repository, base, request, reports=(), external=None, limits=()):
+def prepare(repository, base, request, reports=(), external=None, limits=(), selection_notes=()):
     source = source_identity(repository, base)
     runs = [focused(path, repository, source) for path in reports]
     state = ('unrun' if not runs else 'local-reported-pass' if all(
@@ -103,9 +103,16 @@ def prepare(repository, base, request, reports=(), external=None, limits=()):
                         'evidence': [external_reference(path, name, source) for path in paths]}
     if source_identity(repository, base) != source:
         raise ValueError('Source changed while collecting evidence')
-    return {'contract': 1, 'request': request, 'status': 'LOCAL-ONLY HOLD',
+    requests = list(dict.fromkeys([request] if isinstance(request, str) else request))
+    return {'contract': 1, 'request': requests[0], 'requests': requests, 'status': 'LOCAL-ONLY HOLD',
             'source': source, 'states': states,
-            'limits': ['Independent review, full qualification, hosted CI, trust enrollment and deployment held',
+            'validation_policy': {'local': 'focused-behavior-dependencies-neighbor-regressions',
+                'full_local': 'optional-diagnosis-or-ci-reproduction-not-a-release-prerequisite',
+                'full_ci_native': 'mandatory-when-delivery-authorized',
+                'selection_review': 'independent-review-when-authorized',
+                'selection_notes': list(selection_notes)},
+            'limits': ['Independent review, mandatory full PR/main CI/native checks, trust enrollment and deployment held',
+                       'Full local suites unrun and optional, not an automatic release blocker',
                        'Execution reports are unsigned; integrity/source checks are not release attestation',
                        'No measured hosted speedup or active production optimization', *limits]}
 
@@ -136,7 +143,7 @@ def summary(record):
     counts = [result['tests_run'] for run in states['focused-tested'].get('runs', [])
               for result in run.get('results', {}).values() if result.get('tests_run') is not None]
     return '\n'.join([
-        f"{record['status']} — {record['request']}",
+        f"{record['status']} — {', '.join(record.get('requests', [record['request']]))}",
         f"Source {source['commit'][:12]} / tree {source['tree'][:12]}; diff SHA256 {source['diff_sha256']}",
         f"Implemented: {states['implemented']['state']}; focused tests: {states['focused-tested']['state']}"
         + (f" ({sum(counts)} reported backend tests)." if counts else '.'),
@@ -149,11 +156,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repository', type=Path, default=ROOT)
     parser.add_argument('--base')
-    parser.add_argument('--request')
+    parser.add_argument('--request', action='append', help='Approved scope key; repeat for additions')
     parser.add_argument('--focused', type=Path, action='append', default=[])
     for name in STATES:
         parser.add_argument('--' + name, type=Path, action='append', default=[])
     parser.add_argument('--limit', action='append', default=[])
+    parser.add_argument('--selection-note', action='append', default=[], help='Behavior/dependency/risk rationale, not proof')
     parser.add_argument('--output', type=Path, help='Exclusively create local record; no pipelines run')
     parser.add_argument('--summary', type=Path, help='Verify frozen evidence and summarize an existing record')
     args = parser.parse_args()
@@ -163,7 +171,7 @@ def main():
     if not args.base or not args.request:
         parser.error('--base and --request are required for preparation')
     record = prepare(args.repository.resolve(), args.base, args.request, args.focused,
-                     {name: getattr(args, name) for name in STATES}, args.limit)
+                     {name: getattr(args, name) for name in STATES}, args.limit, args.selection_note)
     if args.output:
         with args.output.open('x') as output:
             json.dump(record, output, indent=2)

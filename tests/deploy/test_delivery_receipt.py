@@ -80,6 +80,18 @@ class DeliveryReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'owned evidence'):
             self.prepare(report)
 
+    def test_focused_local_policy_records_addition_without_scheduling_full_suites(self):
+        with patch.object(receipt.subprocess, 'run', side_effect=AssertionError('pipeline invoked')):
+            record = receipt.prepare(self.root, 'c' * 40, ['original', 'addition'],
+                                     selection_notes=['Schema grammar and adjacent preservation checks'])
+        self.assertEqual(record['requests'], ['original', 'addition'])
+        self.assertEqual(record['validation_policy']['full_ci_native'], 'mandatory-when-delivery-authorized')
+        self.assertEqual(record['validation_policy']['full_local'],
+                         'optional-diagnosis-or-ci-reproduction-not-a-release-prerequisite')
+        self.assertEqual(record['validation_policy']['selection_notes'],
+                         ['Schema grammar and adjacent preservation checks'])
+        self.assertEqual(record['states']['qualified']['state'], 'held-unrun')
+
     def test_collection_is_read_only_and_source_change_during_collection_refuses(self):
         self.path.write_text(json.dumps(self.report))
         before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}

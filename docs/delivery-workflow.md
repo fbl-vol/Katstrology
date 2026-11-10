@@ -8,27 +8,36 @@ access. Do not start pipelines to prove compliance with a local-only task.
 
 ## Order work by feedback value
 
-1. Implement a coherent batch with focused consequential regressions. Commit the
-   review candidate; record actual selectors/results and remaining limits. Resolve
-   ordinary failures locally. Do not rebuild a native image after each todo.
-2. Investigate migration and immutable workflow-pin prerequisites early, using
+1. Implement a coherent batch. Select local checks by **changed behavior, its
+   dependencies and neighboring regressions**, not just changed filenames or the
+   cheapest tests. Include relevant lint/typecheck and affected UI interactions,
+   renders/accessibility/performance. Shared provider, persistence, security and
+   migration changes deserve broader relevant selection, not a blanket `all`.
+   Record why the selection covers the risk, actual selectors/results and unrun
+   limits. Resolve ordinary failures and commit the review candidate.
+2. Investigate migration and immutable workflow-pin prerequisites early using
    public/supplied artifacts offline. Prepare exact manifests; identify missing
    installed witnesses without pretending that preparation activates anything.
-3. Send committed source and focused evidence for independent review when review
-   is authorized. Selected corrections get focused checks and same-cycle bounded
-   re-verification. Review-ready does **not** mean release-qualified.
-4. On the final reviewed candidate, run the complete required local acceptance
-   once: full regressions, affected exact-tip renders/performance and native
-   package/recovery qualification. A later fix requires applicable requalification
-   and review; never borrow old-tip receipts or omit required acceptance.
-5. Only with delivery authority and cleared security/migration/trust prerequisites:
-   publication audit, one PR, fresh required PR CI, protected merge, fresh main CI,
-   native completion and serving verification. Required hosted checks are not
-   replaced by local evidence or a prior PR artifact. Preserve failures/halts.
+3. When authorized, independent reviewers evaluate both the change and sufficiency
+   of the selected checks. Corrections receive focused fix/neighbor checks and
+   bounded re-verification at the actual corrected tip. Review-ready does **not**
+   mean release-qualified. Do not borrow old-tip evidence.
+4. Only with later delivery authority and cleared security/migration/trust
+   prerequisites: publication audit, one PR, **mandatory full PR CI**, protected
+   merge, **mandatory full main CI/native checks**, native completion and serving
+   verification. Preserve all inventories/lanes, exact source/image identities,
+   migration/preservation guards and failure/halt evidence. Local results and prior
+   PR artifacts never replace those checks.
+
+Full local suites remain explicitly available for broad diagnosis or CI
+reproduction. They are **not an automatic pre-review or final-release
+prerequisite**. There is no automatic test-impact framework or additional gate.
+This focused-local/full-CI policy supersedes the earlier final full local sweep.
 
 During a local-only hold, stop after implementation, focused checks and self-review.
-List independent review, full qualification, hosted execution, enrollment and
-release as held/unrun. Do not convert the hold into another approval question.
+List independent review, full CI/native qualification, enrollment and release as
+held/unrun; list full local suites as unrun/optional, not a shipping blocker.
+Do not convert the hold into another approval question.
 
 ## Parallel CI is an immutable authority chain
 
@@ -81,6 +90,10 @@ identity/integrity, not the truth of arbitrary JSON. Unsupported, missing, forei
 failed and merely reported evidence remain explicitly distinct. Independent review
 and external enrollment/native results retain their producer/provenance and do not
 become self-certified by importing a file.
+
+The local receipt records selectors, selection rationale and unrun limits; a
+focused local pass does not imply the mandatory full CI/native qualification ran.
+Its external-state references cannot turn a claimed JSON success into proof.
 
 Keep one registered recovery checkpoint with only request/scope, current state,
 remaining action and the receipt path. Preserve old artifacts instead of copying

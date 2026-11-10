@@ -1,6 +1,6 @@
 # Kat workspace routing
 
-For review readiness, final qualification ordering, early release prerequisites and short evidence handoffs, follow `docs/delivery-workflow.md`. Explicit local-only/user holds take precedence over autonomous delivery.
+Follow `docs/delivery-workflow.md`: behavior/dependency/neighbor-focused local checks and relevant lint/typecheck/UI evidence, authorized independent review and focused corrections, then mandatory full PR/main CI/native checks when delivery is authorized. Full local suites are optional diagnosis/CI reproduction, not automatic pre-review or release prerequisites. Reviewers assess selection sufficiency. Explicit local-only/user holds take precedence over autonomous delivery.
 
 Before non-trivial implementation or review, follow the central engineering knowledge consultation workflow in `~/repos/engineering-knowledge/AGENTS.md`. This checkout's scripts and skills are local, not global agent settings.
 
