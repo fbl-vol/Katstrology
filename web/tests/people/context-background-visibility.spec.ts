@@ -10,7 +10,7 @@ for (const viewport of [
   mkdirSync(renders, { recursive: true });
   await page.setViewportSize(viewport);
   await page.goto('/');
-  await page.getByLabel('Username').fill(`reader-memory-${viewport.name}`);
+  await page.getByLabel('Username').fill(`reader-memory-visibility-${viewport.name}`);
   await page.getByLabel('Password').fill('synthetic-browser-password');
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await expect(page.getByRole('heading', { name: 'What’s on your mind?' })).toBeVisible();

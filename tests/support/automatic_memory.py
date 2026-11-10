@@ -9,7 +9,7 @@ from m2.provider.model_capacity import CatalogAdmission, resolve_capacity
 
 
 def seed_memory_views(store):
-    for view in ('desktop', 'mobile', 'short-mobile', 'reflow'):
+    for view in ('desktop', 'mobile', 'short-mobile', 'reflow', 'visibility-desktop', 'visibility-mobile'):
         owner = 'reader-memory-' + view
         store.register_local(owner, 'synthetic-browser-password')
         session = store.authenticate(owner, 'synthetic-browser-password')
