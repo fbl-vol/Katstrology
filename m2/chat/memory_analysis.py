@@ -141,10 +141,13 @@ def candidates(evidence, output):
             raise ValueError('Historical evidence alone cannot publish new facts')
         prior = references(old['source']) if old and intent == 'merge' else []
         sources, statements = list(prior), [item['statement'] for item in prior if item.get('statement')]
+        pending_sources = []
         for span in spans:
             source, identity = _statement(action, span, messages, person, list(people.values()),
                                           evidence['self_association'])
             sources.append(source)
+            if source['turn_id'] in evidence['pending_turns']:
+                pending_sources.append(source)
             statements.append(source['statement'])
             if action['attribution'] == 'reference':
                 sources.append({**identity, 'statement': ''})  # Attribution, not additional fact prose.
@@ -177,9 +180,9 @@ def candidates(evidence, output):
         if target in targets:
             raise ValueError('One coherent action per target')
         targets.add(target)
-        newest = max((item for item in sources
-                      if item['turn_id'] in evidence['pending_turns'] and item.get('statement')),
-                     key=lambda item: item['source_unit'])
+        # Prior merge sources may reuse a turn ID in another conversation. Only
+        # this action's validated pending statements can anchor the new result.
+        newest = max(pending_sources, key=lambda item: item['source_unit'])
         source = {**newest, 'sources': sources}
         if action['attribution'] == 'self':
             source['self_association'] = evidence['self_association']

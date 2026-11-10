@@ -52,6 +52,19 @@ class MemoryAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'One coherent action per target'):
             candidates(self.evidence, json.dumps({'actions': [self.action, self.action]}))
 
+    def test_merge_anchor_is_pending_source_not_same_turn_id_in_another_conversation(self):
+        self.existing()
+        prior = self.evidence['people'][0]['entries'][0]['source']
+        prior.update(conversation_id='other', turn_id='new', source_unit=99)
+        prior['sources'][0].update(conversation_id='other', turn_id='new', source_unit=99)
+        text = 'Frederik grows tomatoes too.'
+        self.evidence['messages'][0]['text'] = text
+        self.action.update(intent='merge', entry_id='stable', expected_version=3,
+                           statements=[self.span('new', text)])
+        source = self.parse()[0]['source']
+        self.assertEqual((source['conversation_id'], source['source_unit']), ('thread', 2))
+        self.assertEqual({item['source_unit'] for item in source['sources']}, {2, 99})
+
     def test_nonpending_history_cannot_be_promoted_by_model_assertion(self):
         self.evidence['pending_turns'] = []
         with self.assertRaisesRegex(ValueError, 'Historical evidence alone'):
