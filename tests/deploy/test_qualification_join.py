@@ -1,9 +1,12 @@
 """Offline joins use native-shaped inventories and a real synthetic OCI/source package."""
+from contextlib import chdir, redirect_stdout
 from copy import deepcopy
+import io
 import json
 import os
 import glob
 import shutil
+import shlex
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -129,7 +132,24 @@ class QualificationJoinTests(unittest.TestCase):
         joined_receipt = self.root / join.split('--receipt ', 1)[1].split()[0]
         self.assertTrue(joined_receipt.is_file(), 'Native upload root must match the actual join receipt path')
         before = {member.name: evidence.digest(member) for member in members}
-        witness = evidence.assemble(self.paths, self.identity, self.full, joined_receipt, self.root / 'joined')
+        # Exercise the real workflow CLI with its relative arguments, not only
+        # the lower-level assembler with an absolute receipt supplied by the test.
+        argv = shlex.split(join)
+        self.assertEqual(argv[:3], ['python', '-m', 'deploy.qualify'])
+        shutil.copytree(self.root / 'lanes', self.root / argv[argv.index('--join') + 1])
+        discovery_report = self.synthetic(('browser',)) | {'inventory_only': True}
+        def discover(*args, **kwargs):
+            self.assertEqual(args[2:], ('--profile', 'browser', '--inventory-only', '--execute'))
+            kwargs['output'].write(json.dumps(discovery_report))
+        stdout = io.StringIO()
+        with chdir(self.root), patch.object(qualify, 'ROOT', self.root), \
+                patch.object(qualify, 'identity', return_value=self.identity), \
+                patch.object(qualify, 'run', side_effect=discover), \
+                patch('sys.argv', ['deploy.qualify', *argv[3:]]), redirect_stdout(stdout):
+            qualify.main()
+        self.assertEqual(json.loads(stdout.getvalue()), {
+            'status': 'qualified', 'package': '.local/ci-native', 'commit': self.identity['commit']})
+        witness = read_json(joined_receipt.with_name('qualification.json'))
         self.assertEqual(before, {name: evidence.digest(destination / name) for name in before})
         final = next(step for step in candidate if step.get('id') == 'upload')
         self.assertTrue(all((self.root / name).is_file() for name in final['with']['path'].splitlines()))

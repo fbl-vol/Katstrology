@@ -131,7 +131,7 @@ def join(evidence, receipt):
     assemble(sorted(evidence.glob('*/evidence.json')), source,
              discovered['results']['browser']['inventory'], receipt,
              ROOT / '.local/release-qualification' / source['commit'])
-    print(json.dumps({'status': 'qualified', 'package': str(receipt.parent.relative_to(ROOT)),
+    print(json.dumps({'status': 'qualified', 'package': str(receipt.parent.resolve().relative_to(ROOT)),
                       'commit': source['commit']}))
 
 
