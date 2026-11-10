@@ -1,6 +1,6 @@
 # Synthetic validation
 
-[Documentation index](README.md)
+[Documentation index](README.md) · [Review readiness and delivery ordering](delivery-workflow.md)
 
 Run from the repository root with existing locked dependencies and public test
 inputs. Planning does not start containers or build assets. Execution is for

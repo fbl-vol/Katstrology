@@ -67,10 +67,10 @@ class WorkflowContractTests(unittest.TestCase):
         # Deliberate authority pins, not history lookups: hosted checkout is shallow.
         self.assertEqual(jobs['release']['uses'],
             'fbl-vol/Katstrology/.github/workflows/trusted-release.yml@'
-            'c31e7dd8fa3becd61851647a3158c95172e68eb5')
+            'f64fb6dcbd104cff83219827dce5eef849fde89b')
         self.assertEqual(jobs['validate']['uses'],
             'fbl-vol/Katstrology/.github/workflows/qualify.yml@'
-            'c4310ac296fade23959efccbe340afb0239d0bb5')
+            'f64fb6dcbd104cff83219827dce5eef849fde89b')
         self.assertNotIn('secrets', jobs['validate'])
         self.assertNotIn('environment', jobs['release'])
 
@@ -82,6 +82,9 @@ class WorkflowContractTests(unittest.TestCase):
         for secret in secrets.values():
             self.assertEqual(secret['required'], 'true')
         jobs = trusted['jobs']
+        # Relative nested reference resolves at the immutable caller-selected signer,
+        # not at candidate HEAD or the previous serial signer revision.
+        self.assertEqual(jobs['qualify']['uses'], './.github/workflows/qualify.yml')
         self.assertEqual(jobs['deploy']['environment'], 'kat-production')
         self.assertEqual(jobs['deploy']['permissions'], {'contents': 'read'})
         self.assertEqual(jobs['qualify']['permissions'], {'contents': 'read'})

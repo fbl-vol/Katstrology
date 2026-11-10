@@ -1,5 +1,7 @@
 # Kat workspace routing
 
+For review readiness, final qualification ordering, early release prerequisites and short evidence handoffs, follow `docs/delivery-workflow.md`. Explicit local-only/user holds take precedence over autonomous delivery.
+
 Before non-trivial implementation or review, follow the central engineering knowledge consultation workflow in `~/repos/engineering-knowledge/AGENTS.md`. This checkout's scripts and skills are local, not global agent settings.
 
 For UI, interaction, user-facing copy and perceived-performance work, read `.local/UX-MANIFEST.md` when present. It records the user's local UX direction for already-authorized changes; it does not expand feature, data-access, review or runtime authority.
