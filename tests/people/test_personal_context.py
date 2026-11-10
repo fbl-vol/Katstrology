@@ -154,7 +154,8 @@ class PersonalContextTests(DatabaseCase):
         set_association(self.store, self.alice, 'one', 0)
         snapshot = Path(self.directory.name) / 'context-snapshot'
         backup(self.store, snapshot)
-        set_association(self.store, self.alice, None, 1)
+        from tests.support.self_association import legacy_association
+        legacy_association(self.store, self.alice, None)
         set_preference(self.store, self.alice, False, 1)
         self.context.remove(self.alice, 'one', 'entry', 1)
         target = 'kat_person_restore_' + uuid4().hex[:12]
@@ -168,6 +169,8 @@ class PersonalContextTests(DatabaseCase):
             self.assertEqual(PersonalContext(restored).list(session, 'one')['entries'], [])
             self.assertEqual(preference(restored, session), {'enabled': False, 'version': 2})
             self.assertEqual(association(restored, session), {'person_id': None, 'version': 2})
+            with self.assertRaises(ContextConflict):
+                set_association(restored, session, 'one', 2)
             with self.assertRaises(ContextConflict):
                 PersonalContext(restored).save(session, 'one', 'entry', 'retry', 0, fact())
         finally:

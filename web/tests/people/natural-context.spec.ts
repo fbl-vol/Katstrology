@@ -40,55 +40,25 @@ for (const viewport of [
   await expect(self.getByRole('status')).toBeVisible();
   await capture('association-loading');
   release();
-  await expect(self.getByText('No self association saved.')).toBeVisible();
+  await expect(self.getByText('Saved association:', { exact: false })).toBeVisible();
   const consent = page.getByRole('checkbox', { name: 'Use and collect personal context automatically' });
   await expect(consent).not.toBeChecked();
   const denied = await page.request.post('/api/personal-context-self', { data: { person_id: 'casey', expected_version: 2 } });
   expect(denied.status()).toBe(403);
-  expect((await (await page.request.get('/api/personal-context-self')).json()).person_id).toBeNull();
+  expect((await (await page.request.get('/api/personal-context-self')).json()).person_id).toBe('casey');
   await capture('consent-off');
-  await self.getByRole('button', { name: 'Choose who is me' }).click();
-  const picker = self.getByRole('combobox', { name: 'Person', exact: true });
-  await expect(picker.locator('option')).toHaveCount(3);
-  const labels = await picker.locator('option').allTextContents();
-  expect(labels[1]).not.toBe(labels[2]);
-  await picker.selectOption('casey');
-  await picker.focus();
-  await page.keyboard.press('Tab');
-  await expect(self.getByRole('button', { name: 'Use this person as me' })).toBeFocused();
-  await capture('keyboard-choice');
-  let fail = true;
-  await page.route('**/api/personal-context-self', async route => {
-    if (route.request().method() === 'POST' && fail) {
-      fail = false; await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
-    } else await route.continue();
-  });
-  await self.getByRole('button', { name: 'Use this person as me' }).press('Enter');
-  await expect(self.getByRole('alert')).toContainText('change was not confirmed');
-  await expect(self.getByRole('button', { name: 'Use this person as me' })).toBeDisabled();
-  await self.getByRole('alert').scrollIntoViewIfNeeded();
-  await capture('association-failure');
-  await self.getByRole('button', { name: 'Refresh association' }).scrollIntoViewIfNeeded();
-  await capture('association-failure-recovery');
-  await self.getByRole('button', { name: 'Refresh association' }).click();
-  await self.getByRole('button', { name: 'Choose who is me' }).click();
-  await picker.selectOption('casey');
-  await self.getByRole('button', { name: 'Use this person as me' }).click();
-  await expect(self.getByText('Saved association: Casey')).toBeVisible();
+  // This seeded historical account retains its existing choice; first-choice and
+  // uncertain acknowledgement recovery are exercised in self-label.spec.ts.
   await expect(consent).not.toBeChecked();
   await consent.check();
   await expect(consent).toBeChecked();
   expect((await (await page.request.get('/api/personal-context-self')).json()).person_id).toBe('casey');
   await capture('association-saved');
-  await self.getByRole('button', { name: 'Change who is me' }).click();
-  await picker.selectOption('other');
-  await self.getByRole('button', { name: 'Use this person as me' }).click();
-  await expect(self.getByRole('button', { name: 'Clear self association' })).toBeEnabled();
-  expect((await (await page.request.get('/api/personal-context-self')).json()).person_id).toBe('other');
-  await self.getByRole('button', { name: 'Clear self association' }).click();
-  await expect(self.getByText('No self association saved.')).toBeVisible();
+  await expect(self.getByRole('button', { name: /Change who is me|Clear self association|Choose who is me/ })).toHaveCount(0);
+  await expect(self).toContainText('choice cannot be switched');
+  expect((await (await page.request.get('/api/personal-context-self')).json()).person_id).toBe('casey');
   await expect(consent).toBeChecked();
-  await capture('association-cleared');
+  await capture('association-one-time');
   await page.getByRole('button', { name: 'Close settings panel' }).click();
   await page.getByRole('button', { name: 'Back to workspace' }).click();
   for (const state of ['omitted', 'rejected', 'failure', 'conflict', 'discarded', 'saved']) {

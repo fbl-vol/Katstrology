@@ -54,7 +54,8 @@ def original_messages(store, session, conversation_id, turn_id, consent):
         size += length
         messages.append({'conversation_id': conversation_id, 'turn_id': row['id'],
                          'source_unit': row['source_unit'], 'text': text,
-                         'clock_anchor': payload.get('clock_anchor')})
+                         'clock_anchor': payload.get('clock_anchor'),
+                         'self_association': payload.get('personal_context', {}).get('self_association')})
     return list(reversed(messages))
 
 

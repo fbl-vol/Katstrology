@@ -40,7 +40,7 @@ for (const viewport of [
     await openPanel();
   }
   async function capture(state: string) {
-    await saved.scrollIntoViewIfNeeded();
+    await (state === 'unavailable' ? self.getByText('Your previously chosen person is unavailable.', { exact: false }) : saved).scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width + 1);
     expect(await page.locator('dialog[open]').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true);
     mkdirSync(renders, { recursive: true });
@@ -55,7 +55,21 @@ for (const viewport of [
   await expect(picker.locator(`option[value="${ids[0]}"]`)).toHaveText(teacher);
   await expect(picker.locator(`option[value="${ids[1]}"]`)).toHaveText(artist);
   await picker.selectOption(ids[0]);
+  await picker.focus();
+  await page.keyboard.press('Tab');
+  await expect(self.getByRole('button', { name: 'Use this person as me' })).toBeFocused();
+  // The only identity choice commits, but its acknowledgement is lost.
+  await page.route('**/api/personal-context-self', async route => {
+    if (route.request().method() === 'POST') {
+      expect((await route.fetch()).ok()).toBe(true);
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+    } else await route.continue();
+  });
   await self.getByRole('button', { name: 'Use this person as me' }).click();
+  await expect(self.getByRole('alert')).toContainText('change was not confirmed');
+  await expect(self.getByRole('button', { name: 'Use this person as me' })).toBeDisabled();
+  await page.unroute('**/api/personal-context-self');
+  await self.getByRole('button', { name: 'Refresh association' }).click();
   await expect(saved).toHaveText(`Saved association: ${teacher}`);
   const initial = await authority();
   expect(initial).toEqual({ person_id: ids[0], version: 1 });
@@ -63,7 +77,7 @@ for (const viewport of [
 
   await page.getByRole('button', { name: 'Close settings panel' }).click();
   await openPanel();
-  await expect(self.getByRole('button', { name: 'Change who is me' })).toBeEnabled();
+  await expect(self.getByRole('button', { name: /Change who is me|Clear self association|Choose who is me/ })).toHaveCount(0);
   await capture('reopened'); // Preserve the actual faulty frame if the next assertion fails.
   await expect(saved).toHaveText(`Saved association: ${teacher}`);
   expect(await authority()).toEqual(initial);
@@ -85,38 +99,35 @@ for (const viewport of [
   await expect(saved).toHaveText(`Saved association: ${teacher}`);
   await capture('read-recovered');
 
-  // Simulate a committed change whose acknowledgement cannot be trusted.
-  await self.getByRole('button', { name: 'Change who is me' }).click();
-  await picker.selectOption(ids[1]);
-  await page.route('**/api/personal-context-self', async route => {
-    if (route.request().method() === 'POST') {
-      expect((await route.fetch()).ok()).toBe(true);
-      await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
-    } else await route.continue();
-  });
-  await self.getByRole('button', { name: 'Use this person as me' }).click();
-  await expect(self.getByRole('alert')).toContainText('change was not confirmed');
-  await expect(self.getByRole('button', { name: 'Use this person as me' })).toBeDisabled();
-  await page.unroute('**/api/personal-context-self');
-  await self.getByRole('button', { name: 'Refresh association' }).click();
-  await expect(saved).toHaveText(`Saved association: ${artist}`);
-  expect(await authority()).toEqual({ person_id: ids[1], version: 2 });
-  await capture('change-recovered');
+  // Hiding controls is not enforcement: direct ordinary requests also refuse reassignment.
+  for (const person_id of [ids[1], null]) {
+    const response = await page.request.post('/api/personal-context-self', {
+      headers, data: { person_id, expected_version: 1 },
+    });
+    expect(response.status()).toBe(409);
+  }
+  expect(await authority()).toEqual(initial);
 
   // A legacy/missing label remains safely identifiable by name plus opaque ID.
   await page.getByRole('button', { name: 'Close settings panel' }).click();
-  await page.route(`**/api/people/${ids[1]}`, async route => {
+  await page.route(`**/api/people/${ids[0]}`, async route => {
     const response = await route.fetch();
     const body = await response.json();
     delete body.picker_label;
     await route.fulfill({ response, json: body });
   });
   await openPanel();
-  await expect(saved).toHaveText(`Saved association: Casey saved-self · ${ids[1]}`);
+  await expect(saved).toHaveText(`Saved association: Casey saved-self · ${ids[0]}`);
   await capture('fallback');
-  await page.unroute(`**/api/people/${ids[1]}`);
-  await self.getByRole('button', { name: 'Clear self association' }).click();
-  await expect(self.getByText('No self association saved.')).toBeVisible();
-  expect(await authority()).toEqual({ person_id: null, version: 3 });
+  await page.unroute(`**/api/people/${ids[0]}`);
+  await expect(self.getByRole('button', { name: /Change who is me|Clear self association|Choose who is me/ })).toHaveCount(0);
+  expect(await authority()).toEqual(initial);
   expect(await (await page.request.get('/api/personal-context-preference')).json()).toEqual(consentBefore);
+  await page.getByRole('button', { name: 'Close settings panel' }).click();
+  expect((await page.request.delete(`/api/people/${ids[0]}`, { headers })).ok()).toBe(true);
+  await openPanel();
+  await expect(self).toContainText('The one-time choice cannot be reassigned.');
+  await expect(self.getByRole('button', { name: /Change who is me|Clear self association|Choose who is me/ })).toHaveCount(0);
+  expect(await authority()).toEqual({ person_id: null, version: 1 });
+  await capture('unavailable');
 });

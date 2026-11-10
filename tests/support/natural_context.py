@@ -72,5 +72,5 @@ def seed_capture_views(store):
             finally:
                 bridge.close()
         seed_terminal_states(store, session)
-        set_association(store, session, None, 1)
+        # Retain this historical account's existing one-time choice.
         set_preference(store, session, False, 1)

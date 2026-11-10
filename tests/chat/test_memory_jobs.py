@@ -8,7 +8,7 @@ from m2.chat.memory_analysis import INSTRUCTIONS
 from tests.http_boundary.test_web_chat import ChatHttpFixture
 
 
-class MemoryJobsTests(ChatHttpFixture):
+class MemoryJobsFixture(ChatHttpFixture):
     def setUp(self):
         super().setUp()
         self.post('/api/personal-context-preference', {'enabled': True, 'expected_version': 0})
@@ -50,7 +50,7 @@ class MemoryJobsTests(ChatHttpFixture):
         self.release.set()
         super().tearDown()
 
-    def start_memory(self, turn='source', text='Frederik enjoys gardening.'):
+    def start_memory(self, turn='source', text='Frederik enjoys gardening.', before_analysis=None):
         before = self.background_calls
         self.entered.clear()
         self.release.clear()
@@ -59,6 +59,8 @@ class MemoryJobsTests(ChatHttpFixture):
         events = self.events(turn)
         self.assertEqual(events[-1]['kind'], 'complete')
         self.assertEqual(self.background_calls, before)
+        if before_analysis is not None:
+            before_analysis()
         runtime = self.app.state.runtime
 
         async def due():
@@ -92,6 +94,8 @@ class MemoryJobsTests(ChatHttpFixture):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()['entries']
 
+
+class MemoryJobsTests(MemoryJobsFixture):
     def test_completed_unselected_person_memory_is_quiet_and_owner_scoped(self):
         original = self.start_memory()
         self.assertEqual(self.entries(), [])

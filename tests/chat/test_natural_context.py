@@ -11,6 +11,7 @@ from m2.people.self_association import association, set_association
 from tests.chat.test_tool_evidence_budget import native_call
 from tests.provider.test_provider_output_compat import model_for, text, slim_footer
 from tests.support.database import DatabaseCase
+from tests.support.self_association import legacy_association
 
 
 def proposal(prompt, statement, group='past_moments', person_id='casey', assessment='asserted'):
@@ -45,8 +46,10 @@ class NaturalContextTests(DatabaseCase):
             set_association(self.store, self.alice, 'other', 0)
         with self.assertRaises(KeyError):
             set_association(self.store, self.bob, 'casey', 0)
-        self.assertEqual(set_association(self.store, self.alice, 'other', 1)['version'], 2)
-        self.assertEqual(set_association(self.store, self.alice, None, 2), {'person_id': None, 'version': 3})
+        for replacement in ('other', None):
+            with self.assertRaises(ContextConflict):
+                set_association(self.store, self.alice, replacement, 1)
+        self.assertEqual(association(self.store, self.alice), chosen)
 
     def test_natural_compound_message_through_native_model_publication_and_next_read(self):
         set_association(self.store, self.alice, 'casey', 0)
@@ -90,7 +93,7 @@ class NaturalContextTests(DatabaseCase):
         self.store.append(self.alice, 'natural', 'original', 'complete', {})
         original = self.store.read_turn(self.alice, 'natural', 'original')['events']
         self.assertTrue(snapshot_current(self.store, self.alice, original[0]['payload']))
-        set_association(self.store, self.alice, 'other', 1)
+        legacy_association(self.store, self.alice, 'other')
         self.assertFalse(snapshot_current(self.store, self.alice, original[0]['payload']))
         self.assertEqual(self.store.read_turn(self.alice, 'natural', 'original')['events'], original)
         self.assertEqual(len(self.context.list(self.alice, 'casey', group='life')['entries']), 1)
@@ -115,12 +118,12 @@ class NaturalContextTests(DatabaseCase):
         set_preference(self.store, self.alice, True, 0)
         for index, replacement in enumerate(('other', None)):
             if index:
-                set_association(self.store, self.alice, 'casey', association(self.store, self.alice)['version'])
+                legacy_association(self.store, self.alice, 'casey')
             turn = f'change-{index}'
             prompt = 'I joined ExampleWorks in July 2021.'
             self.begin(turn, prompt)
             stage(self.store, self.alice, 'natural', turn, proposal(prompt, prompt))
-            set_association(self.store, self.alice, replacement, association(self.store, self.alice)['version'])
+            legacy_association(self.store, self.alice, replacement)
             self.store.append(self.alice, 'natural', turn, 'complete', {})
             terminal = self.store.read_turn(self.alice, 'natural', turn)['events'][-1]['payload']
             self.assertEqual(terminal['personal_context_updates'][0]['outcome'], 'discarded')
@@ -135,7 +138,7 @@ class NaturalContextTests(DatabaseCase):
         self.store.append(self.alice, 'natural', 'off', 'complete', {})
         set_preference(self.store, self.alice, True, 0)
         self.begin('changed-before-stage', prompt)
-        set_association(self.store, self.alice, 'other', 1)
+        legacy_association(self.store, self.alice, 'other')
         with self.assertRaises(PermissionError):
             stage(self.store, self.alice, 'natural', 'changed-before-stage', proposal(prompt, prompt))
         self.store.append(self.alice, 'natural', 'changed-before-stage', 'complete', {})
@@ -171,7 +174,7 @@ class NaturalContextTests(DatabaseCase):
         with self.assertRaises(PermissionError):
             stage(self.store, self.alice, 'natural', 'unselected', proposal(prompt, prompt, person_id='other'))
         self.store.append(self.alice, 'natural', 'unselected', 'complete', {})
-        set_association(self.store, self.alice, None, 1)
+        legacy_association(self.store, self.alice, None)
         self.begin('unset', prompt)
         with self.assertRaises(PermissionError):
             stage(self.store, self.alice, 'natural', 'unset', proposal(prompt, prompt))
@@ -223,7 +226,7 @@ class NaturalContextTests(DatabaseCase):
 
     def test_restoring_older_authority_cannot_resurrect_cleared_self(self):
         set_association(self.store, self.alice, 'casey', 0)
-        set_association(self.store, self.alice, None, 1)
+        legacy_association(self.store, self.alice, None)
         self.store.db.execute('UPDATE personal_context_self SET person_id=%s,version=1 WHERE owner_id=%s',
                               ('casey', self.store.owner(self.alice)))
         self.store.ledger.reconcile(self.store)

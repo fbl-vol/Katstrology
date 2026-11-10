@@ -49,7 +49,7 @@ def _source(message, statement):
             'statement': statement}
 
 
-def _statement(action, span, messages, person, people):
+def _statement(action, span, messages, person, people, speaker):
     if not isinstance(span, dict) or set(span) != {'turn_id', 'start', 'end', 'text'}:
         raise ValueError('Original complete user statement required')
     message = messages[span['turn_id']]
@@ -68,6 +68,11 @@ def _statement(action, span, messages, person, people):
         if not person['named_eligible'] or not re.match(name + r'(?!\w)', text, re.I):
             raise ValueError('Unique named subject required')
     elif attribution == 'self':
+        frozen = message.get('self_association') or {}
+        if (not speaker['version'] or frozen.get('version') != speaker['version']
+                or frozen.get('status') not in ('eligible', 'unselected')
+                or frozen.get('person_id') not in (None, person['id'])):
+            raise ValueError('Input-time self authority required')
         if not person['associated_self'] or re.match(r'(?:he|she|they|his|her|their)\b', text, re.I):
             raise ValueError('Explicit self identity required')
         if any(re.match(re.escape(other['name']) + r'(?!\w)', text, re.I) for other in people):
@@ -119,7 +124,8 @@ def candidates(evidence, output):
         prior = references(old['source']) if old and intent == 'merge' else []
         sources, statements = list(prior), [item['statement'] for item in prior if item.get('statement')]
         for span in spans:
-            source, identity = _statement(action, span, messages, person, list(people.values()))
+            source, identity = _statement(action, span, messages, person, list(people.values()),
+                                          evidence['self_association'])
             sources.append(source)
             statements.append(source['statement'])
             if action['attribution'] == 'reference':
