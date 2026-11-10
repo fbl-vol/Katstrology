@@ -1,7 +1,6 @@
 """Fresh local process cancellation; no database, browser, build or native release."""
 import importlib.util
 import json
-import os
 from pathlib import Path
 import signal
 import subprocess

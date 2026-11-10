@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from deploy import delivery_receipt as receipt
 
+SOURCE_IDENTITY = receipt.source_identity
+
 
 class DeliveryReceiptTests(unittest.TestCase):
     def setUp(self):
@@ -79,6 +81,19 @@ class DeliveryReceiptTests(unittest.TestCase):
         report['results']['backend']['log'] = '/outside/secret'
         with self.assertRaisesRegex(ValueError, 'owned evidence'):
             self.prepare(report)
+
+    def test_git_identity_rejects_dirty_source_and_binds_actual_binary_diff(self):
+        # Exercise the real function outside this class's evidence-fixture patch.
+        from hashlib import sha256
+        with patch.object(receipt, 'git', side_effect=[b'a' * 40, b'c' * 40, b' M changed.py']):
+            with self.assertRaisesRegex(ValueError, 'Commit source'):
+                SOURCE_IDENTITY(self.root, 'c' * 40)
+        with patch.object(receipt, 'git', side_effect=[b'a' * 40, b'c' * 40, b'', b'actual binary diff', b'b' * 40]), \
+                patch.object(receipt.subprocess, 'run') as ancestry:
+            source = SOURCE_IDENTITY(self.root, 'c' * 40)
+        self.assertEqual(source['diff_sha256'], sha256(b'actual binary diff').hexdigest())
+        self.assertEqual(source['tree'], 'b' * 40)
+        self.assertIn('--is-ancestor', ancestry.call_args.args[0])
 
     def test_focused_local_policy_records_addition_without_scheduling_full_suites(self):
         with patch.object(receipt.subprocess, 'run', side_effect=AssertionError('pipeline invoked')):

@@ -48,6 +48,28 @@ class MigrationPreparationTests(unittest.TestCase):
             preparation.prepare(self.old, self.new)
 
 
+class InstalledGuardTests(unittest.TestCase):
+    def test_changed_installed_helper_is_rejected_before_importing_it(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in enrollment.HELPER_NAMES:
+                (root / name).write_text('raise AssertionError("must not execute")')
+            expected = {'helper_sha256': {name: '0' * 64 for name in enrollment.HELPER_NAMES}}
+            with patch.object(enrollment, 'HELPERS', root), \
+                    patch('deploy.release_ci_access.protected', side_effect=Path), \
+                    patch.object(enrollment, 'spec_from_file_location', side_effect=AssertionError('imported')):
+                with self.assertRaisesRegex(ValueError, 'helper differs'):
+                    enrollment.installed_guards(expected)
+
+    def test_running_schema_requires_single_owned_native_image_before_query(self):
+        target = {'project': 'synthetic', 'db_image': 'sha256:' + 'a' * 64}
+        for responses in (['one\ntwo\n'], ['one\n', 'sha256:' + 'b' * 64]):
+            with patch.object(enrollment.subprocess, 'check_output', side_effect=responses) as calls:
+                with self.assertRaises(ValueError):
+                    enrollment.running_schema(target)
+            self.assertFalse(any('exec' in call.args[0] for call in calls.call_args_list))
+
+
 class MigrationEnrollmentTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(TemporaryDirectory()))
