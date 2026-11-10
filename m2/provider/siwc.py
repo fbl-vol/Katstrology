@@ -124,19 +124,22 @@ class OpenAITransport:
         if pending:
             yield pending.decode('utf-8')
 
-    def response_events(self, token, body):
+    def response_events(self, token, body, *, bounded=False):
+        # Background memory uses the same credential/route, with bounded SSE framing.
+        # The existing 20-second socket timeout also bounds a silent read/header wait.
         searching = any(tool.get('type') == 'web_search' for tool in body.get('tools', []))
         with self.client.stream('POST', RESPONSES, json=body, headers={
                 'Authorization': 'Bearer ' + token,
                 'Accept': 'text/event-stream'}) as response:
             if response.status_code != 200:
-                if searching:
-                    raise ProviderFailure('search_provider_request_failed', response.status_code)
+                if searching or bounded:
+                    raise ProviderFailure('background_provider_request_failed' if bounded else
+                                          'search_provider_request_failed', response.status_code)
                 response.read()
                 raise self.failure(response)
             request_id = (response.headers.get('x-request-id') or
                           response.headers.get('openai-request-id'))
-            lines = self._search_lines(response) if searching else response.iter_lines()
+            lines = self._search_lines(response) if searching or bounded else response.iter_lines()
             for line in lines:
                 if not line.startswith('data: '):
                     continue
@@ -318,6 +321,23 @@ class ProviderBridge:
                 raise ProviderFailure('selected_account_changed')
             token = self._access(owner)
             return token, self._binding(owner)  # Own refresh may rotate the token.
+
+    def background_access(self, owner, binding):
+        """Never wait behind a foreground credential refresh or initiate another one."""
+        lock = self._owner_lock(owner)
+        if not lock.acquire(blocking=False):
+            raise ProviderFailure('background_capacity_unavailable')
+        try:
+            if self._binding(owner) != binding:
+                raise ProviderFailure('selected_account_changed')
+            record = self.credentials.load(owner)
+            account = record['accounts'][record['selected']]
+            expires = account.get('expires_at')
+            if (type(expires) not in (int, float) or expires < time.time() + 120):
+                raise ProviderFailure('background_capacity_unavailable')
+            return account['access_token']
+        finally:
+            lock.release()
 
     def admit(self, owner, slug):
         from m2.provider.model_capacity import CatalogAdmission, resolve_capacity

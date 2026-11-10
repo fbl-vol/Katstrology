@@ -68,7 +68,7 @@ class ChatJobs:
                      parent_id='@active', revision_kind='normal', replaces_turn_id=None,
                      mode='local', model_slug=None, chart_file=None,
                      reporting_zone=None, resolve_active=False, archived_selection=None,
-                     admission=None, selected_result=None):
+                     admission=None, selected_result=None, memory_session_digest=None):
         owner = session.owner_id
         key = owner, conv_id, turn_id
         fingerprint = json.dumps([request, selected_people, parent_id, revision_kind,
@@ -84,12 +84,13 @@ class ChatJobs:
         self.runtime.spawn(self._run(job, session, request, selected_people, parent_id,
                                       revision_kind, replaces_turn_id, mode, model_slug,
                                       chart_file, reporting_zone, resolve_active, archived_selection,
-                                      admission, selected_result))
+                                      admission, selected_result, memory_session_digest))
         return await asyncio.shield(job.ack)
 
     async def _run(self, job, session, request, selected_people, parent_id,
                    revision_kind, replaces_turn_id, mode, model_slug, chart_file,
-                   reporting_zone, resolve_active, archived_selection, admission, selected_result):
+                   reporting_zone, resolve_active, archived_selection, admission, selected_result,
+                   memory_session_digest):
         loop = asyncio.get_running_loop()
         store = self.runtime.store
         acknowledged = False
@@ -120,6 +121,9 @@ class ChatJobs:
             model = (ResponsesModel(self.runtime.siwc, job.owner, model_slug, admission) if mode == 'chatgpt'
                      else None if request.startswith((CHART_PREFIX, EVENT_PREFIX, REFERENCE_PREFIX))
                      else self.model_factory())
+            if memory_session_digest and admission and archived_selection is None:
+                store.memory_origins[(job.owner, job.conversation_id, job.turn_id)] = {
+                    'session_digest': memory_session_digest, 'admission': admission}
             return turn_steps(store, session, job.conversation_id, job.turn_id, request,
                               model, deliver, parent_id=parent_id,
                               revision_kind=revision_kind, replaces_turn_id=replaces_turn_id,
@@ -162,6 +166,8 @@ class ChatJobs:
                 if not job.ack.done():
                     job.ack.set_exception(RuntimeError('Turn storage unavailable'))
         finally:
+            await self.runtime.execute(lambda: store.memory_origins.pop(
+                (job.owner, job.conversation_id, job.turn_id), None))
             close = getattr(model, 'close', None)
             if close:
                 try:

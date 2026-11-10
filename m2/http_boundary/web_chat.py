@@ -1,6 +1,7 @@
 """Idempotent turn ACK, committed SSE cursor, cancellation and owned export."""
 
 import json
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,7 +11,7 @@ from starlette.routing import Route
 from m2.archive.revisions import export_conversation
 from m2.operations.product_policy import MODEL, REPORTING_ZONE
 from m2.provider.siwc import ProviderFailure
-from m2.http_boundary.boundary import MAX_TEXT_JSON, authorized, json_body, json_response
+from m2.http_boundary.boundary import COOKIE, MAX_TEXT_JSON, authorized, json_body, json_response
 
 
 def _cursor(value):
@@ -88,7 +89,8 @@ async def send(request):
             revision_kind=payload['revision_kind'], replaces_turn_id=payload['replaces_turn_id'],
             mode='chatgpt', model_slug=MODEL, reporting_zone=REPORTING_ZONE,
             resolve_active=True, admission=admission,
-            selected_result=payload.get('selected_result'))
+            selected_result=payload.get('selected_result'),
+            memory_session_digest=sha256(request.cookies[COOKIE].encode()).hexdigest())
     except ProviderFailure:
         return json_response({'error': 'selected_account_changed'}, 409)
     return json_response(result, 202)

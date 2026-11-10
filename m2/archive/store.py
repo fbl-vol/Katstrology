@@ -49,6 +49,8 @@ class Store:
         self.files = Path(files)
         self.files.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.sessions = {}
+        # Trusted browser job identity, never model arguments or archived bearer data.
+        self.memory_origins = {}
         self._blocked = False
         self.password_hasher = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
         # Acquire exclusive ownership BEFORE migrations or startup recovery.
@@ -64,6 +66,8 @@ class Store:
             ledger.reconcile(self)
             from m2.chat.title_work import TitleWork
             TitleWork(self).recover_interrupted()
+            from m2.chat.memory_work import MemoryWork
+            MemoryWork(self).recover_interrupted()
             self.db.execute("UPDATE context_update_stages SET outcome='abandoned' WHERE outcome='staged'")
         except BaseException:
             self.close()
@@ -469,6 +473,16 @@ class Store:
                 if kind == 'complete':
                     context_changed = any(item['outcome'] == 'saved' for item in outcomes)
                     self._changed(owner, conv_id, turn_id, invalidate_compaction=context_changed)
+                    origin = self.memory_origins.get((owner, conv_id, turn_id))
+                    if origin is not None and source_epoch == current_epoch:
+                        from m2.chat.memory_work import MemoryWork
+                        try:
+                            with self.db.transaction():
+                                MemoryWork(self).enqueue(session, conv_id, turn_id, initial, origin)
+                        except Exception:
+                            # Optional freshness must not roll back a valid completed
+                            # answer. The savepoint isolates a queue failure.
+                            pass
                     if context_changed:
                         # Publish the source head before invalidating context-dependent
                         # caches; otherwise its newly derived entries appear abandoned.

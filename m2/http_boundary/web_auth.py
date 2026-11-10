@@ -33,10 +33,14 @@ class WebAuth:
     def resolve(self, token):
         if not token or not isinstance(token, str) or len(token) > 128:
             raise PermissionError('Authentication required')
+        return self.resolve_digest(sha256(token.encode()).hexdigest())
+
+    def resolve_digest(self, digest):
+        """Internal queued-work identity; never accepted by a public request route."""
         row = self.store.db.execute('''
             SELECT owner_id, csrf_token, expires_at FROM web_sessions
             WHERE token_digest=%s AND expires_at > clock_timestamp()
-        ''', (sha256(token.encode()).hexdigest(),)).fetchone()
+        ''', (digest,)).fetchone()
         if not row:
             raise PermissionError('Authentication required')
         session = self.owners.get(row['owner_id'])
