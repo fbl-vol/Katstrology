@@ -259,16 +259,16 @@ class ChatBudgetTests(DatabaseCase):
 
         prompt = 'How could I approach a creative disagreement without making a prediction?'
         for tone_id in ('thoughtful-wit', 'grounded-warmth', 'playful-cheek', 'cosmic-cabaret'):
-            for version in (1, 2, 3, 4):
+            for version in (1, 2, 3, 4, 5):
                 with self.subTest(tone_id=tone_id, version=version):
                     revision = self.store.tone_preference(self.alice)['revision']
                     self.store.set_tone_preference(self.alice, tone_id, revision)
                     turn_id = f'{tone_id}-v{version}'
-                    expected = (archived_instructions(legacy_identity(tone_id, version)) if version < 4
+                    expected = (archived_instructions(legacy_identity(tone_id, version)) if version < 5
                                 else instructions(tone_id))
                     bridge = ReadThenAnswer()
                     model = ResponsesModel(bridge, 'alice', self.model.slug)
-                    if version < 4:
+                    if version < 5:
                         # Accept an older version, switch to current code at ACK, then
                         # reconstruct the first request and every read from its record.
                         accepting_older = patch('m2.chat.tone_profiles.instructions', return_value=expected)
@@ -281,7 +281,7 @@ class ChatBudgetTests(DatabaseCase):
                     else:
                         status, events = self.turn(turn_id, prompt, parent='@root', model=model)
                     self.assertEqual(status, 'complete', events)
-                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 4)
+                    self.assertEqual(instructions(tone_id)[1]['tone_version'], 5)
                     # Two requested reads require three calls, not an extra closing call.
                     self.assertEqual(len(bridge.requests), 3)
                     self.assertEqual(sum(event['kind'] == 'tool_result' and

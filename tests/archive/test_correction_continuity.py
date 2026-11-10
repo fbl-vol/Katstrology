@@ -244,7 +244,7 @@ class CorrectionContinuityTests(DatabaseCase):
             alice = restored.authenticate('alice', 'synthetic-password-alice')
             self.assertIsNone(restored.read_turn(alice, 'thread', 'legacy')['parent_revision'])
             self.assertEqual(restored.db.execute('SELECT max(version) AS version FROM '
-                                                  'schema_migrations').fetchone()['version'], 32)
+                                                  'schema_migrations').fetchone()['version'], 36)
             correct(restored, alice, 'thread', 'withdrawn', 'root', 'withdraw')
             self.assertIsNone(current_text(restored, alice, 'thread', 'legacy',
                                            {'thread': {'root', 'legacy'}}))

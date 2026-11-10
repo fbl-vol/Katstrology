@@ -135,7 +135,7 @@ class ReleasePlanTests(unittest.TestCase):
             receipt, archive, compose, schema = pipeline.artifact(synthetic_package(directory))
             self.assertTrue(archive.is_file())
             # synthetic_package archives committed HEAD, including context migrations 025–031.
-            self.assertEqual(schema, 32)
+            self.assertEqual(schema, 36)
             target = Path(directory) / 'target.json'
             target.write_text(json.dumps(synthetic_target()))
             with patch('deploy.release_pipeline.remote') as remote:

@@ -200,18 +200,26 @@ class NaturalContextTests(DatabaseCase):
         from m2.release_schema import migrate
         self.store.close()
         with psycopg.connect(self.dsn) as db:
-            db.execute('DROP TABLE personal_context_self')
-            db.execute('DELETE FROM schema_migrations WHERE version=32')
-        path = Path(__file__).resolve().parents[2] / 'm2/migrations/032_personal_context_self.sql'
+            db.execute('''DROP TABLE memory_source_suppressions, memory_source_units,
+                memory_budget, memory_work, personal_context_self''')
+            db.execute('DELETE FROM schema_migrations WHERE version>=32')
+        # Exercise the historical candidate, not a partially rewound current schema.
+        import shutil
+        directory = Path(self.directory.name) / 'schema32-migrations'
+        directory.mkdir()
+        for original in (Path(__file__).resolve().parents[2] / 'm2/migrations').glob('*.sql'):
+            if int(original.name[:3]) <= 32:
+                shutil.copy2(original, directory / original.name)
+        path = directory / '032_personal_context_self.sql'
         transition = {'from': 31, 'to': 32, 'migrations': {path.name: sha256(path.read_bytes()).hexdigest()},
                       'added_tables': ['personal_context_self'], 'added_columns': {}}
-        self.assertEqual(migrate(self.dsn, transition), {'schema': 32, 'status': 'migrated'})
+        self.assertEqual(migrate(self.dsn, transition, directory), {'schema': 32, 'status': 'migrated'})
         with psycopg.connect(self.dsn) as db:
             self.assertEqual(db.execute('SELECT count(*) FROM people').fetchone(), (2,))
             self.assertEqual(db.execute('SELECT id FROM conversations').fetchall(), [('natural',)])
             self.assertEqual(db.execute('SELECT count(*) FROM personal_context_self').fetchone(), (0,))
         with self.assertRaisesRegex(ValueError, 'no replay'):
-            migrate(self.dsn, transition)
+            migrate(self.dsn, transition, directory)
 
     def test_restoring_older_authority_cannot_resurrect_cleared_self(self):
         set_association(self.store, self.alice, 'casey', 0)

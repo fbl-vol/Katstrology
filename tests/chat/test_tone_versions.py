@@ -38,17 +38,28 @@ V3_HASHES = {
 }
 
 
+# Captured from the unchanged released v1/v3/v4 bodies for deferred-memory compatibility.
+V4_HASHES = {
+    'quiet-wonder': '3852959a809aec94f3c0d30d814d0af94549bea5b5581788ee03d5475716324b',
+    'thoughtful-wit': '060292c48c19bd6393ef68a30f29480648f10097ce87da6e42e4bb21574d80ed',
+    'grounded-warmth': '7951622fd4f937cf9cdcaf1f42129fac629d6851b677d3f28ad283f14fc0be79',
+    'playful-cheek': '4dbd9a2dfa958092a79bb8253d4e8c442963e9f5b46aab5218d9e5206b86f7b0',
+    'cosmic-cabaret': 'c18a6dda7e6af1d6587f778bc4e655c68085a22ca59ca6c2d68020dc35a09ac9',
+}
+
+
 def legacy_identity(tone_id, version=1):
-    hashes = {1: V1_HASHES, 2: V2_HASHES, 3: V3_HASHES}[version]
+    hashes = {1: V1_HASHES, 2: V2_HASHES, 3: V3_HASHES, 4: V4_HASHES}[version]
     return {'tone_id': tone_id, 'tone_version': version, 'tone_shared_version': version,
-            'prompt_version': f'2026-11-03.1.tone{version}', 'prompt_mode': 'hosted',
+            'prompt_version': '2026-11-09.1.tone4' if version == 4 else f'2026-11-03.1.tone{version}',
+            'prompt_mode': 'hosted',
             'prompt_sha256': hashes[tone_id]}
 
 
 class ToneVersionTests(unittest.TestCase):
     def test_all_deployed_versions_reconstruct_even_if_current_base_changes(self):
         with patch('m2.chat.tone_profiles.HOSTED', 'a future base must not rewrite accepted tones'):
-            for version, hashes in ((1, V1_HASHES), (2, V2_HASHES), (3, V3_HASHES)):
+            for version, hashes in ((1, V1_HASHES), (2, V2_HASHES), (3, V3_HASHES), (4, V4_HASHES)):
                 for tone_id, expected_hash in hashes.items():
                     with self.subTest(tone_id=tone_id, version=version):
                         record = legacy_identity(tone_id, version)
