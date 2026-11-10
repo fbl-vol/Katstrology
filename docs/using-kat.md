@@ -124,9 +124,11 @@ people and people you add later. Recent messages and relevant saved context may 
 sent to your connected provider after a reply. No chart selection or separate save
 request is required. You can keep chatting while this deferred work runs.
 Separately choose **Who is me?** once to explicitly associate yourself with an owned
-person. This does not enable automatic context or select anyone. Clear or change
-the association in the same settings; in-flight self updates will not be saved to
-the old target. Old entries are not moved.
+person. This account is yours alone: the choice is made once and cannot be switched
+or cleared through ordinary settings. It does not enable automatic context or select
+anyone. Earlier messages are not reinterpreted as yours when you choose. If deletion
+or an older backup makes the chosen person unavailable, the choice remains used;
+Kat does not guess a replacement or offer another person. Old entries are not moved.
 
 You can still explicitly introduce yourself in a message or name another uniquely
 identified person in your account. Matching names or selecting a chart never establishes

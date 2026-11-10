@@ -120,7 +120,18 @@ provider acceptance or live public-network reliability.
 One default-off account setting permits collection and use for existing and future
 owned people. Chart/conversation selection is not collection authority: named owned
 people and an explicit self association can be considered without a selected chart.
-Foreground context retrieval remains selected-person scoped. New browser turns archive
+Foreground context retrieval remains selected-person scoped. Accounts are not shared:
+Who is me is optional and chosen once, enforced by both the UI and server. Existing
+bindings remain; any nonzero generation consumes the choice even if deletion or
+independent-ledger restore clears the person ID. Same-choice acknowledgement retries
+are idempotent. There is no migration, guessed replacement or ordinary switch/clear
+operation. Historical first-person evidence must carry a compatible nonzero input-time
+generation/status; a later first choice or legacy identity change cannot relabel it.
+The final apply snapshot still rechecks current authority. The journal retains only
+revocation generations, not identity, so an older backup cannot reconstruct a later
+choice. Such a missing identity is unavailable, not permission to assign another.
+
+New browser turns archive
 `collection_mode: background_v1` and do not advertise foreground context-write tools.
 Replies do not ask users to enable memory, select a person or confirm each fact.
 
@@ -132,12 +143,19 @@ snapshots only; it never waits for inference. New foreground work fences applica
 This scheduling is not a guarantee of real-provider latency or memory freshness.
 
 Evidence is limited to eight recent original user messages (24 KB total, 8 KB each),
-eight eligible owned people, 32 existing entries per person and a 32 KB snapshot.
+eight eligible owned people, 32 active entries per person and a 32 KB snapshot.
 Excess targets or existing-entry counts cause omission, not blind insertion without
 comparing prior records. There is no journal scan, archive sweep or historical backfill.
 At least one accepted statement must come from the newest completed turn. The model
 selects up to four semantic add/merge/replace actions; the server constructs prose from
 complete literal user sentences and validates identity, versions and provenance.
+For associated self, established server-owned assertion clauses can precede a question
+or form a compound sentence. The full original message remains available for assertion
+assessment and source provenance; arbitrary trimmed negations/qualifiers and quoted
+sources remain ineligible. This does not make punctuation a semantic truth verifier.
+Inactive/source-invalidated rows neither consume the active inventory allowance nor
+suppress fresh duplicates. New original evidence may establish a new entry without
+reactivating the old record or importing its withdrawn sources.
 Complementary evidence can merge under a stable entry ID; unchanged proposals are
 no-ops. Manual entries cannot be replaced automatically. Semantic attribution remains
 fallible; tests do not establish real-model extraction quality.
