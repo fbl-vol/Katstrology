@@ -43,8 +43,8 @@ def rows(db, tables, added_columns):
     return result
 
 
-def migrate(dsn, transition, directory=None):
-    directory = directory or Path(__file__).parent / 'migrations'
+def migration_files(directory, transition):
+    """Pure exact-file/DDL preflight shared with offline enrollment preparation."""
     if set(transition) != {'from', 'to', 'migrations', 'added_tables', 'added_columns'}:
         raise ValueError('Unsupported transition contract')
     old, new = transition['from'], transition['to']
@@ -69,6 +69,15 @@ def migrate(dsn, transition, directory=None):
                             r'ALTER TABLE [a-z_][a-z_0-9]* ADD COLUMN [a-z_][a-z_0-9]* '
                             r'(?:text|boolean|integer|bigint|timestamptz|jsonb));', statement, re.DOTALL):
             raise ValueError('Migration is outside the narrow additive DDL lane')
+    return pending
+
+
+def migrate(dsn, transition, directory=None):
+    directory = directory or Path(__file__).parent / 'migrations'
+    pending = migration_files(directory, transition)
+    old, new = transition['from'], transition['to']
+    additions = transition['added_columns']
+    tables_added = set(transition['added_tables'])
     with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as db:
         if not db.execute('SELECT pg_try_advisory_lock(hashtext(current_database()),20261028) AS held').fetchone()['held']:
             raise ValueError('Store still owns migration target')

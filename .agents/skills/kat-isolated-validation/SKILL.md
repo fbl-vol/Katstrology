@@ -8,8 +8,8 @@ description: 'Run focused or grouped Kat backend, probe and browser validation u
 Run commands below from this skill directory. `python3 scripts/validate.py --help` lists all options. The default is a **non-mutating plan**; `--execute` is appropriate only within authorized local synthetic testing.
 
 ```sh
-# Plan the complete selection without starting fixtures or building.
-python3 scripts/validate.py --profile all
+# Plan the same behavior/dependency/neighbor selection you intend to execute.
+python3 scripts/validate.py --profile backend --tests tests.archive.test_store
 
 # Fast feedback while correcting layout: execute the relevant existing checks.
 python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic reading layout' --execute
@@ -20,8 +20,11 @@ python3 scripts/validate.py --profile backend --tests tests.archive.test_store -
 # Targeted backend and synthetic SIWC in one invocation, with distinct filters.
 python3 scripts/validate.py --profiles backend siwc --tests tests.provider.test_provider_output_compat --browser-grep 'synthetic streamed read' --execute
 
-# Final UI batch: share one fixture and the normal build across browser profiles.
-python3 scripts/validate.py --profiles browser siwc clock --execute
+# Broader relevant UI selection when those shared behaviors changed; not an automatic final sweep.
+python3 scripts/validate.py --profiles browser siwc clock --browser-grep 'affected shared behavior' --execute
+
+# Optional broad diagnosis / CI reproduction, only when deliberately selected and authorized.
+python3 scripts/validate.py --profile all
 
 # Optional private layout comparison only on a checkout with the approved reference and baseline.
 python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic reading layout' --private-layout-reference --execute
@@ -29,9 +32,10 @@ python3 scripts/validate.py --profile browser --browser-grep 'pinned synthetic r
 
 ## Choose the feedback loop
 
-- During iteration, run the relevant existing/new checks using `--tests tests.<capability>.test_...` or `--browser-grep 'test title'`. Match consequential behavior, not whichever test is cheapest. Inspect selection/results; zero matches, skips and unrun profiles are not validation of the change.
-- Group related approved changes into a bounded delivery batch, using focused checks while implementing and keeping commits coherent. An individual todo or commit does not automatically trigger broad acceptance. Include related pending work before the broader pass where practical, but close the batch at a coherent boundary rather than postponing acceptance indefinitely as requests arrive.
-- Once the delivery batch is ready, run its required broader checks and rendered acceptance. Group applicable profiles with `--profiles` rather than launching separate invocations that repeat builds/setup. `--profile all` retains the complete suite; do not substitute a focused pass for required handoff checks.
+- Select existing/new checks by changed behavior, dependencies and neighboring regressions using `--tests tests.<capability>.test_...` or `--browser-grep 'test title'`, plus relevant lint/typecheck and affected UI checks. Shared provider/persistence/security/migration changes need broader relevant selection, not blanket `all`. Record rationale, exact selection/results and unrun limits. Zero matches, skips and unrun profiles do not validate the change.
+- Group related approved changes into coherent commits and a bounded batch. Full local suites are optional broad diagnosis/CI reproduction, not an automatic pre-review or final-release prerequisite; another todo does not trigger them.
+- Before execution, plan the identical selection without `--execute`. Use `budget.recommended_outer_seconds` as the minimum outer tool timeout, and hold the shared validation lock through cleanup (acquire it separately or add bounded lock-wait time). This is a conservative ceiling, not an expected duration. Do not use an arbitrary240-second wrapper; the runner's existing SIGTERM cleanup needs its reported grace. Qualification's synthetic launcher now sends SIGTERM and waits that grace on its own deadline; it never calls a timeout a pass. Hosted job limits remain independent, unchanged admission constraints.
+- Follow the owning [delivery workflow](../../../docs/delivery-workflow.md): focused local checks → independent review when authorized (including selection sufficiency) → focused fix/neighbor checks → mandatory full PR/main CI and native checks only when delivery is authorized. Preserve complete CI inventories/all lanes, exact-tip source/image and migration/preservation/native guards. A local-only hold forbids starting review or pipelines automatically.
 - After a failure, diagnose and rerun the failing scenario first. Once resolved, rerun the broader checks affected by the fix, preserving applicable evidence for unchanged code and fixtures. A test-selector-only correction does not automatically invalidate unrelated backend checks. Preserve required exact-tip acceptance; do not present earlier-revision evidence as a run of the final tip.
 - Read `risk-based-testing` for selection and `ui-review` for rendered acceptance. For responsive chat/chart changes, inspect actual six-viewport geometry and images in `web/tests/layout/layout-visual.spec.ts` (`docs/frontend-development.md`, “Validate without touching a running app”). Private-reference overlays/diffs require `--private-layout-reference` and locally available inputs; the public default marks that comparison not requested. Images are diagnostic, not an approved pixel baseline. A green runner alone is not visual acceptance.
 

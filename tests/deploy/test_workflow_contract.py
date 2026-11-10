@@ -23,6 +23,31 @@ def workflow(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_lane_setup_covers_host_smoke_and_backend_playwright_dependencies(self):
+        setup = yaml.load((ROOT / '.github/actions/qualification-setup/action.yml').read_text(),
+                          Loader=yaml.BaseLoader)
+        def enabled(step, lane):
+            condition = step.get('if')
+            if condition is None:
+                return True
+            if condition == "inputs.lane != 'native'":
+                return lane != 'native'
+            if condition == "inputs.lane == 'browser' || inputs.lane == 'interaction'":
+                return lane in ('browser', 'interaction')
+            self.fail('Unexamined dependency condition: ' + condition)
+        for lane in ('backend', 'browser', 'interaction', 'native'):
+            steps = [step for step in setup['runs']['steps'] if enabled(step, lane)]
+            commands = '\n'.join(step.get('run', '') for step in steps)
+            with self.subTest(lane=lane):
+                self.assertIn('pip install -r probes/requirements-swiss.txt', commands)
+                self.assertEqual('npm ci --prefix web' in commands, lane != 'native')
+                self.assertEqual(any(step.get('uses', '').startswith('actions/setup-node@')
+                                     for step in steps), lane != 'native')
+                self.assertEqual('playwright install --with-deps chromium' in commands,
+                                 lane in ('browser', 'interaction'))
+                self.assertEqual('deploy.prepare_ci_inputs' in commands, lane != 'native')
+                self.assertNotIn('actions/cache@', str(steps))
+
     def test_parallel_qualification_requires_every_lane_before_candidate_upload(self):
         document = workflow('qualify.yml')
         jobs = document['jobs']
@@ -67,10 +92,10 @@ class WorkflowContractTests(unittest.TestCase):
         # Deliberate authority pins, not history lookups: hosted checkout is shallow.
         self.assertEqual(jobs['release']['uses'],
             'fbl-vol/Katstrology/.github/workflows/trusted-release.yml@'
-            'c31e7dd8fa3becd61851647a3158c95172e68eb5')
+            'f64fb6dcbd104cff83219827dce5eef849fde89b')
         self.assertEqual(jobs['validate']['uses'],
             'fbl-vol/Katstrology/.github/workflows/qualify.yml@'
-            'c4310ac296fade23959efccbe340afb0239d0bb5')
+            'f64fb6dcbd104cff83219827dce5eef849fde89b')
         self.assertNotIn('secrets', jobs['validate'])
         self.assertNotIn('environment', jobs['release'])
 
@@ -82,6 +107,9 @@ class WorkflowContractTests(unittest.TestCase):
         for secret in secrets.values():
             self.assertEqual(secret['required'], 'true')
         jobs = trusted['jobs']
+        # Relative nested reference resolves at the immutable caller-selected signer,
+        # not at candidate HEAD or the previous serial signer revision.
+        self.assertEqual(jobs['qualify']['uses'], './.github/workflows/qualify.yml')
         self.assertEqual(jobs['deploy']['environment'], 'kat-production')
         self.assertEqual(jobs['deploy']['permissions'], {'contents': 'read'})
         self.assertEqual(jobs['qualify']['permissions'], {'contents': 'read'})

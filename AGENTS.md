@@ -1,5 +1,7 @@
 # Kat workspace routing
 
+Follow `docs/delivery-workflow.md`: behavior/dependency/neighbor-focused local checks and relevant lint/typecheck/UI evidence, authorized independent review and focused corrections, then mandatory full PR/main CI/native checks when delivery is authorized. Full local suites are optional diagnosis/CI reproduction, not automatic pre-review or release prerequisites. Reviewers assess selection sufficiency. Explicit local-only/user holds take precedence over autonomous delivery.
+
 Before non-trivial implementation or review, follow the central engineering knowledge consultation workflow in `~/repos/engineering-knowledge/AGENTS.md`. This checkout's scripts and skills are local, not global agent settings.
 
 For UI, interaction, user-facing copy and perceived-performance work, read `.local/UX-MANIFEST.md` when present. It records the user's local UX direction for already-authorized changes; it does not expand feature, data-access, review or runtime authority.

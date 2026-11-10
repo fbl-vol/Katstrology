@@ -14,13 +14,13 @@ jobs:
   validate:
     name: validate
     if: github.event_name == 'pull_request' || vars.KAT_CI_TARGET_SCOPE == ''
-    uses: fbl-vol/Katstrology/.github/workflows/qualify.yml@c4310ac296fade23959efccbe340afb0239d0bb5
+    uses: fbl-vol/Katstrology/.github/workflows/qualify.yml@f64fb6dcbd104cff83219827dce5eef849fde89b
     permissions:
       contents: read
   release:
     name: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_id == '1437147047' && vars.KAT_CI_TARGET_SCOPE != ''
-    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@c31e7dd8fa3becd61851647a3158c95172e68eb5
+    uses: fbl-vol/Katstrology/.github/workflows/trusted-release.yml@f64fb6dcbd104cff83219827dce5eef849fde89b
     secrets:
       KAT_CI_TRANSPORT_KEY: ${{ secrets.KAT_CI_TRANSPORT_KEY }}
       KAT_CI_TS_CLIENT_SECRET: ${{ secrets.KAT_CI_TS_CLIENT_SECRET }}

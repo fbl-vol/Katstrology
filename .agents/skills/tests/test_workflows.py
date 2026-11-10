@@ -105,10 +105,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('fixture', report)
 
     def test_validation_never_removes_unowned_fixture(self):
-        with patch.object(validation, 'command', side_effect=['id', '0.0.0.0:5432']), \
+        def command(argv, **kwargs):
+            if argv[:2] == ['docker', 'run']:
+                Path(argv[argv.index('--cidfile') + 1]).write_text('a' * 64)
+                return 'a' * 64
+            return '0.0.0.0:5432'
+        with TemporaryDirectory() as directory, \
+             patch.object(validation, 'command', side_effect=command) as calls, \
              patch.object(validation, 'owned_container', return_value=False):
             with self.assertRaises(RuntimeError):
-                validation.start_fixture(validation.clean_environment())
+                validation.start_fixture(validation.clean_environment(), Path(directory))
+            self.assertFalse(any(call.args[0][:2] == ['docker', 'rm'] for call in calls.call_args_list))
 
     def test_activation_plan_and_explicit_receipt_refusal(self):
         args = ['--commit', SHA, '--service', 'kat-synthetic.service',
