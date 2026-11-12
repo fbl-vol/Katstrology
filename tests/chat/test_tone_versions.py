@@ -83,9 +83,9 @@ class ToneVersionTests(unittest.TestCase):
     def test_web_guidance_versions_capabilities_without_changing_quiet_expression(self):
         text, record = instructions('quiet-wonder')
         old, _ = archived_instructions(legacy_identity('quiet-wonder'))
-        expected_prefix = old.replace('arbitrary file reads or browsing.',
-                                      'arbitrary file reads or authenticated browsing.')
-        self.assertTrue(text.startswith(expected_prefix + '\n\nUse web tools'))
+        governing = old.split('\n\n', 2)[2].replace('arbitrary file reads or browsing.',
+                                                    'arbitrary file reads or authenticated browsing.')
+        self.assertIn(governing + '\n\nUse web tools', text)
         self.assertEqual(record['tone_version'], 6)
         self.assertEqual(archived_instructions(record), (text, record))
         for profile in catalogue()['profiles']:
@@ -139,15 +139,15 @@ class ToneVersionTests(unittest.TestCase):
                 self.assertNotRegex(text, r'\[p-[0-9a-f]+\]')
                 self.assertEqual(profiles[tone_id]['example'], revision['preview'])
 
-    def test_section_arcs_and_final_landing_apply_to_the_complete_answer_only(self):
+    def test_archived_section_arcs_and_final_landing_remain_reconstructable(self):
         for tone_id, landing in v3.LANDINGS.items():
             with self.subTest(tone_id=tone_id):
-                text, record = instructions(tone_id)
+                text, record = archived_instructions(legacy_identity(tone_id, 5))
                 previous, _ = archived_instructions(legacy_identity(tone_id, 2))
                 self.assertTrue(text.startswith(previous.replace(
                     'arbitrary file reads or browsing.', 'arbitrary file reads or authenticated browsing.')
                     + '\n\nSection rhythm and a strong final landing:'))
-                self.assertEqual(record['tone_version'], 6)
+                self.assertEqual(record['tone_version'], 5)
                 self.assertIn(v3.SECTION_RHYTHM, text)
                 self.assertIn(landing, text)
                 self.assertIn('existing flexible opening/body/closing arc', text)
@@ -164,7 +164,13 @@ class ToneVersionTests(unittest.TestCase):
             with self.subTest(tone_id=tone_id):
                 previous, _ = archived_instructions(legacy_identity(tone_id, 5))
                 current, record = instructions(tone_id)
-                self.assertEqual(current, previous + '\n\n' + CONVERSATION_GUIDANCE)
+                self.assertTrue(current.endswith('\n\n' + CONVERSATION_GUIDANCE))
+                self.assertNotIn(v1.HOSTED.split('\n\n', 2)[1], current)
+                self.assertNotIn(v3.SECTION_RHYTHM, current)
+                self.assertIn(MEMORY_GUIDANCE, current)
+                if tone_id in v3.LANDINGS:
+                    self.assertIn(v3.LANDINGS[tone_id], current)
+                    self.assertIn('Tool boundaries are not section endings', current)
                 self.assertEqual(current.count('Conversation foundation (all tone profiles):'), 1)
                 self.assertEqual(record['prompt_version'], '2026-11-12.1.tone6')
                 self.assertEqual(record['tone_version'], 6)
