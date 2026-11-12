@@ -85,7 +85,10 @@ class ToneVersionTests(unittest.TestCase):
         old, _ = archived_instructions(legacy_identity('quiet-wonder'))
         governing = old.split('\n\n', 2)[2].replace('arbitrary file reads or browsing.',
                                                     'arbitrary file reads or authenticated browsing.')
-        self.assertIn(governing + '\n\nUse web tools', text)
+        before_examples, example_tail = governing.split('Illustrative voice only,', 1)
+        after_examples = example_tail.split('Neither example needs a closing question. ', 1)[1]
+        self.assertIn(before_examples, text)
+        self.assertIn(after_examples + '\n\nUse web tools', text)
         self.assertEqual(record['tone_version'], 6)
         self.assertEqual(archived_instructions(record), (text, record))
         for profile in catalogue()['profiles']:
@@ -127,8 +130,12 @@ class ToneVersionTests(unittest.TestCase):
                 self.assertEqual((record['tone_version'], profiles[tone_id]['version']), (6, 6))
                 self.assertNotEqual(record['prompt_sha256'], V1_HASHES[tone_id])
                 self.assertEqual(archived_instructions(record), (text, record))
-                self.assertIn(v1.HOSTED.split('\n\n', 2)[2].replace(
-                    'arbitrary file reads or browsing.', 'arbitrary file reads or authenticated browsing.'), text)
+                governing = v1.HOSTED.split('\n\n', 2)[2].replace(
+                    'arbitrary file reads or browsing.', 'arbitrary file reads or authenticated browsing.')
+                before_examples, example_tail = governing.split('Illustrative voice only,', 1)
+                after_examples = example_tail.split('Neither example needs a closing question. ', 1)[1]
+                self.assertIn(before_examples, text)
+                self.assertIn(after_examples, text)
                 self.assertIn(revision['instruction'], text)
                 self.assertIn(v2.EXPRESSION, text)
                 for example in revision['examples']:
@@ -167,6 +174,7 @@ class ToneVersionTests(unittest.TestCase):
                 self.assertTrue(current.endswith('\n\n' + CONVERSATION_GUIDANCE))
                 self.assertNotIn(v1.HOSTED.split('\n\n', 2)[1], current)
                 self.assertNotIn(v3.SECTION_RHYTHM, current)
+                self.assertNotIn("User: 'What is an orb?'", current)
                 self.assertIn(MEMORY_GUIDANCE, current)
                 if tone_id in v3.LANDINGS:
                     self.assertIn(v3.LANDINGS[tone_id], current)

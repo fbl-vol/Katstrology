@@ -4,7 +4,8 @@ Kat's five tone profiles share conversational judgment: understand the person's
 intention, build on available history, accept correction and give selective,
 relevant help. Personality remains expressive; warmth and section landings are
 not compulsory response beats. Version 6 removes superseded opening and section
-arc instructions rather than spending context on contradictory prescriptions.
+arc instructions and generic base-prompt dialogue examples rather than spending
+context on contradictory prescriptions. Profile-specific voice examples remain.
 A chart is a symbolic lens, not proof of motives
 or grounds to overrule someone's account of their experience.
 
